@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   Search, ShoppingCart, User, ChevronDown, Menu, X,
-  LogOut, Package, Settings, Sun, Moon
+  LogOut, Package, Settings, Sun, Moon,
+  Monitor, Smartphone, Headphones, Shirt, Layers, ShoppingBag,
+  BookOpen, Apple, Home, Dumbbell, Wrench, Gamepad2,
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
@@ -12,19 +14,32 @@ import { useCart } from '../../context/CartContext'
 import { cn } from '../../lib/utils'
 
 const CATEGORIES = [
-  { slug: 'computadoras', label: 'Computadoras', emoji: '💻' },
-  { slug: 'celulares',    label: 'Celulares',    emoji: '📱' },
-  { slug: 'audio',        label: 'Audio',        emoji: '🎧' },
-  { slug: 'camisas',      label: 'Camisas',      emoji: '👕' },
-  { slug: 'pantalones',   label: 'Pantalones',   emoji: '👖' },
-  { slug: 'calzado',      label: 'Calzado',      emoji: '👟' },
-  { slug: 'libros',       label: 'Libros',       emoji: '📚' },
-  { slug: 'alimentos',    label: 'Alimentos',    emoji: '🥗' },
-  { slug: 'hogar',        label: 'Hogar',        emoji: '🏠' },
-  { slug: 'deportes',     label: 'Deportes',     emoji: '⚽' },
-  { slug: 'herramientas', label: 'Herramientas', emoji: '🔧' },
-  { slug: 'juguetes',     label: 'Juguetes',     emoji: '🧸' },
+  { slug: 'computadoras', label: 'Computadoras', Icon: Monitor     },
+  { slug: 'celulares',    label: 'Celulares',    Icon: Smartphone  },
+  { slug: 'audio',        label: 'Audio',        Icon: Headphones  },
+  { slug: 'camisas',      label: 'Camisas',      Icon: Shirt       },
+  { slug: 'pantalones',   label: 'Pantalones',   Icon: Layers      },
+  { slug: 'calzado',      label: 'Calzado',      Icon: ShoppingBag },
+  { slug: 'libros',       label: 'Libros',       Icon: BookOpen    },
+  { slug: 'alimentos',    label: 'Alimentos',    Icon: Apple       },
+  { slug: 'hogar',        label: 'Hogar',        Icon: Home        },
+  { slug: 'deportes',     label: 'Deportes',     Icon: Dumbbell    },
+  { slug: 'herramientas', label: 'Herramientas', Icon: Wrench      },
+  { slug: 'juguetes',     label: 'Juguetes',     Icon: Gamepad2    },
 ]
+
+function Logo() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" className="shrink-0" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="var(--color-action)" />
+      {/* shopping bag */}
+      <path d="M10 14h12l-1.8 9H11.8L10 14z" stroke="white" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
+      <path d="M13 14c0-1.657 1.343-3 3-3s3 1.343 3 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+      {/* checkmark */}
+      <path d="M13.5 19.5l1.5 1.5 3.5-3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 function SearchBar({ className, onSearch }) {
   const [q, setQ] = useState('')
@@ -145,16 +160,19 @@ function CategoryDropdown() {
 
       {open && (
         <div className="absolute left-0 top-full mt-1.5 w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] py-2 z-50 grid grid-cols-2 gap-0.5">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat.slug}
-              onClick={() => { navigate(`/catalog?categoria=${cat.slug}`); setOpen(false) }}
-              className="flex items-center gap-2 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-[var(--radius-md)] mx-1"
-            >
-              <span className="text-base leading-none">{cat.emoji}</span>
-              {cat.label}
-            </button>
-          ))}
+          {CATEGORIES.map(cat => {
+            const { Icon } = cat
+            return (
+              <button
+                key={cat.slug}
+                onClick={() => { navigate(`/catalog?categoria=${cat.slug}`); setOpen(false) }}
+                className="flex items-center gap-2 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-[var(--radius-md)] mx-1"
+              >
+                <Icon size={15} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
+                {cat.label}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -180,9 +198,7 @@ export function Header() {
       <div className="max-w-[1280px] mx-auto px-4 md:px-6 h-16 flex items-center gap-4">
         {/* Logo */}
         <Link to="/" className="shrink-0 flex items-center gap-2 group">
-          <div className="h-8 w-8 rounded-[var(--radius-md)] bg-[var(--color-action)] flex items-center justify-center">
-            <span className="font-display font-bold text-white text-sm">T</span>
-          </div>
+          <Logo />
           <span className="font-display font-bold text-lg text-[var(--color-text-primary)] hidden sm:block">
             TiendaYa
           </span>
@@ -215,16 +231,20 @@ export function Header() {
                 <SearchBar onSearch={() => setMobileOpen(false)} />
                 <nav className="space-y-1">
                   <p className="text-[10px] font-sans font-semibold text-[var(--color-text-muted)] uppercase tracking-wider px-2 py-1">Categorías</p>
-                  {CATEGORIES.map(cat => (
-                    <Link
-                      key={cat.slug}
-                      to={`/catalog?categoria=${cat.slug}`}
-                      onClick={() => setMobileOpen(false)}
-                      className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors"
-                    >
-                      <span className="text-xl">{cat.emoji}</span> {cat.label}
-                    </Link>
-                  ))}
+                  {CATEGORIES.map(cat => {
+                    const { Icon } = cat
+                    return (
+                      <Link
+                        key={cat.slug}
+                        to={`/catalog?categoria=${cat.slug}`}
+                        onClick={() => setMobileOpen(false)}
+                        className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors"
+                      >
+                        <Icon size={18} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
+                        {cat.label}
+                      </Link>
+                    )
+                  })}
                 </nav>
               </div>
             </SheetContent>
@@ -237,15 +257,19 @@ export function Header() {
         <div className="max-w-[1280px] mx-auto px-6 h-10 flex items-center gap-1 overflow-x-auto">
           <CategoryDropdown />
           <div className="w-px h-5 bg-[var(--color-border)] mx-1" />
-          {CATEGORIES.slice(0, 8).map(cat => (
-            <Link
-              key={cat.slug}
-              to={`/catalog?categoria=${cat.slug}`}
-              className="shrink-0 px-3 h-8 flex items-center font-display font-semibold text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-action)] hover:bg-[var(--color-action)]/5 rounded-[var(--radius-md)] transition-colors whitespace-nowrap"
-            >
-              {cat.label}
-            </Link>
-          ))}
+          {CATEGORIES.slice(0, 8).map(cat => {
+            const { Icon } = cat
+            return (
+              <Link
+                key={cat.slug}
+                to={`/catalog?categoria=${cat.slug}`}
+                className="shrink-0 flex items-center gap-1.5 px-3 h-8 font-display font-semibold text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-action)] hover:bg-[var(--color-action)]/5 rounded-[var(--radius-md)] transition-colors whitespace-nowrap"
+              >
+                <Icon size={13} strokeWidth={1.5} />
+                {cat.label}
+              </Link>
+            )
+          })}
         </div>
       </div>
     </header>

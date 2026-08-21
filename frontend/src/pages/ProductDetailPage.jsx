@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star } from 'lucide-react'
+import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch } from 'lucide-react'
 import { toast } from 'sonner'
 import { getProduct } from '../api/products'
 import { useCart } from '../context/CartContext'
@@ -74,7 +74,7 @@ export default function ProductDetailPage() {
   if (isError || !product) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-16 text-center">
-        <span className="text-6xl mb-4 block">😕</span>
+        <PackageSearch size={56} className="text-[var(--color-border-strong)] mb-4 mx-auto" strokeWidth={1.5} />
         <h2 className="font-display font-bold text-2xl text-[var(--color-text-primary)] mb-2">
           Producto no encontrado
         </h2>

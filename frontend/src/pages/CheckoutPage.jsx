@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle, MapPin, CreditCard, ClipboardList, ChevronRight } from 'lucide-react'
+import { CheckCircle, MapPin, CreditCard, ClipboardList, ChevronRight, Landmark, ArrowLeftRight, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCart } from '../api/cart'
 import { checkout, getAddresses } from '../api/orders'
@@ -13,10 +13,10 @@ import { cn, formatQ } from '../lib/utils'
 const IVA_RATE = 0.12
 
 const PAYMENT_METHODS = [
-  { id: 1, label: 'Tarjeta de crédito', icon: '💳' },
-  { id: 2, label: 'Tarjeta de débito', icon: '🏦' },
-  { id: 3, label: 'Transferencia bancaria', icon: '↔️' },
-  { id: 4, label: 'Contra entrega', icon: '📦' },
+  { id: 1, label: 'Tarjeta de crédito',    Icon: CreditCard      },
+  { id: 2, label: 'Tarjeta de débito',     Icon: Landmark        },
+  { id: 3, label: 'Transferencia bancaria', Icon: ArrowLeftRight  },
+  { id: 4, label: 'Contra entrega',         Icon: Package         },
 ]
 
 const STEPS = [
@@ -299,30 +299,33 @@ export default function CheckoutPage() {
                   Método de pago
                 </h2>
                 <div className="space-y-3">
-                  {PAYMENT_METHODS.map((pm) => (
-                    <label
-                      key={pm.id}
-                      className={cn(
-                        'flex items-center gap-4 p-4 rounded-[var(--radius-md)] border-2 cursor-pointer transition-colors',
-                        selectedPayment === pm.id
-                          ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
-                          : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]'
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="payment"
-                        value={pm.id}
-                        checked={selectedPayment === pm.id}
-                        onChange={() => setSelectedPayment(pm.id)}
-                        className="accent-[var(--color-action)]"
-                      />
-                      <span className="text-xl">{pm.icon}</span>
-                      <span className="font-sans font-medium text-sm text-[var(--color-text-primary)]">
-                        {pm.label}
-                      </span>
-                    </label>
-                  ))}
+                  {PAYMENT_METHODS.map((pm) => {
+                    const { Icon } = pm
+                    return (
+                      <label
+                        key={pm.id}
+                        className={cn(
+                          'flex items-center gap-4 p-4 rounded-[var(--radius-md)] border-2 cursor-pointer transition-colors',
+                          selectedPayment === pm.id
+                            ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
+                            : 'border-[var(--color-border)] hover:border-[var(--color-border-strong)]'
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="payment"
+                          value={pm.id}
+                          checked={selectedPayment === pm.id}
+                          onChange={() => setSelectedPayment(pm.id)}
+                          className="accent-[var(--color-action)]"
+                        />
+                        <Icon size={18} className={selectedPayment === pm.id ? 'text-[var(--color-action)]' : 'text-[var(--color-text-muted)]'} />
+                        <span className="font-sans font-medium text-sm text-[var(--color-text-primary)]">
+                          {pm.label}
+                        </span>
+                      </label>
+                    )
+                  })}
                 </div>
                 <div className="flex gap-3 mt-5">
                   <Button variant="secondary" onClick={() => setStep(1)}>
@@ -359,10 +362,16 @@ export default function CheckoutPage() {
                   <h3 className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                     Método de pago
                   </h3>
-                  <p className="font-sans text-sm text-[var(--color-text-primary)]">
-                    {PAYMENT_METHODS.find((p) => p.id === selectedPayment)?.icon}{' '}
-                    {PAYMENT_METHODS.find((p) => p.id === selectedPayment)?.label}
-                  </p>
+                  {(() => {
+                    const pm = PAYMENT_METHODS.find((p) => p.id === selectedPayment)
+                    const { Icon } = pm || {}
+                    return (
+                      <p className="font-sans text-sm text-[var(--color-text-primary)] flex items-center gap-2">
+                        {Icon && <Icon size={16} className="text-[var(--color-text-muted)]" />}
+                        {pm?.label}
+                      </p>
+                    )
+                  })()}
                 </div>
 
                 {error && (

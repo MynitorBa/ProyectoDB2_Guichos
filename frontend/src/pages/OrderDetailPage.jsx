@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Package } from 'lucide-react'
+import { ArrowLeft, Package, Check } from 'lucide-react'
 import { getOrder } from '../api/orders'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -56,7 +56,7 @@ function ProgressBar({ estado }) {
                     : 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-muted)]'
                 )}
               >
-                {done ? '✓' : idx + 1}
+                {done ? <Check size={14} /> : idx + 1}
               </div>
               <span
                 className={cn(

@@ -261,7 +261,7 @@ export default function CatalogPage() {
               </div>
             ) : products.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
-                <span className="text-6xl mb-4">🔍</span>
+                <Search size={48} className="text-[var(--color-border-strong)] mb-4" strokeWidth={1.5} />
                 <h3 className="font-display font-semibold text-lg text-[var(--color-text-primary)] mb-2">
                   Sin resultados
                 </h3>

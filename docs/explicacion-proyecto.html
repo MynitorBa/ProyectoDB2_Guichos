@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TiendaYa — Explicación del Proyecto</title>
+<style>
+  /* ── Tipografía y reset ── */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --indigo: #4338CA;
+    --jade:   #0D9488;
+    --gray-50: #F8F9FB;
+    --gray-100: #F1F5F9;
+    --gray-200: #E2E8F0;
+    --gray-400: #94A3B8;
+    --gray-600: #475569;
+    --gray-900: #0C0F1A;
+    --green: #059669;
+    --amber: #D97706;
+    --red:   #DC2626;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--gray-900);
+    background: #fff;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 48px;
+  }
+
+  h1, h2, h3, h4 { font-family: 'Plus Jakarta Sans', sans-serif; line-height: 1.25; }
+  h1 { font-size: 2rem; font-weight: 800; color: var(--indigo); margin-bottom: 6px; }
+  h2 { font-size: 1.3rem; font-weight: 700; color: var(--gray-900); margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--gray-200); }
+  h3 { font-size: 1rem; font-weight: 700; color: var(--indigo); margin: 20px 0 8px; }
+  h4 { font-size: 0.875rem; font-weight: 600; color: var(--gray-900); margin: 14px 0 6px; }
+
+  p  { margin-bottom: 10px; color: var(--gray-600); }
+  ul, ol { margin: 8px 0 12px 20px; color: var(--gray-600); }
+  li { margin-bottom: 5px; }
+  strong { color: var(--gray-900); font-weight: 600; }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--gray-100);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--indigo);
+  }
+
+  pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    background: #0C0F1A;
+    color: #E2E8F0;
+    padding: 16px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    line-height: 1.7;
+  }
+  pre .kw  { color: #818CF8; }
+  pre .str { color: #34D399; }
+  pre .cmt { color: #475569; font-style: italic; }
+  pre .fn  { color: #FCD34D; }
+  pre .var { color: #F9A8D4; }
+
+  /* ── Componentes de diseño ── */
+  .cover {
+    background: linear-gradient(135deg, var(--indigo) 0%, var(--jade) 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 40px 48px;
+    margin-bottom: 48px;
+  }
+  .cover h1 { color: white; font-size: 2.4rem; }
+  .cover .sub { font-size: 1rem; opacity: 0.85; margin-top: 8px; font-family: 'Inter', sans-serif; font-weight: 400; }
+  .cover .meta { margin-top: 20px; font-size: 0.8rem; opacity: 0.7; }
+
+  .arch-box {
+    border: 2px solid var(--gray-200);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 16px 0 24px;
+  }
+  .arch-row {
+    display: flex;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  .arch-row:last-child { border-bottom: none; }
+  .arch-label {
+    width: 120px;
+    flex-shrink: 0;
+    background: var(--gray-100);
+    padding: 12px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gray-600);
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--gray-200);
+  }
+  .arch-cell {
+    flex: 1;
+    padding: 12px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1.5px solid;
+  }
+  .chip-indigo { color: var(--indigo); border-color: #C7D2FE; background: #EEF2FF; }
+  .chip-jade   { color: var(--jade);   border-color: #99F6E4; background: #F0FDFA; }
+  .chip-amber  { color: var(--amber);  border-color: #FDE68A; background: #FFFBEB; }
+  .chip-green  { color: var(--green);  border-color: #A7F3D0; background: #ECFDF5; }
+  .chip-gray   { color: var(--gray-600); border-color: var(--gray-200); background: var(--gray-50); }
+
+  .callout {
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .callout-blue  { background: #EEF2FF; border-left: 4px solid var(--indigo); }
+  .callout-green { background: #ECFDF5; border-left: 4px solid var(--green); }
+  .callout-amber { background: #FFFBEB; border-left: 4px solid var(--amber); }
+  .callout strong { display: block; margin-bottom: 4px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+  .box {
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .box h4 { margin-top: 0; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 13px;
+  }
+  th {
+    background: var(--gray-100);
+    padding: 8px 12px;
+    text-align: left;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gray-600);
+    border-bottom: 2px solid var(--gray-200);
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--gray-200); color: var(--gray-600); }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-weight: 600; color: var(--gray-900); }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0 20px;
+    font-size: 13px;
+  }
+  .flow-step {
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-weight: 600;
+    color: var(--gray-900);
+  }
+  .flow-arrow { color: var(--gray-400); font-weight: 700; font-size: 16px; }
+  .flow-step.highlight { background: #EEF2FF; border-color: #C7D2FE; color: var(--indigo); }
+  .flow-step.jade { background: #F0FDFA; border-color: #99F6E4; color: var(--jade); }
+
+  .decision {
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 14px 0;
+  }
+  .decision-q {
+    background: var(--gray-100);
+    padding: 10px 14px;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--gray-900);
+    border-bottom: 1px solid var(--gray-200);
+  }
+  .decision-a {
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--gray-600);
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { padding: 0; max-width: 100%; font-size: 12px; }
+    .cover { border-radius: 0; margin: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    h2 { page-break-after: avoid; }
+    pre, .arch-box, .two-col { page-break-inside: avoid; }
+    @page { margin: 20mm; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PORTADA -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <h1>TiendaYa</h1>
+  <p class="sub">Marketplace guatemalteco — Documentación técnica del proyecto</p>
+  <p class="meta">Bases de Datos 2 · Segundo Semestre 2026 · Universidad del Istmo</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 1. QUÉ ES EL PROYECTO -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>1. ¿Qué es TiendaYa?</h2>
+
+<p>TiendaYa es un <strong>marketplace guatemalteco</strong> de compra y venta en línea. Funciona como una sola plataforma donde vendedores publican productos de categorías muy distintas (electrónica, ropa, alimentos, libros…) y compradores los buscan, agregan al carrito y pagan.</p>
+
+<p>El proyecto es a la vez un sistema funcional y una demostración académica de <strong>persistencia polígota</strong>: usa dos bases de datos distintas, cada una para lo que hace mejor, conectadas por una API en Python.</p>
+
+<div class="arch-box">
+  <div class="arch-row">
+    <div class="arch-label">Frontend</div>
+    <div class="arch-cell">
+      <span class="chip chip-indigo">React 18</span>
+      <span class="chip chip-indigo">Vite</span>
+      <span class="chip chip-indigo">Tailwind CSS v4</span>
+      <span class="chip chip-indigo">TanStack Query</span>
+    </div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-label">API</div>
+    <div class="arch-cell">
+      <span class="chip chip-jade">FastAPI</span>
+      <span class="chip chip-jade">Python 3.12</span>
+      <span class="chip chip-jade">JWT Auth</span>
+      <span class="chip chip-jade">SQLAlchemy</span>
+      <span class="chip chip-jade">PyMongo</span>
+    </div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-label">BD Relacional</div>
+    <div class="arch-cell">
+      <span class="chip chip-amber">MySQL 8</span>
+      <span class="chip chip-amber">Stored Procedures</span>
+      <span class="chip chip-amber">3FN</span>
+    </div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-label">BD Documental</div>
+    <div class="arch-cell">
+      <span class="chip chip-green">MongoDB 7</span>
+      <span class="chip chip-green">Event Sourcing</span>
+      <span class="chip chip-green">65 productos</span>
+    </div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-label">Infra</div>
+    <div class="arch-cell">
+      <span class="chip chip-gray">Docker Compose</span>
+      <span class="chip chip-gray">Adminer :8080</span>
+      <span class="chip chip-gray">Mongo Express :8081</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 2. CÓMO SE CONECTA TODO -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>2. Cómo se conecta todo</h2>
+
+<p>Hay tres procesos corriendo al mismo tiempo. El browser solo habla con el frontend. El frontend solo habla con la API. La API habla con las dos bases de datos.</p>
+
+<div class="flow">
+  <div class="flow-step">Navegador<br/><small>:5173</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step highlight">Vite<br/><small>:5173</small></div>
+  <div class="flow-arrow">→ /api/*</div>
+  <div class="flow-step jade">FastAPI<br/><small>:8001</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">MySQL<br/><small>:3306</small></div>
+</div>
+<div class="flow">
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <div class="flow-step jade">FastAPI<br/><small>:8001</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">MongoDB<br/><small>:27017</small></div>
+</div>
+
+<h3>Proxy de Vite</h3>
+<p>Vite incluye un proxy de desarrollo. Cada vez que el frontend hace una petición a <code>/api/...</code>, Vite la redirige internamente a <code>http://localhost:8001/api/...</code>. Así el browser no necesita saber la IP del servidor de Python, y no hay problemas de CORS.</p>
+
+<pre><span class="cmt">// vite.config.js</span>
+server: {
+  proxy: { <span class="str">'/api'</span>: <span class="str">'http://localhost:8001'</span> }
+}</pre>
+
+<h3>Cadena de autenticación (JWT)</h3>
+<div class="flow">
+  <div class="flow-step">POST /api/auth/login</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step highlight">FastAPI verifica bcrypt</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step jade">Devuelve JWT</div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step">localStorage</div>
+</div>
+<p>Cada petición subsiguiente lleva el header <code>Authorization: Bearer &lt;token&gt;</code>. El backend decodifica el JWT con la clave secreta y extrae el usuario. No hay sesiones en el servidor: toda la identidad vive en el token.</p>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 3. MYSQL — QUÉ GUARDA Y POR QUÉ -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>3. MySQL — datos relacionales</h2>
+
+<p>MySQL guarda todo lo que tiene <strong>estructura fija y relaciones bien definidas</strong>: usuarios, pedidos, direcciones, métodos de pago. Son datos transaccionales que necesitan integridad referencial (un pedido no puede existir sin un usuario válido) y operaciones ACID.</p>
+
+<div class="two-col">
+  <div class="box">
+    <h4>Tablas principales</h4>
+    <ul>
+      <li><code>usuarios</code> — credenciales, roles, estado</li>
+      <li><code>direcciones</code> — FK a usuario</li>
+      <li><code>productos_catalogo</code> — SKU, precio, disponibilidad</li>
+      <li><code>pedidos</code> — total, estado, FK a usuario y dirección</li>
+      <li><code>pedido_items</code> — qué productos y cuántos</li>
+      <li><code>metodos_pago</code> — catálogo de formas de pago</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h4>Por qué MySQL aquí</h4>
+    <ul>
+      <li>Los datos son tabulares y muy relacionados entre sí</li>
+      <li>El checkout necesita atomicidad (o todo o nada)</li>
+      <li>Los usuarios y pedidos no cambian de esquema</li>
+      <li>Las consultas son predecibles y usan JOINs</li>
+      <li>El stock se decrementa en un stored procedure transaccional</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Stored procedure de checkout atómico</h3>
+<p>El checkout completo (validar stock, crear pedido, decrementar inventario) vive en un único stored procedure de MySQL. Se llama desde Python con una sola instrucción <code>CALL sp_checkout(...)</code>. Si cualquier paso falla, la transacción completa hace rollback automático.</p>
+
+<pre><span class="cmt">-- Resumen simplificado del flujo interno del SP</span>
+<span class="kw">BEGIN TRANSACTION</span>;
+  <span class="cmt">-- 1. Validar stock por cada ítem</span>
+  <span class="kw">IF</span> stock_insuficiente <span class="kw">THEN ROLLBACK</span>; <span class="kw">END IF</span>;
+  <span class="cmt">-- 2. Crear fila en `pedidos`</span>
+  <span class="kw">INSERT INTO</span> pedidos ...;
+  <span class="cmt">-- 3. Insertar cada ítem en `pedido_items`</span>
+  <span class="kw">INSERT INTO</span> pedido_items ...;
+  <span class="cmt">-- 4. Decrementar stock en `productos_catalogo`</span>
+  <span class="kw">UPDATE</span> productos_catalogo <span class="kw">SET</span> stock = stock - cantidad ...;
+<span class="kw">COMMIT</span>;</pre>
+
+<div class="callout callout-blue">
+  <strong>Decisión de diseño</strong>
+  Mover el checkout al motor de base de datos elimina la posibilidad de que un crash de la API deje el sistema en un estado inconsistente (pedido creado pero stock sin decrementar). El SP o completa todo o no hace nada.
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 4. MONGODB — QUÉ GUARDA Y POR QUÉ -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>4. MongoDB — catálogo y eventos</h2>
+
+<p>MongoDB guarda el <strong>catálogo de productos</strong> (con atributos variables por categoría) y el <strong>historial de cambios</strong> de cada producto. Son datos que no caben bien en tablas fijas.</p>
+
+<h3>El problema de los atributos variables</h3>
+<p>Una laptop tiene <em>procesador, RAM, almacenamiento</em>. Una camisa tiene <em>talla, color, material</em>. Un libro tiene <em>autor, ISBN, editorial</em>. No comparten ningún campo. En MySQL necesitarías un diseño EAV (Entity-Attribute-Value) muy complicado. En MongoDB cada producto es un documento JSON con sus propios campos:</p>
+
+<pre><span class="cmt">// Laptop en MongoDB</span>
+{
+  <span class="var">"_id"</span>: <span class="str">"64abc..."</span>,
+  <span class="var">"nombre"</span>: <span class="str">"ThinkPad X1 Carbon"</span>,
+  <span class="var">"precio"</span>: 8500,
+  <span class="var">"categoria"</span>: { <span class="var">"slug"</span>: <span class="str">"computadoras"</span> },
+  <span class="var">"atributos"</span>: {
+    <span class="var">"procesador"</span>: <span class="str">"Intel Core i7-1365U"</span>,
+    <span class="var">"ram_gb"</span>: 16,
+    <span class="var">"almacenamiento_gb"</span>: 512,
+    <span class="var">"pulgadas"</span>: 14
+  }
+}
+
+<span class="cmt">// Camisa en MongoDB — mismo esquema raíz, atributos distintos</span>
+{
+  <span class="var">"_id"</span>: <span class="str">"64def..."</span>,
+  <span class="var">"nombre"</span>: <span class="str">"Camisa Oxford Slim"</span>,
+  <span class="var">"precio"</span>: 180,
+  <span class="var">"categoria"</span>: { <span class="var">"slug"</span>: <span class="str">"camisas"</span> },
+  <span class="var">"atributos"</span>: {
+    <span class="var">"talla"</span>: <span class="str">"M"</span>,
+    <span class="var">"color"</span>: <span class="str">"azul marino"</span>,
+    <span class="var">"material"</span>: <span class="str">"algodón 100%"</span>
+  }
+}</pre>
+
+<h3>Event sourcing: historial de cambios</h3>
+<p>La segunda colección en MongoDB es <code>producto_eventos</code>. Cada vez que un administrador modifica un producto, en lugar de sobreescribir el documento, se <strong>agrega un nuevo evento</strong> con el estado anterior y el nuevo. La colección es append-only (solo se insertan, nunca se borran).</p>
+
+<pre><span class="cmt">// Ejemplo de evento de precio actualizado</span>
+{
+  <span class="var">"_id"</span>: <span class="str">"ObjectId(...)"</span>,
+  <span class="var">"producto_id"</span>: <span class="str">"64abc..."</span>,
+  <span class="var">"tipo_evento"</span>: <span class="str">"PRECIO_ACTUALIZADO"</span>,
+  <span class="var">"version"</span>: 3,
+  <span class="var">"timestamp"</span>: <span class="str">"2026-06-15T10:30:00Z"</span>,
+  <span class="var">"datos_anteriores"</span>: { <span class="var">"precio"</span>: 8200 },
+  <span class="var">"datos_nuevos"</span>:     { <span class="var">"precio"</span>: 8500 }
+}</pre>
+
+<p>Tipos de eventos registrados:</p>
+<table>
+  <thead><tr><th>Tipo de evento</th><th>Cuándo se dispara</th></tr></thead>
+  <tbody>
+    <tr><td>PRODUCTO_CREADO</td><td>Primera inserción del producto</td></tr>
+    <tr><td>PRECIO_ACTUALIZADO</td><td>Cambio en el campo precio</td></tr>
+    <tr><td>DESCRIPCION_ACTUALIZADA</td><td>Cambio en nombre o descripción</td></tr>
+    <tr><td>ATRIBUTOS_ACTUALIZADOS</td><td>Cambio en atributos variables</td></tr>
+    <tr><td>DISPONIBILIDAD_CAMBIADA</td><td>Toggle disponible true/false</td></tr>
+    <tr><td>PRODUCTO_DESCONTINUADO</td><td>Producto marcado como inactivo</td></tr>
+  </tbody>
+</table>
+
+<h3>Reconstrucción del estado en una fecha</h3>
+<p>Dado que todos los cambios están guardados como eventos, se puede reconstruir cómo era un producto en cualquier fecha del pasado: se toma el primer evento (PRODUCTO_CREADO) y se aplican secuencialmente todos los eventos que ocurrieron antes de la fecha solicitada.</p>
+
+<pre><span class="cmt"># Lógica de reconstrucción (Python simplificado)</span>
+<span class="kw">def</span> <span class="fn">get_state_at</span>(producto_id, fecha):
+    eventos = mongo.producto_eventos.find(
+        {<span class="str">"producto_id"</span>: producto_id,
+         <span class="str">"timestamp"</span>: {<span class="str">"$lte"</span>: fecha}},
+        sort=[(<span class="str">"timestamp"</span>, ASC)]
+    )
+    estado = {}
+    <span class="kw">for</span> evento <span class="kw">in</span> eventos:
+        estado.update(evento[<span class="str">"datos_nuevos"</span>])
+    <span class="kw">return</span> estado</pre>
+
+<div class="callout callout-green">
+  <strong>Por qué MongoDB para el historial</strong>
+  Con MySQL necesitarías una tabla de auditoría con columnas <code>campo</code>, <code>valor_anterior</code>, <code>valor_nuevo</code> de tipo VARCHAR — y perderías los tipos. MongoDB guarda el objeto completo como JSON, preservando el tipo de cada campo (precio es un número, no un string).
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 5. LA MIGRACIÓN: DE MYSQL A MONGODB -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>5. La migración: de MySQL a MongoDB</h2>
+
+<p>Los 65 productos del seed original estaban en MySQL en la tabla <code>productos_catalogo</code>. Esta tabla tiene columnas fijas: <code>nombre</code>, <code>precio</code>, <code>descripcion</code>, <code>categoria_id</code>. Los atributos variables (RAM, talla, ISBN…) estaban codificados como texto en la columna <code>descripcion</code> con el formato:</p>
+
+<pre><span class="str">"procesador: Intel Core i7 | ram_gb: 16 | almacenamiento_gb: 512 | pulgadas: 14"</span></pre>
+
+<h3>¿Qué migra el script?</h3>
+<p>El script <code>backend/scripts/migrate_products_to_mongo.py</code> hace lo siguiente:</p>
+
+<ol>
+  <li><strong>Lee</strong> todos los productos de MySQL con un JOIN a la tabla <code>categorias</code></li>
+  <li><strong>Parsea</strong> el texto de <code>descripcion</code> con la función <code>_parse_desc()</code> que convierte <code>"clave: valor | ..."</code> en un diccionario Python</li>
+  <li><strong>Construye</strong> el documento MongoDB con la estructura anidada correcta, incluyendo el subdocumento <code>atributos</code> con los tipos correctos (números como números, booleanos como booleanos)</li>
+  <li><strong>Inserta o actualiza</strong> en MongoDB usando <code>bulk_write</code> con operaciones <code>UpdateOne(..., upsert=True)</code>, lo que hace el script <strong>idempotente</strong> (se puede ejecutar múltiples veces sin duplicar datos)</li>
+  <li>Por cada producto migrado, <strong>registra un evento</strong> <code>PRODUCTO_CREADO</code> en la colección <code>producto_eventos</code></li>
+</ol>
+
+<div class="arch-box">
+  <div class="arch-row">
+    <div class="arch-label">Entrada</div>
+    <div class="arch-cell" style="flex-direction:column; align-items:flex-start; gap:4px;">
+      <span style="font-size:13px; color:#475569;">MySQL: <code>productos_catalogo</code> × <code>categorias</code></span>
+      <span style="font-size:12px; color:#94A3B8;">65 filas con atributos en texto plano</span>
+    </div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-label">Proceso</div>
+    <div class="arch-cell" style="flex-direction:column; align-items:flex-start; gap:4px;">
+      <span style="font-size:13px; color:#475569;">Parse de descripción → extractores por categoría</span>
+      <span style="font-size:12px; color:#94A3B8;">_extraer_laptop(), _extraer_ropa(), _extraer_libro()…</span>
+    </div>
+  </div>
+  <div class="arch-row">
+    <div class="arch-label">Salida</div>
+    <div class="arch-cell" style="flex-direction:column; align-items:flex-start; gap:4px;">
+      <span style="font-size:13px; color:#475569;">MongoDB: colección <code>productos</code> + <code>producto_eventos</code></span>
+      <span style="font-size:12px; color:#94A3B8;">65 documentos con atributos tipados + 65 eventos PRODUCTO_CREADO</span>
+    </div>
+  </div>
+</div>
+
+<h3>¿Por qué no se eliminan los productos de MySQL?</h3>
+<p>Intencionalmente. La tabla <code>productos_catalogo</code> de MySQL sigue siendo la fuente de verdad para <strong>precio, stock y disponibilidad</strong> porque estos datos participan en el checkout transaccional. MongoDB tiene una <strong>copia enriquecida</strong> para el catálogo y la búsqueda, con los atributos específicos de cada categoría. La sincronización entre ambas bases de datos la maneja la API.</p>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 6. EL BACKEND: FASTAPI -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>6. El backend: FastAPI</h2>
+
+<p>FastAPI es el mediador central. Conecta con MySQL vía SQLAlchemy (ORM) y con MongoDB vía PyMongo (driver nativo). Expone una API REST bajo el prefijo <code>/api</code>.</p>
+
+<h3>Estructura de rutas</h3>
+<table>
+  <thead><tr><th>Prefijo</th><th>Qué hace</th><th>BD usada</th></tr></thead>
+  <tbody>
+    <tr><td>/api/auth</td><td>Login, registro, perfil propio</td><td>MySQL</td></tr>
+    <tr><td>/api/productos</td><td>Catálogo, filtros, búsqueda</td><td>MongoDB</td></tr>
+    <tr><td>/api/productos/{id}/historia</td><td>Historial de eventos</td><td>MongoDB</td></tr>
+    <tr><td>/api/productos/{id}/estado</td><td>Estado en fecha específica</td><td>MongoDB</td></tr>
+    <tr><td>/api/categorias</td><td>Listado de categorías</td><td>MySQL</td></tr>
+    <tr><td>/api/carrito</td><td>Ver, agregar, quitar ítems</td><td>MySQL</td></tr>
+    <tr><td>/api/checkout</td><td>Confirmar pedido (llama al SP)</td><td>MySQL</td></tr>
+    <tr><td>/api/pedidos</td><td>Historial de pedidos del usuario</td><td>MySQL</td></tr>
+    <tr><td>/api/admin</td><td>Stats, gestión de productos</td><td>MySQL + MongoDB</td></tr>
+  </tbody>
+</table>
+
+<h3>Autenticación con JWT</h3>
+<p>Al hacer login, FastAPI verifica la contraseña con <code>bcrypt.checkpw()</code> y genera un JWT firmado con la clave secreta del servidor. El token tiene un tiempo de expiración configurable (por defecto 7 días). Todos los endpoints privados usan el decorador <code>Depends(get_current_user)</code> que extrae y verifica el token automáticamente.</p>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 7. EL FRONTEND: REACT -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>7. El frontend: React + Tailwind v4</h2>
+
+<p>El frontend es una SPA (Single Page Application) construida con React 18 y Vite. Toda la comunicación con el backend pasa por funciones en la carpeta <code>src/api/</code> que usan Axios con un interceptor que adjunta automáticamente el token JWT.</p>
+
+<h3>Sistema de diseño</h3>
+<p>El diseño usa <strong>Tailwind CSS v4</strong>, una versión que funciona diferente a las anteriores: en lugar de un archivo de configuración JavaScript, los tokens de diseño se definen directamente en el CSS con el bloque <code>@theme</code>.</p>
+
+<div class="two-col">
+  <div class="box">
+    <h4>Paleta de colores</h4>
+    <ul>
+      <li><strong>Índigo</strong> <code>#4338CA</code> — acción primaria</li>
+      <li><strong>Jade</strong> <code>#0D9488</code> — acento</li>
+      <li><strong>Fondo claro</strong> <code>#F8F9FB</code></li>
+      <li>Dark mode: variables CSS sobrescritas en <code>.dark { }</code></li>
+    </ul>
+  </div>
+  <div class="box">
+    <h4>Tipografía</h4>
+    <ul>
+      <li><strong>Plus Jakarta Sans</strong> — títulos y botones</li>
+      <li><strong>Inter</strong> — textos de cuerpo</li>
+      <li><strong>JetBrains Mono</strong> — precios, IDs, código</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Páginas del sistema</h3>
+<table>
+  <thead><tr><th>Ruta</th><th>Página</th><th>Acceso</th></tr></thead>
+  <tbody>
+    <tr><td>/</td><td>Home — hero, categorías, productos destacados</td><td>Público</td></tr>
+    <tr><td>/catalog</td><td>Catálogo — filtros, búsqueda, paginación</td><td>Público</td></tr>
+    <tr><td>/products/:id</td><td>Detalle de producto + atributos por categoría</td><td>Público</td></tr>
+    <tr><td>/login, /register</td><td>Autenticación con React Hook Form + Zod</td><td>Público</td></tr>
+    <tr><td>/cart</td><td>Carrito de compras</td><td>Usuario</td></tr>
+    <tr><td>/checkout</td><td>Proceso de pago en 3 pasos</td><td>Usuario</td></tr>
+    <tr><td>/orders</td><td>Historial de pedidos</td><td>Usuario</td></tr>
+    <tr><td>/admin</td><td>Panel admin con estadísticas (Recharts)</td><td>Administrador</td></tr>
+    <tr><td>/admin/products/:id/history</td><td>Timeline de cambios + reconstrucción histórica</td><td>Administrador</td></tr>
+  </tbody>
+</table>
+
+<h3>CategoryAttrPanel — elemento distintivo</h3>
+<p>El componente más sofisticado del frontend. Recibe la categoría y los atributos de un producto y elige automáticamente cómo mostrarlos según el tipo de producto:</p>
+<ul>
+  <li><strong>Electrónica</strong>: cuadrícula de métricas numéricas (RAM, procesador, pulgadas)</li>
+  <li><strong>Ropa</strong>: selector visual de tallas + swatches de color</li>
+  <li><strong>Libros</strong>: autor en grande, páginas en monospace, ISBN en código</li>
+  <li><strong>Alimentos</strong>: peso con icono de balanza + badges de vegano/sin gluten/orgánico</li>
+  <li><strong>Otros</strong>: cuadrícula genérica de hasta 4 atributos</li>
+</ul>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 8. DECISIONES DE DISEÑO -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>8. Decisiones de diseño</h2>
+
+<div class="decision">
+  <div class="decision-q">¿Por qué dos bases de datos en lugar de solo una?</div>
+  <div class="decision-a">
+    MySQL es excelente para datos relacionales y transacciones ACID. MongoDB es excelente para documentos con esquema variable. Los productos de TiendaYa tienen exactamente esa dualidad: la parte transaccional (pedidos, stock) pertenece a MySQL; la parte de catálogo con atributos heterogéneos pertenece a MongoDB. Usar solo MySQL obligaría a un diseño EAV complejo. Usar solo MongoDB haría el checkout más difícil de garantizar como atómico.
+  </div>
+</div>
+
+<div class="decision">
+  <div class="decision-q">¿Por qué event sourcing para el historial de productos?</div>
+  <div class="decision-a">
+    Una tabla de historial clásica guardaía solo el valor nuevo de cada campo. Event sourcing guarda el estado anterior y nuevo, más un tipo de evento semántico. Esto permite: (1) saber exactamente qué cambió y cuándo, (2) reconstruir el estado completo del producto en cualquier fecha pasada, (3) hacer auditoría visual clara. El costo es almacenamiento adicional, pero a 65 productos con ~7 eventos promedio, es completamente manejable.
+  </div>
+</div>
+
+<div class="decision">
+  <div class="decision-q">¿Por qué bcrypt directo en lugar de passlib?</div>
+  <div class="decision-a">
+    passlib 1.7.4 (la versión estable) es incompatible con bcrypt 4.x y 5.x porque internamente llama a <code>detect_wrap_bug()</code> con una contraseña de más de 72 bytes, y las versiones nuevas de bcrypt rechazan eso. La solución fue usar <code>bcrypt.hashpw()</code> y <code>bcrypt.checkpw()</code> directamente, que son más simples y no tienen esa limitación.
+  </div>
+</div>
+
+<div class="decision">
+  <div class="decision-q">¿Por qué el checkout es un stored procedure y no lógica Python?</div>
+  <div class="decision-a">
+    Mover el checkout al motor de base de datos garantiza atomicidad incluso si el proceso Python se cae a mitad de la operación. Un stored procedure corre dentro de una transacción que MySQL gestiona completamente. Si algo falla, el rollback es automático. Con lógica en Python, habría que manejar el rollback manualmente y siempre existe la posibilidad de un estado inconsistente.
+  </div>
+</div>
+
+<div class="decision">
+  <div class="decision-q">¿Por qué Tailwind CSS v4 en lugar de v3?</div>
+  <div class="decision-a">
+    Tailwind v4 integra directamente con Vite sin necesidad de PostCSS, lo que simplifica la configuración. Los tokens de diseño se definen como variables CSS nativas en <code>@theme{}</code>, lo que significa que son accesibles desde cualquier parte del CSS con <code>var(--color-action)</code>, no solo desde clases de Tailwind. El dark mode se implementa con selector CSS puro (<code>.dark { }</code>) sin necesidad de configuración especial.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- 9. CÓMO CORRER EL PROYECTO -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2>9. Cómo correr el proyecto</h2>
+
+<pre><span class="cmt"># 1. Levantar las bases de datos (Docker)</span>
+docker compose up -d
+
+<span class="cmt"># 2. Iniciar el backend</span>
+<span class="kw">cd</span> backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8001
+
+<span class="cmt"># 3. Iniciar el frontend</span>
+<span class="kw">cd</span> frontend
+npm install
+npm run dev        <span class="cmt"># arranca en localhost:5173</span></pre>
+
+<p>Las interfaces de administración de base de datos están disponibles en:</p>
+<ul>
+  <li><strong>Adminer</strong> (MySQL): <code>http://localhost:8080</code> — servidor: <code>db</code>, usuario: <code>tiendaya</code>, contraseña: <code>tiendaya123</code></li>
+  <li><strong>Mongo Express</strong> (MongoDB): <code>http://localhost:8081</code> — sin contraseña en desarrollo</li>
+</ul>
+
+<div class="callout callout-amber">
+  <strong>Nota sobre el script de migración</strong>
+  El script <code>backend/scripts/migrate_products_to_mongo.py</code> ya fue ejecutado durante la configuración inicial. Los 65 productos y sus eventos ya están en MongoDB. Si se necesita volver a ejecutar, usar la bandera <code>--reset</code> para limpiar la colección antes de migrar.
+</div>
+
+</body>
+</html>

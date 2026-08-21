@@ -1,3 +1,4 @@
+import { Leaf, Wheat, Recycle, Scale } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 /* ── Renders por familia de categoría ─────────────────────────────── */
@@ -138,18 +139,18 @@ function LibrosPanel({ atributos }) {
 }
 
 function AlimentosPanel({ atributos }) {
-  const icons = [
-    { key: 'apto_vegano',  label: 'Vegano',      icon: '🌿', color: 'text-green-600 bg-green-50' },
-    { key: 'sin_gluten',   label: 'Sin gluten',   icon: '🌾', color: 'text-amber-600 bg-amber-50' },
-    { key: 'organico',     label: 'Orgánico',     icon: '♻️', color: 'text-teal-600 bg-teal-50'  },
+  const flags = [
+    { key: 'apto_vegano', label: 'Vegano',     Icon: Leaf,    color: 'text-green-600 bg-green-50' },
+    { key: 'sin_gluten',  label: 'Sin gluten', Icon: Wheat,   color: 'text-amber-600 bg-amber-50' },
+    { key: 'organico',    label: 'Orgánico',   Icon: Recycle, color: 'text-teal-600 bg-teal-50'  },
   ]
-  const activeFlags = icons.filter(i => atributos?.[i.key])
+  const activeFlags = flags.filter(f => atributos?.[f.key])
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {atributos?.peso_g && (
           <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-2">
-            <span className="text-lg">⚖️</span>
+            <Scale size={18} className="text-[var(--color-text-muted)]" strokeWidth={1.5} />
             <div>
               <p className="font-mono font-bold text-lg text-[var(--color-text-primary)] leading-none">
                 {atributos.peso_g >= 1000 ? `${atributos.peso_g/1000}kg` : `${atributos.peso_g}g`}
@@ -158,12 +159,15 @@ function AlimentosPanel({ atributos }) {
             </div>
           </div>
         )}
-        {activeFlags.map(flag => (
-          <div key={flag.key} className={cn('flex items-center gap-1.5 rounded-[var(--radius-md)] px-3 py-2', flag.color)}>
-            <span className="text-base">{flag.icon}</span>
-            <span className="text-xs font-sans font-semibold">{flag.label}</span>
-          </div>
-        ))}
+        {activeFlags.map(flag => {
+          const { Icon } = flag
+          return (
+            <div key={flag.key} className={cn('flex items-center gap-1.5 rounded-[var(--radius-md)] px-3 py-2', flag.color)}>
+              <Icon size={14} strokeWidth={2} />
+              <span className="text-xs font-sans font-semibold">{flag.label}</span>
+            </div>
+          )
+        })}
       </div>
       {atributos?.origen && (
         <p className="text-sm font-sans text-[var(--color-text-secondary)]">

@@ -77,7 +77,7 @@ export default function CartPage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-2xl">📦</span>
+                    <ShoppingBag size={24} className="text-[var(--color-text-muted)]" strokeWidth={1.5} />
                   )}
                 </div>
 

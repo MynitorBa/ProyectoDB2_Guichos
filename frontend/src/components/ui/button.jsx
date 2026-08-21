@@ -46,12 +46,16 @@ const Button = forwardRef(function Button(
       disabled={loading || props.disabled}
       {...props}
     >
-      {loading && (
-        <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
-        </svg>
+      {asChild ? children : (
+        <>
+          {loading && (
+            <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+            </svg>
+          )}
+          {children}
+        </>
       )}
-      {children}
     </Comp>
   )
 })
