@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.db_mongo import close_mongo
+from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin
 
 app = FastAPI(
@@ -38,6 +38,11 @@ app.include_router(products.router,   prefix='/api/v1')
 app.include_router(orders.router,     prefix='/api/v1')
 app.include_router(cart.router,       prefix='/api/v1')
 app.include_router(admin.router,      prefix='/api/v1')
+
+
+@app.on_event('startup')
+def startup():
+    ensure_indexes(get_mongo_db())
 
 
 @app.on_event('shutdown')

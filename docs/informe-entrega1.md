@@ -62,7 +62,94 @@ Las decisiones de modelado dentro de MongoDB siguieron tres criterios: frecuenci
 
 ---
 
-## 5. Historial de Cambios — Event Sourcing
+## 5. Índices y Consultas de Agregación
+
+### Índice compuesto — patrón de consulta del catálogo
+
+El patrón de consulta más frecuente del catálogo es: *"dame los productos disponibles de la categoría X, ordenados por precio"*. Sin un índice, MongoDB haría un collection scan sobre los 65 documentos (y eventualmente miles) para filtrar y ordenar. Se creó el siguiente índice compuesto:
+
+```javascript
+db.productos.createIndex(
+  { "categoria.slug": 1, "disponible": 1, "precio": 1 },
+  { name: "idx_categoria_disponible_precio" }
+)
+```
+
+Los tres campos van en ese orden porque MongoDB puede usar el índice para:
+- **Filtrado exacto** por `categoria.slug` (el filtro más selectivo)
+- **Filtrado booleano** por `disponible`
+- **Ordenamiento** por `precio` sin un stage adicional de SORT
+
+Esto es un índice compuesto ESR (Equality → Sort → Range), el patrón de diseño recomendado para índices de consulta en MongoDB.
+
+Adicionalmente, se creó un índice de texto en `nombre` y `descripcion` para búsqueda fulltext:
+```javascript
+db.productos.createIndex(
+  { "nombre": "text", "descripcion": "text" },
+  { name: "idx_texto_nombre_descripcion", default_language: "spanish" }
+)
+```
+
+Y un índice compuesto en `producto_eventos` para acelerar las reconstrucciones históricas:
+```javascript
+db.producto_eventos.createIndex(
+  { "producto_id": 1, "timestamp": 1 },
+  { name: "idx_producto_timestamp" }
+)
+```
+
+Los tres índices se crean automáticamente al arrancar la API (`@app.on_event('startup')`) mediante `pymongo.create_index()`, que es idempotente.
+
+<!-- CAPTURA: Resultado de db.productos.getIndexes() en mongosh mostrando los tres índices creados -->
+
+### Consulta de agregación — estadísticas del catálogo
+
+El panel administrativo usa el siguiente pipeline de agregación con `$facet` para obtener métricas del catálogo en una sola query:
+
+```javascript
+db.productos.aggregate([
+  { $facet: {
+    "por_categoria": [
+      { $group: { _id: "$categoria.slug", total: { $sum: 1 },
+                  precio_promedio: { $avg: "$precio" } } },
+      { $sort: { total: -1 } }
+    ],
+    "top_productos_precio": [
+      { $sort: { precio: -1 } },
+      { $limit: 5 },
+      { $project: { nombre: 1, precio: 1, categoria: "$categoria.nombre" } }
+    ],
+    "resumen_global": [
+      { $group: { _id: null,
+                  total_productos: { $sum: 1 },
+                  total_disponibles: { $sum: { $cond: ["$disponible", 1, 0] } },
+                  precio_promedio_global: { $avg: "$precio" } } }
+    ]
+  }}
+])
+```
+
+Este pipeline usa `$facet` (procesamiento paralelo de múltiples pipelines sobre el mismo conjunto de datos), `$group` con acumuladores, `$sort`, `$limit` y `$project` — cuatro de los stages fundamentales del aggregation framework.
+
+<!-- CAPTURA: Output de la query de agregación en mongosh o en la respuesta del endpoint /api/v1/admin/stats mostrando las tres facetas -->
+
+---
+
+## 6. Referencia Cruzada MySQL ↔ MongoDB
+
+Al crear un pedido, la tabla `pedido_lineas` en MySQL necesita referenciar el producto en MongoDB. Como no existe FK inter-motor, la solución usa dos mecanismos complementarios:
+
+**Columna `producto_ref CHAR(24)`**: guarda el ObjectId de MongoDB como string hexadecimal de 24 caracteres. Es una referencia lógica sin validación automática.
+
+**Snapshot desnormalizado**: `producto_nombre` y `precio_unitario` se congelan en el momento de la compra. Esto garantiza que el historial de pedidos sea legible aunque el producto cambie de nombre o sea descontinuado.
+
+La validación de que `producto_ref` apunta a un documento válido se hace en la capa de aplicación (FastAPI verifica en MongoDB antes de llamar al stored procedure de MySQL). La documentación detallada está en `docs/07-referencia-sql-mongo.md`.
+
+<!-- CAPTURA: Resultado de SELECT linea_id, pedido_id, producto_ref, producto_nombre, precio_unitario FROM pedido_lineas LIMIT 5 en MySQL mostrando la columna producto_ref con valores de ObjectId -->
+
+---
+
+## 7. Historial de Cambios — Event Sourcing
 
 El historial de cambios de productos se implementó con event sourcing sobre la colección `producto_eventos`. Cada modificación a un producto genera un nuevo documento de evento; los documentos existentes nunca se modifican ni eliminan.
 
@@ -78,7 +165,7 @@ Esta arquitectura permite responder con exactitud preguntas como "¿cuánto cost
 
 ---
 
-## 6. Evidencias de Funcionamiento
+## 8. Evidencias de Funcionamiento
 
 Esta sección consolida las capturas de pantalla que demuestran el sistema funcionando de extremo a extremo.
 
