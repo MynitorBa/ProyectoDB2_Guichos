@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Enum, DateTime, ForeignKey, Boolean, Integer, TinyInteger
+from sqlalchemy import String, Enum, DateTime, ForeignKey, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base

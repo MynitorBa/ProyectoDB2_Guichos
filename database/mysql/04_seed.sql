@@ -20,21 +20,21 @@ INSERT INTO metodos_pago (id, nombre) VALUES
 -- ─── USUARIOS (15) ───────────────────────────────────────────────────────────
 -- password_hash = bcrypt de "password123" (pre-generado para seed)
 INSERT INTO usuarios (id, email, password_hash, nombre, apellido, telefono, estado, email_verificado) VALUES
-  (1,  'admin@tiendaya.gt',      '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Ana',     'García',    '50212340001', 'activo', 1),
-  (2,  'vendedor1@tiendaya.gt',  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Carlos',  'López',     '50212340002', 'activo', 1),
-  (3,  'vendedor2@tiendaya.gt',  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'María',   'Hernández', '50212340003', 'activo', 1),
-  (4,  'vendedor3@tiendaya.gt',  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Jorge',   'Martínez',  '50212340004', 'activo', 1),
-  (5,  'vendedor4@tiendaya.gt',  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Sofia',   'Pérez',     '50212340005', 'activo', 1),
-  (6,  'vendedor5@tiendaya.gt',  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Luis',    'Ramírez',   '50212340006', 'activo', 1),
-  (7,  'comprador1@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Pedro',   'Rodríguez', '50212340007', 'activo', 1),
-  (8,  'comprador2@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Laura',   'González',  '50212340008', 'activo', 1),
-  (9,  'comprador3@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Roberto', 'Sánchez',   '50212340009', 'activo', 1),
-  (10, 'comprador4@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Carmen',  'Torres',    '50212340010', 'activo', 1),
-  (11, 'comprador5@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Miguel',  'Flores',    '50212340011', 'activo', 1),
-  (12, 'comprador6@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Isabel',  'Díaz',      '50212340012', 'activo', 1),
-  (13, 'comprador7@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Andrés',  'Morales',   '50212340013', 'activo', 1),
-  (14, 'comprador8@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Patricia','Jiménez',   '50212340014', 'activo', 1),
-  (15, 'comprador9@gmail.com',   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMUvZVAQhkHxeq0Tkg.tBs9ZKW', 'Fernando','Vargas',    '50212340015', 'activo', 1);
+  (1,  'admin@tiendaya.gt',      '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Ana',     'García',    '50212340001', 'activo', 1),
+  (2,  'vendedor1@tiendaya.gt',  '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Carlos',  'López',     '50212340002', 'activo', 1),
+  (3,  'vendedor2@tiendaya.gt',  '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'María',   'Hernández', '50212340003', 'activo', 1),
+  (4,  'vendedor3@tiendaya.gt',  '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Jorge',   'Martínez',  '50212340004', 'activo', 1),
+  (5,  'vendedor4@tiendaya.gt',  '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Sofia',   'Pérez',     '50212340005', 'activo', 1),
+  (6,  'vendedor5@tiendaya.gt',  '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Luis',    'Ramírez',   '50212340006', 'activo', 1),
+  (7,  'comprador1@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Pedro',   'Rodríguez', '50212340007', 'activo', 1),
+  (8,  'comprador2@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Laura',   'González',  '50212340008', 'activo', 1),
+  (9,  'comprador3@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Roberto', 'Sánchez',   '50212340009', 'activo', 1),
+  (10, 'comprador4@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Carmen',  'Torres',    '50212340010', 'activo', 1),
+  (11, 'comprador5@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Miguel',  'Flores',    '50212340011', 'activo', 1),
+  (12, 'comprador6@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Isabel',  'Díaz',      '50212340012', 'activo', 1),
+  (13, 'comprador7@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Andrés',  'Morales',   '50212340013', 'activo', 1),
+  (14, 'comprador8@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Patricia','Jiménez',   '50212340014', 'activo', 1),
+  (15, 'comprador9@gmail.com',   '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru', 'Fernando','Vargas',    '50212340015', 'activo', 1);
 
 -- ─── ASIGNACIÓN DE ROLES ──────────────────────────────────────────────────────
 INSERT INTO usuario_rol (usuario_id, rol_id) VALUES
