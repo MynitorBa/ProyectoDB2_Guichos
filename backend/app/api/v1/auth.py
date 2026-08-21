@@ -1,0 +1,66 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.core.db_mysql import get_db
+from app.core.security import hash_password, verify_password, create_access_token
+from app.core.deps import get_current_user
+from app.models.usuario import Usuario, Rol, UsuarioRol
+from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse
+
+router = APIRouter(prefix='/auth', tags=['Auth'])
+
+
+@router.post('/register', response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(Usuario).filter_by(email=payload.email).first():
+        raise HTTPException(status_code=400, detail='El email ya está registrado.')
+
+    rol_comprador = db.query(Rol).filter_by(nombre='comprador').first()
+    if not rol_comprador:
+        raise HTTPException(status_code=500, detail='Rol comprador no encontrado.')
+
+    usuario = Usuario(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        nombre=payload.nombre,
+        apellido=payload.apellido,
+        telefono=payload.telefono,
+    )
+    db.add(usuario)
+    db.flush()
+    db.add(UsuarioRol(usuario_id=usuario.id, rol_id=rol_comprador.id))
+    db.commit()
+    db.refresh(usuario)
+
+    return UserResponse(
+        id=usuario.id,
+        email=usuario.email,
+        nombre=usuario.nombre,
+        apellido=usuario.apellido,
+        roles=[r.nombre for r in usuario.roles],
+        estado=usuario.estado,
+    )
+
+
+@router.post('/login', response_model=TokenResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter_by(email=payload.email).first()
+    if not usuario or not verify_password(payload.password, usuario.password_hash):
+        raise HTTPException(status_code=401, detail='Credenciales incorrectas.')
+    if usuario.estado != 'activo':
+        raise HTTPException(status_code=403, detail='Cuenta inactiva o suspendida.')
+
+    token = create_access_token({'sub': str(usuario.id)})
+    return TokenResponse(access_token=token)
+
+
+@router.get('/me', response_model=UserResponse)
+def me(current_user: Usuario = Depends(get_current_user)):
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        nombre=current_user.nombre,
+        apellido=current_user.apellido,
+        roles=[r.nombre for r in current_user.roles],
+        estado=current_user.estado,
+    )

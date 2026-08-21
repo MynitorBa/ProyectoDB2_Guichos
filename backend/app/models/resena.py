@@ -1,0 +1,17 @@
+from datetime import datetime
+from sqlalchemy import ForeignKey, DateTime, Text, SmallInteger, Boolean
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.db_mysql import Base
+
+
+class Resena(Base):
+    __tablename__ = 'resenas'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey('usuarios.id'))
+    producto_id: Mapped[int] = mapped_column(ForeignKey('productos.id'))
+    calificacion: Mapped[int] = mapped_column(SmallInteger)
+    comentario: Mapped[str | None] = mapped_column(Text)
+    aprobada: Mapped[bool] = mapped_column(Boolean, default=False)
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
