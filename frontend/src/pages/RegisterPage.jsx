@@ -1,55 +1,168 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { register, login, me } from '../api/auth'
-import { useAuth } from '../context/AuthContext'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { Link, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
+import { register } from '../api/auth'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+
+const schema = z
+  .object({
+    nombre: z.string().min(1, 'El nombre es requerido'),
+    apellido: z.string().min(1, 'El apellido es requerido'),
+    email: z.string().email('Ingresa un correo electrónico válido'),
+    password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+    confirmPassword: z.string().min(1, 'Confirma tu contraseña'),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: 'Las contraseñas no coinciden',
+    path: ['confirmPassword'],
+  })
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({ email: '', password: '', nombre: '', apellido: '' })
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const { signIn } = useAuth()
   const navigate = useNavigate()
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const {
+    register: reg,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({ resolver: zodResolver(schema) })
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  async function onSubmit(values) {
     try {
-      await register(form)
-      const { data } = await login(form.email, form.password)
-      localStorage.setItem('token', data.access_token)
-      const { data: userData } = await me()
-      signIn(data.access_token, userData)
-      navigate('/')
+      await register({
+        nombre: values.nombre,
+        apellido: values.apellido,
+        email: values.email,
+        password: values.password,
+      })
+      toast.success('Cuenta creada exitosamente. Inicia sesión.')
+      navigate('/login')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error al registrarse.')
-    } finally {
-      setLoading(false)
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        'No se pudo crear la cuenta. Intenta de nuevo.'
+      setError('root', { message: msg })
     }
   }
 
   return (
-    <div style={{ maxWidth: 440, margin: '4rem auto' }}>
-      <div className="card">
-        <h2 style={{ marginBottom: '1.5rem' }}>Crear cuenta</h2>
-        {error && <div className="alert alert-error">{error}</div>}
-        <form onSubmit={handleSubmit}>
-          {[['nombre', 'Nombre'], ['apellido', 'Apellido'], ['email', 'Email'], ['password', 'Contraseña']].map(([k, lbl]) => (
-            <div className="form-group" key={k}>
-              <label>{lbl}</label>
-              <input type={k === 'password' ? 'password' : k === 'email' ? 'email' : 'text'}
-                value={form[k]} onChange={set(k)} required />
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="font-display font-bold text-3xl text-[var(--color-text-primary)] mb-2">
+            Crear cuenta
+          </h1>
+          <p className="font-sans text-sm text-[var(--color-text-secondary)]">
+            Únete a TiendaYa y empieza a comprar
+          </p>
+        </div>
+
+        <div className="bg-[var(--color-surface)] rounded-[var(--radius-xl)] border border-[var(--color-border)] shadow-[var(--shadow-md)] p-8">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="nombre">Nombre</Label>
+                <Input
+                  id="nombre"
+                  placeholder="Juan"
+                  error={!!errors.nombre}
+                  {...reg('nombre')}
+                />
+                {errors.nombre && (
+                  <p className="mt-1 text-xs font-sans text-[var(--color-error)]">
+                    {errors.nombre.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="apellido">Apellido</Label>
+                <Input
+                  id="apellido"
+                  placeholder="García"
+                  error={!!errors.apellido}
+                  {...reg('apellido')}
+                />
+                {errors.apellido && (
+                  <p className="mt-1 text-xs font-sans text-[var(--color-error)]">
+                    {errors.apellido.message}
+                  </p>
+                )}
+              </div>
             </div>
-          ))}
-          <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
-            {loading ? 'Creando cuenta...' : 'Registrarse'}
-          </button>
-        </form>
-        <p style={{ marginTop: '1rem', textAlign: 'center' }}>
-          ¿Ya tienes cuenta? <Link to="/login">Ingresar</Link>
-        </p>
+
+            <div>
+              <Label htmlFor="email">Correo electrónico</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="tu@correo.com"
+                error={!!errors.email}
+                {...reg('email')}
+              />
+              {errors.email && (
+                <p className="mt-1 text-xs font-sans text-[var(--color-error)]">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="password">Contraseña</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Mínimo 6 caracteres"
+                error={!!errors.password}
+                {...reg('password')}
+              />
+              {errors.password && (
+                <p className="mt-1 text-xs font-sans text-[var(--color-error)]">
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="Repite tu contraseña"
+                error={!!errors.confirmPassword}
+                {...reg('confirmPassword')}
+              />
+              {errors.confirmPassword && (
+                <p className="mt-1 text-xs font-sans text-[var(--color-error)]">
+                  {errors.confirmPassword.message}
+                </p>
+              )}
+            </div>
+
+            {errors.root && (
+              <div className="rounded-[var(--radius-md)] bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 px-4 py-3">
+                <p className="text-sm font-sans text-[var(--color-error)]">
+                  {errors.root.message}
+                </p>
+              </div>
+            )}
+
+            <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+              Crear cuenta
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center font-sans text-sm text-[var(--color-text-secondary)]">
+            ¿Ya tienes cuenta?{' '}
+            <Link to="/login" className="text-[var(--color-action)] font-semibold hover:underline">
+              Iniciar sesión
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   )

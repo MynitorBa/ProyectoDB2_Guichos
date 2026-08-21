@@ -1,14 +1,18 @@
 import { BrowserRouter } from 'react-router-dom'
 import Router from './router'
-import Navbar from './components/Navbar'
+import { Header } from './components/layout/Header'
+import { Footer } from './components/layout/Footer'
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Navbar />
-      <main style={{ padding: '1rem', maxWidth: 1200, margin: '0 auto' }}>
-        <Router />
-      </main>
+      <div className="min-h-screen flex flex-col bg-[var(--color-background)]">
+        <Header />
+        <main className="flex-1">
+          <Router />
+        </main>
+        <Footer />
+      </div>
     </BrowserRouter>
   )
 }

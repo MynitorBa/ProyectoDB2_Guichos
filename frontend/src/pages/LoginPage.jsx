@@ -1,57 +1,113 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { Link, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { login, me } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+
+const schema = z.object({
+  email: z.string().email('Ingresa un correo electrónico válido'),
+  password: z.string().min(1, 'La contraseña es requerida'),
+})
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const { signIn } = useAuth()
   const navigate = useNavigate()
+  const { signIn } = useAuth()
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({ resolver: zodResolver(schema) })
+
+  async function onSubmit(values) {
     try {
-      const { data } = await login(email, password)
-      localStorage.setItem('token', data.access_token)
-      const { data: userData } = await me()
-      signIn(data.access_token, userData)
+      const res = await login(values.email, values.password)
+      const { access_token } = res.data
+      const userData = await me().then((r) => r.data)
+      signIn(access_token, userData)
+      toast.success('Bienvenido de vuelta')
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error al iniciar sesión.')
-    } finally {
-      setLoading(false)
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        'Credenciales incorrectas. Intenta de nuevo.'
+      setError('root', { message: msg })
     }
   }
 
   return (
-    <div style={{ maxWidth: 400, margin: '4rem auto' }}>
-      <div className="card">
-        <h2 style={{ marginBottom: '1.5rem' }}>Iniciar sesión</h2>
-        {error && <div className="alert alert-error">{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <div className="form-group">
-            <label>Contraseña</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
-          <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
-            {loading ? 'Ingresando...' : 'Ingresar'}
-          </button>
-        </form>
-        <p style={{ marginTop: '1rem', textAlign: 'center' }}>
-          ¿No tienes cuenta? <Link to="/register">Regístrate</Link>
-        </p>
-        <p style={{ marginTop: '.5rem', fontSize: '.8rem', color: '#6c757d', textAlign: 'center' }}>
-          Admin: admin@tiendaya.gt / password123
-        </p>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="font-display font-bold text-3xl text-[var(--color-text-primary)] mb-2">
+            Iniciar sesión
+          </h1>
+          <p className="font-sans text-sm text-[var(--color-text-secondary)]">
+            Accede a tu cuenta de TiendaYa
+          </p>
+        </div>
+
+        <div className="bg-[var(--color-surface)] rounded-[var(--radius-xl)] border border-[var(--color-border)] shadow-[var(--shadow-md)] p-8">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            <div>
+              <Label htmlFor="email">Correo electrónico</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="tu@correo.com"
+                error={!!errors.email}
+                {...register('email')}
+              />
+              {errors.email && (
+                <p className="mt-1.5 text-xs font-sans text-[var(--color-error)]">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="password">Contraseña</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                error={!!errors.password}
+                {...register('password')}
+              />
+              {errors.password && (
+                <p className="mt-1.5 text-xs font-sans text-[var(--color-error)]">
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            {errors.root && (
+              <div className="rounded-[var(--radius-md)] bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 px-4 py-3">
+                <p className="text-sm font-sans text-[var(--color-error)]">
+                  {errors.root.message}
+                </p>
+              </div>
+            )}
+
+            <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
+              Entrar
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center font-sans text-sm text-[var(--color-text-secondary)]">
+            ¿No tienes cuenta?{' '}
+            <Link to="/register" className="text-[var(--color-action)] font-semibold hover:underline">
+              Crear cuenta gratis
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   )
