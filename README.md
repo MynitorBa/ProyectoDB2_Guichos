@@ -17,18 +17,6 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, pedidos, inventario)
 - Node.js 20+
 - Git
 
-## Instalación rápida
-
-```powershell
-# 1. Clonar o ubicarse en la carpeta del proyecto
-cd "C:\Users\mynit\OneDrive\Escritorio\UNIS\Segundo Semestre 2026\Bases de Datos 2\proyecto"
-
-# 2. Setup completo (solo la primera vez o después de reset)
-.\scripts\setup.ps1
-
-# 3. Arrancar el sistema
-.\scripts\start-dev.ps1
-```
 
 ## URLs del sistema
 
