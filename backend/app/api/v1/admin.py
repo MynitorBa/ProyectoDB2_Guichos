@@ -1,15 +1,90 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from pymongo.database import Database
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
+from app.core.db_mysql import get_db
 from app.core.deps import get_admin_user
-from app.models.usuario import Usuario
+from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
+
+
+class RolesUpdate(BaseModel):
+    roles: list[str]
+
+
+# ── Gestión de usuarios ───────────────────────────────────────────────────────
+
+@router.get('/users')
+def list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    total = db.query(func.count(Usuario.id)).scalar()
+    usuarios = (
+        db.query(Usuario)
+        .order_by(Usuario.fecha_alta.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        'items': [
+            {
+                'id': u.id,
+                'nombre': u.nombre,
+                'apellido': u.apellido,
+                'email': u.email,
+                'estado': u.estado,
+                'roles': [r.nombre for r in u.roles],
+                'fecha_alta': u.fecha_alta.isoformat() if u.fecha_alta else None,
+            }
+            for u in usuarios
+        ],
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': max(1, -(-total // page_size)),
+    }
+
+
+@router.patch('/users/{user_id}/roles')
+def update_user_roles(
+    user_id: int,
+    payload: RolesUpdate,
+    current_user: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    if user_id == current_user.id and 'administrador' not in payload.roles:
+        raise HTTPException(400, 'No puedes quitarte el rol de administrador a ti mismo.')
+
+    usuario = db.get(Usuario, user_id)
+    if not usuario:
+        raise HTTPException(404, 'Usuario no encontrado.')
+
+    roles_objs = db.query(Rol).filter(Rol.nombre.in_(payload.roles)).all()
+    nombres_encontrados = {r.nombre for r in roles_objs}
+    invalidos = set(payload.roles) - nombres_encontrados
+    if invalidos:
+        raise HTTPException(400, f'Roles no reconocidos: {", ".join(invalidos)}')
+
+    db.query(UsuarioRol).filter(UsuarioRol.usuario_id == user_id).delete()
+    db.flush()
+    for rol in roles_objs:
+        db.add(UsuarioRol(usuario_id=user_id, rol_id=rol.id))
+
+    db.commit()
+    db.refresh(usuario)
+    return {'id': usuario.id, 'roles': [r.nombre for r in usuario.roles]}
 
 
 # ── Estadísticas del catálogo ─────────────────────────────────────────────────

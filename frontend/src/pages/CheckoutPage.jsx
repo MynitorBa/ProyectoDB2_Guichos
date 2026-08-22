@@ -162,12 +162,14 @@ export default function CheckoutPage() {
       setSuccessData(res.data)
       await fetchCart()
     } catch (err) {
-      const detail = err?.response?.data?.detail
+      const raw = err?.response?.data?.detail
       const msg =
-        typeof detail === 'string'
-          ? detail
-          : typeof detail === 'object'
-          ? JSON.stringify(detail)
+        typeof raw === 'string'
+          ? raw
+          : typeof raw?.detail === 'string'
+          ? raw.detail
+          : Array.isArray(raw)
+          ? 'Datos de envío inválidos. Verifica tu dirección y método de pago.'
           : 'No se pudo procesar el pedido. Intenta de nuevo.'
       setError(msg)
       toast.error(msg)
@@ -284,7 +286,7 @@ export default function CheckoutPage() {
                 <Button
                   size="md"
                   className="mt-5 w-full sm:w-auto"
-                  disabled={!selectedAddress && addresses.length > 0}
+                  disabled={!selectedAddress}
                   onClick={() => setStep(2)}
                 >
                   Continuar <ChevronRight size={14} />
@@ -388,7 +390,7 @@ export default function CheckoutPage() {
                     size="md"
                     className="flex-1"
                     loading={submitting}
-                    disabled={items.length === 0}
+                    disabled={submitting || items.length === 0}
                     onClick={handleConfirm}
                   >
                     <CheckCircle size={16} /> Confirmar pedido

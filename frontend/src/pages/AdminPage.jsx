@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { BarChart2, Package, History } from 'lucide-react'
+import { BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User } from 'lucide-react'
+import { toast } from 'sonner'
 import { getCatalogStats, getProducts } from '../api/products'
+import { getAdminUsers, updateUserRoles } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
@@ -14,9 +16,17 @@ import { formatQ } from '../lib/utils'
 import { cn } from '../lib/utils'
 
 const NAV_ITEMS = [
-  { id: 'stats', label: 'Estadísticas', icon: BarChart2 },
-  { id: 'products', label: 'Productos', icon: Package },
+  { id: 'stats',    label: 'Estadísticas', icon: BarChart2 },
+  { id: 'products', label: 'Productos',    icon: Package   },
+  { id: 'users',    label: 'Usuarios',     icon: Users     },
 ]
+
+const ROLE_META = {
+  administrador: { label: 'Admin',    Icon: ShieldCheck,   active: 'bg-[var(--color-action)] text-white border-[var(--color-action)]',    inactive: 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-action)] hover:text-[var(--color-action)]' },
+  vendedor:      { label: 'Vendedor', Icon: ShoppingBag,   active: 'bg-[var(--color-jade)] text-white border-[var(--color-jade)]',          inactive: 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-jade)] hover:text-[var(--color-jade)]' },
+  comprador:     { label: 'Comprador', Icon: User,          active: 'bg-[var(--color-border-strong)] text-[var(--color-text-primary)] border-[var(--color-border-strong)]', inactive: 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-primary)]' },
+}
+const ALL_ROLES = ['comprador', 'vendedor', 'administrador']
 
 function StatCard({ label, value, sub }) {
   return (
@@ -322,6 +332,127 @@ function ProductsSection() {
   )
 }
 
+function UsersSection() {
+  const [page, setPage] = useState(1)
+  const queryClient = useQueryClient()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-users', page],
+    queryFn: () => getAdminUsers(page).then((r) => r.data),
+    placeholderData: keepPreviousData,
+  })
+
+  const mutation = useMutation({
+    mutationFn: ({ userId, roles }) => updateUserRoles(userId, roles),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
+    onError: (err) => toast.error(err?.response?.data?.detail || 'No se pudo actualizar los roles.'),
+  })
+
+  function toggleRole(user, role) {
+    const current = new Set(user.roles)
+    if (current.has(role)) current.delete(role)
+    else current.add(role)
+    mutation.mutate({ userId: user.id, roles: [...current] })
+  }
+
+  const users = data?.items || []
+  const totalPages = data?.total_pages || 1
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[var(--color-background)]">
+                {['Usuario', 'Email', 'Estado', 'Roles (clic para cambiar)'].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)] whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user, idx) => (
+                <tr
+                  key={user.id}
+                  className={cn(
+                    'border-b border-[var(--color-border)] last:border-0',
+                    idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]'
+                  )}
+                >
+                  <td className="px-4 py-3">
+                    <p className="font-display font-semibold text-[var(--color-text-primary)]">
+                      {user.nombre} {user.apellido}
+                    </p>
+                    <p className="font-mono text-[10px] text-[var(--color-text-muted)]">#{user.id}</p>
+                  </td>
+                  <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)] text-xs">
+                    {user.email}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant={user.estado === 'activo' ? 'success' : 'error'}>
+                      {user.estado}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {ALL_ROLES.map((role) => {
+                        const meta = ROLE_META[role]
+                        const { Icon } = meta
+                        const hasRole = user.roles.includes(role)
+                        return (
+                          <button
+                            key={role}
+                            onClick={() => toggleRole(user, role)}
+                            disabled={mutation.isPending}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-sans font-semibold border transition-all duration-150 disabled:opacity-50',
+                              hasRole ? meta.active : meta.inactive
+                            )}
+                          >
+                            <Icon size={11} strokeWidth={2} />
+                            {meta.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-5">
+          <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            Anterior
+          </Button>
+          <span className="font-sans text-sm text-[var(--color-text-secondary)]">{page} / {totalPages}</span>
+          <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            Siguiente
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const [activeSection, setActiveSection] = useState('stats')
 
@@ -364,6 +495,7 @@ export default function AdminPage() {
           </h2>
           {activeSection === 'stats' && <StatsSection />}
           {activeSection === 'products' && <ProductsSection />}
+          {activeSection === 'users' && <UsersSection />}
         </main>
       </div>
     </div>

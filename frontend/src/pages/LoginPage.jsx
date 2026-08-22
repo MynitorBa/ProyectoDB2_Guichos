@@ -29,11 +29,14 @@ export default function LoginPage() {
     try {
       const res = await login(values.email, values.password)
       const { access_token } = res.data
+      // Guardar token antes de llamar me() para que el interceptor lo incluya
+      localStorage.setItem('token', access_token)
       const userData = await me().then((r) => r.data)
       signIn(access_token, userData)
       toast.success('Bienvenido de vuelta')
       navigate('/')
     } catch (err) {
+      localStorage.removeItem('token')
       const msg =
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
