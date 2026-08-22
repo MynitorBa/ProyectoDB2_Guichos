@@ -8,6 +8,7 @@ from app.models.pedido import Pedido, PedidoLinea
 from app.models.pago import MetodoPago, Pago
 from app.models.carrito import Carrito, CarritoItem
 from app.models.resena import Resena
+from app.models.notificacion import Notificacion
 
 __all__ = [
     'Usuario', 'Rol', 'UsuarioRol',
@@ -18,4 +19,5 @@ __all__ = [
     'MetodoPago', 'Pago',
     'Carrito', 'CarritoItem',
     'Resena',
+    'Notificacion',
 ]

@@ -1,39 +1,69 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Package, ChevronRight } from 'lucide-react'
-import { getOrders } from '../api/orders'
+import { Package, ChevronRight, FileDown } from 'lucide-react'
+import { toast } from 'sonner'
+import { getOrders, getOrderInvoice } from '../api/orders'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { formatQ, formatDate } from '../lib/utils'
 
 const ESTADO_BADGE = {
-  pendiente: 'warning',
-  confirmado: 'action',
-  en_preparacion: 'action',
-  enviado: 'jade',
-  entregado: 'success',
-  cancelado: 'error',
-  reembolsado: 'default',
+  pendiente:       'warning',
+  confirmado:      'action',
+  en_preparacion:  'action',
+  enviado:         'jade',
+  entregado:       'success',
+  cancelado:       'error',
+  reembolsado:     'default',
 }
 
 const ESTADO_LABEL = {
-  pendiente: 'Pendiente',
-  confirmado: 'Confirmado',
-  en_preparacion: 'En preparación',
-  enviado: 'Enviado',
-  entregado: 'Entregado',
-  cancelado: 'Cancelado',
-  reembolsado: 'Reembolsado',
+  pendiente:       'Pendiente',
+  confirmado:      'Confirmado',
+  en_preparacion:  'En preparación',
+  enviado:         'Enviado',
+  entregado:       'Entregado',
+  cancelado:       'Cancelado',
+  reembolsado:     'Reembolsado',
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 export default function OrdersPage() {
+  const [downloadingId, setDownloadingId] = useState(null)
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['orders'],
     queryFn: () => getOrders().then((r) => r.data),
   })
 
   const pedidos = Array.isArray(data) ? data : []
+
+  async function handleDownload(e, pedidoId) {
+    e.preventDefault()
+    e.stopPropagation()
+    setDownloadingId(pedidoId)
+    try {
+      const res = await getOrderInvoice(pedidoId)
+      downloadBlob(res.data, `factura-TiendaYa-${String(pedidoId).padStart(6, '0')}.pdf`)
+      toast.success('Factura descargada correctamente.')
+    } catch {
+      toast.error('No se pudo descargar la factura.')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -105,10 +135,19 @@ export default function OrdersPage() {
                 </p>
               </div>
 
-              <div className="text-right shrink-0 flex items-center gap-3">
+              <div className="flex items-center gap-2 shrink-0">
                 <span className="font-mono font-bold text-base text-[var(--color-text-primary)]">
                   {formatQ(pedido.total)}
                 </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={(e) => handleDownload(e, pedido.id)}
+                  loading={downloadingId === pedido.id}
+                  title="Descargar factura PDF"
+                >
+                  <FileDown size={14} />
+                </Button>
                 <ChevronRight size={16} className="text-[var(--color-text-muted)]" />
               </div>
             </Link>

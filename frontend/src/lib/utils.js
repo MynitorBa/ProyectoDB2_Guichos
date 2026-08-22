@@ -14,7 +14,10 @@ export function formatQ(amount) {
 export function formatDate(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
-  return d.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' })
+  return d.toLocaleDateString('es-GT', {
+    year: 'numeric', month: 'long', day: 'numeric',
+    timeZone: 'America/Guatemala',
+  })
 }
 
 export function formatDatetime(dateStr) {
@@ -22,7 +25,8 @@ export function formatDatetime(dateStr) {
   const d = new Date(dateStr)
   return d.toLocaleString('es-GT', {
     year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'America/Guatemala',
   })
 }
 

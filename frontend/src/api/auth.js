@@ -8,3 +8,6 @@ export const register = (data) =>
 
 export const me = () =>
   api.get('/auth/me')
+
+export const updateProfile = (data) =>
+  api.put('/auth/me', data)

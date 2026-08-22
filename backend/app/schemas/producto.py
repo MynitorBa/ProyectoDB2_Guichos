@@ -13,6 +13,7 @@ class ProductoCreate(BaseModel):
     atributos: dict[str, Any] = {}
     imagenes: list[str] = []
     stock: int = 0
+    vendedor_usuario_id: int | None = None
 
 
 class ProductoUpdate(BaseModel):
@@ -23,6 +24,8 @@ class ProductoUpdate(BaseModel):
     disponible: bool | None = None
     estado: str | None = None
     stock: int | None = None
+    imagenes: list[str] | None = None
+    vendedor_usuario_id: int | None = None
 
 
 class ProductoResponse(BaseModel):

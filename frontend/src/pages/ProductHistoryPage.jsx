@@ -120,7 +120,7 @@ function ReconstructedPanel({ estado, fecha }) {
       <div className="flex items-center gap-2 px-5 py-3 bg-[var(--color-jade)]/10 border-b border-[var(--color-jade)]/30">
         <Calendar size={15} className="text-[var(--color-jade)]" />
         <p className="font-sans text-sm font-semibold text-[var(--color-jade)]">
-          Vista histórica — estado al {formatDate(fecha)}
+          Vista histórica — estado al {formatDatetime(fecha + ':00')}
         </p>
       </div>
       <div className="p-5 space-y-4">
@@ -200,6 +200,16 @@ export default function ProductHistoryPage() {
   const { id } = useParams()
   const [fecha, setFecha] = useState('')
   const [reconstructDate, setReconstructDate] = useState('')
+
+  function maxDatetimeGT() {
+    const now = new Date()
+    const gt = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Guatemala',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(now).replace(' ', 'T')
+    return gt
+  }
   const [reconstructed, setReconstructed] = useState(null)
   const [reconstructing, setReconstructing] = useState(false)
   const [reconstructError, setReconstructError] = useState('')
@@ -316,14 +326,14 @@ export default function ProductHistoryPage() {
               </p>
 
               <form onSubmit={handleReconstruct} className="flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-[180px]">
-                  <Label htmlFor="fecha-reconstruir">Fecha</Label>
+                <div className="flex-1 min-w-[220px]">
+                  <Label htmlFor="fecha-reconstruir">Fecha y hora (horario Guatemala)</Label>
                   <Input
                     id="fecha-reconstruir"
-                    type="date"
+                    type="datetime-local"
                     value={fecha}
                     onChange={(e) => setFecha(e.target.value)}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={maxDatetimeGT()}
                   />
                 </div>
                 <Button type="submit" loading={reconstructing} disabled={!fecha}>

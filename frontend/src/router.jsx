@@ -11,6 +11,8 @@ import OrdersPage from './pages/OrdersPage'
 import OrderDetailPage from './pages/OrderDetailPage'
 import AdminPage from './pages/AdminPage'
 import ProductHistoryPage from './pages/ProductHistoryPage'
+import ProfilePage from './pages/ProfilePage'
+import VendorPage from './pages/VendorPage'
 
 function PrivateRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -32,6 +34,11 @@ export default function Router() {
       <Route path="/checkout" element={<PrivateRoute><CheckoutPage /></PrivateRoute>} />
       <Route path="/orders" element={<PrivateRoute><OrdersPage /></PrivateRoute>} />
       <Route path="/orders/:id" element={<PrivateRoute><OrderDetailPage /></PrivateRoute>} />
+      <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
+      <Route
+        path="/vendor"
+        element={<PrivateRoute roles={['vendedor', 'administrador']}><VendorPage /></PrivateRoute>}
+      />
       <Route
         path="/admin"
         element={<PrivateRoute roles={['administrador']}><AdminPage /></PrivateRoute>}

@@ -35,5 +35,12 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = '0.0.0.0'
     BACKEND_PORT: int = 8000
 
+    # Email (SMTP) — dejar vacío para deshabilitar envío de correos
+    SMTP_HOST: str = 'smtp.gmail.com'
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ''
+    SMTP_PASSWORD: str = ''
+    SMTP_FROM_NAME: str = 'TiendaYa'
+
 
 settings = Settings()

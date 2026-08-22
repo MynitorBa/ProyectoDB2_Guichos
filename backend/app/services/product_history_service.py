@@ -12,11 +12,20 @@ Si el sistema creciera a miles de eventos por producto, se implementaría
 snapshot periódico (por ejemplo, cada 100 eventos) y replay desde el snapshot
 más reciente anterior a la fecha solicitada.
 """
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from bson import ObjectId
 from pymongo.database import Database
+
+GT_TZ = timezone(timedelta(hours=-6))  # America/Guatemala — UTC-6, sin horario de verano
+
+
+def _to_gt(dt: datetime) -> str:
+    """Convierte un datetime naive (UTC) a string ISO con offset Guatemala (-06:00)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(GT_TZ).isoformat()
 
 
 TIPOS_EVENTO = {
@@ -116,7 +125,8 @@ def reconstruir_estado(db: Database, producto_id: str, fecha: datetime) -> dict[
             estado['estado'] = 'descontinuado'
             estado['disponible'] = False
 
-    estado['_reconstruido_al'] = fecha.isoformat()
+    fecha_utc_aware = fecha.replace(tzinfo=timezone.utc) if fecha.tzinfo is None else fecha
+    estado['_reconstruido_al'] = fecha_utc_aware.astimezone(GT_TZ).isoformat()
     estado['_version_aplicada'] = eventos[-1]['version']
     return estado
 
@@ -132,4 +142,6 @@ def obtener_historial(db: Database, producto_id: str) -> list[dict]:
     )
     for e in eventos:
         e['_id'] = str(e['_id'])
+        if isinstance(e.get('timestamp'), datetime):
+            e['timestamp'] = _to_gt(e['timestamp'])
     return eventos

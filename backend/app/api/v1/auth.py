@@ -5,7 +5,7 @@ from app.core.db_mysql import get_db
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.deps import get_current_user
 from app.models.usuario import Usuario, Rol, UsuarioRol
-from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse
+from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse, ProfileUpdateRequest
 
 router = APIRouter(prefix='/auth', tags=['Auth'])
 
@@ -61,6 +61,29 @@ def me(current_user: Usuario = Depends(get_current_user)):
         email=current_user.email,
         nombre=current_user.nombre,
         apellido=current_user.apellido,
+        telefono=current_user.telefono,
+        roles=[r.nombre for r in current_user.roles],
+        estado=current_user.estado,
+    )
+
+
+@router.put('/me', response_model=UserResponse)
+def update_me(
+    payload: ProfileUpdateRequest,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.nombre = payload.nombre
+    current_user.apellido = payload.apellido
+    current_user.telefono = payload.telefono
+    db.commit()
+    db.refresh(current_user)
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        nombre=current_user.nombre,
+        apellido=current_user.apellido,
+        telefono=current_user.telefono,
         roles=[r.nombre for r in current_user.roles],
         estado=current_user.estado,
     )

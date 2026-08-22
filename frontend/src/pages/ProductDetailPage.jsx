@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch } from 'lucide-react'
+import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch, Store } from 'lucide-react'
 import { toast } from 'sonner'
 import { getProduct } from '../api/products'
 import { useCart } from '../context/CartContext'
@@ -187,12 +187,15 @@ export default function ProductDetailPage() {
             </div>
 
             {product.vendedor_nombre && (
-              <p className="font-sans text-sm text-[var(--color-text-secondary)]">
-                Vendedor:{' '}
-                <span className="font-semibold text-[var(--color-text-primary)]">
-                  {product.vendedor_nombre}
-                </span>
-              </p>
+              <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 w-fit">
+                <Store size={15} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
+                <div>
+                  <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] leading-none mb-0.5">Vendedor</p>
+                  <p className="font-display font-semibold text-sm text-[var(--color-text-primary)]">
+                    {product.vendedor_nombre}
+                  </p>
+                </div>
+              </div>
             )}
 
             <CategoryAttrPanel
