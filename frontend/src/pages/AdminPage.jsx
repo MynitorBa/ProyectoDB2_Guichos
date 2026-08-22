@@ -237,7 +237,7 @@ function ProductFormModal({ open, onOpenChange, product, onSuccess }) {
   const isEdit = !!product
   const queryClient = useQueryClient()
 
-  const EMPTY = { sku: '', nombre: '', descripcion: '', precio: '', categoria_slug: '', disponible: true, estado: 'activo', atributos: {} }
+  const EMPTY = { sku: '', nombre: '', descripcion: '', precio: '', categoria_slug: '', disponible: true, estado: 'activo', atributos: {}, stock: '' }
   const [form, setForm] = useState(EMPTY)
 
   useEffect(() => {
@@ -251,6 +251,7 @@ function ProductFormModal({ open, onOpenChange, product, onSuccess }) {
         disponible: product.disponible ?? true,
         estado: product.estado || 'activo',
         atributos: { ...(product.atributos || {}) },
+        stock: isEdit ? (product.stock ?? '') : '',
       } : EMPTY)
     }
   }, [open, product])
@@ -305,8 +306,8 @@ function ProductFormModal({ open, onOpenChange, product, onSuccess }) {
     })
 
     const payload = isEdit
-      ? { nombre: form.nombre, descripcion: form.descripcion, precio: Number(form.precio), disponible: form.disponible, estado: form.estado, atributos }
-      : { sku: form.sku, nombre: form.nombre, descripcion: form.descripcion, precio: Number(form.precio), categoria_slug: form.categoria_slug, atributos }
+      ? { nombre: form.nombre, descripcion: form.descripcion, precio: Number(form.precio), disponible: form.disponible, estado: form.estado, atributos, ...(form.stock !== '' && { stock: Number(form.stock) }) }
+      : { sku: form.sku, nombre: form.nombre, descripcion: form.descripcion, precio: Number(form.precio), categoria_slug: form.categoria_slug, atributos, stock: Number(form.stock) || 0 }
 
     mutation.mutate(payload)
   }
@@ -363,6 +364,13 @@ function ProductFormModal({ open, onOpenChange, product, onSuccess }) {
                 </Select>
               </div>
             )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Stock (unidades)</Label>
+              <Input type="number" min="0" step="1" value={form.stock} onChange={(e) => set('stock', e.target.value)} placeholder="0" />
+            </div>
           </div>
 
           <div>
@@ -491,7 +499,7 @@ function ProductsSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[var(--color-background)]">
-                {['Nombre', 'Categoría', 'Precio', 'Disponible', 'Acciones'].map((h) => (
+                {['Nombre', 'Categoría', 'Precio', 'Stock', 'Disponible', 'Acciones'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
                     {h}
                   </th>
@@ -516,6 +524,17 @@ function ProductsSection() {
                   </td>
                   <td className="px-4 py-3 font-mono font-semibold text-[var(--color-text-primary)]">
                     {formatQ(prod.precio)}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-sm">
+                    {prod.stock == null ? (
+                      <span className="text-[var(--color-text-muted)]">—</span>
+                    ) : prod.stock === 0 ? (
+                      <span className="text-[var(--color-error)] font-semibold">0</span>
+                    ) : prod.stock <= 5 ? (
+                      <span className="text-[var(--color-warning,#f59e0b)] font-semibold">{prod.stock}</span>
+                    ) : (
+                      <span className="text-[var(--color-text-primary)]">{prod.stock}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={prod.disponible ? 'success' : 'error'}>
@@ -583,6 +602,7 @@ function CategoriesSection() {
   const [newNombre, setNewNombre] = useState('')
   const [newSlug, setNewSlug] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [newPadreId, setNewPadreId] = useState('')
   const [newAttrs, setNewAttrs] = useState([])
 
   // edit form (schema only)
@@ -602,7 +622,7 @@ function CategoriesSection() {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
       queryClient.invalidateQueries({ queryKey: ['categories'] })
       setCreateOpen(false)
-      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewAttrs([])
+      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewAttrs([])
     },
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al crear categoría.'),
   })
@@ -714,7 +734,7 @@ function CategoriesSection() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-[var(--color-background)]">
-              {['Nombre', 'Slug', 'Campos (MongoDB)', 'Acciones'].map((h) => (
+              {['Nombre', 'Slug', 'Padre', 'Campos (MongoDB)', 'Acciones'].map((h) => (
                 <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
                   {h}
                 </th>
@@ -735,6 +755,11 @@ function CategoriesSection() {
                   {!cat.activa && <Badge variant="error" className="ml-2 text-[10px]">inactiva</Badge>}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-secondary)]">{cat.slug}</td>
+                <td className="px-4 py-3 font-sans text-xs text-[var(--color-text-secondary)]">
+                  {cat.padre_id
+                    ? cats.find((c) => c.id === cat.padre_id)?.nombre || `#${cat.padre_id}`
+                    : <span className="text-[var(--color-text-muted)]">—</span>}
+                </td>
                 <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)]">
                   {cat.atributos.length > 0
                     ? cat.atributos.map((a) => a.etiqueta).join(', ')
@@ -760,7 +785,7 @@ function CategoriesSection() {
             ))}
             {cats.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">
+                <td colSpan={5} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">
                   No hay categorías todavía.
                 </td>
               </tr>
@@ -784,6 +809,7 @@ function CategoriesSection() {
                 nombre: newNombre,
                 slug: newSlug || slugify(newNombre),
                 descripcion: newDesc || undefined,
+                padre_id: newPadreId ? Number(newPadreId) : undefined,
                 atributos: newAttrs.filter((a) => a.nombre && a.etiqueta),
               })
             }}
@@ -812,9 +838,25 @@ function CategoriesSection() {
                 />
               </div>
             </div>
-            <div className="space-y-1">
-              <Label>Descripción (opcional)</Label>
-              <Input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Breve descripción..." />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Descripción (opcional)</Label>
+                <Input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Breve descripción..." />
+              </div>
+              <div className="space-y-1">
+                <Label>Categoría padre (opcional)</Label>
+                <Select value={newPadreId} onValueChange={setNewPadreId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Ninguna (categoría raíz)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Ninguna (categoría raíz)</SelectItem>
+                    {cats.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <Separator />

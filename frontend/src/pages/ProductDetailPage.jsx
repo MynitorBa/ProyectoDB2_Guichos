@@ -61,6 +61,10 @@ export default function ProductDetailPage() {
       navigate('/login')
       return
     }
+    if (!product.mysql_id) {
+      toast.error('Producto no disponible para compra')
+      return
+    }
     try {
       await add(product.mysql_id, cantidad)
       toast.success(`${product.nombre} agregado al carrito`)
@@ -152,9 +156,12 @@ export default function ProductDetailPage() {
                 <Badge variant="jade">{product.categoria.nombre}</Badge>
               )}
               {product.disponible ? (
-                <Badge variant="success">En stock</Badge>
+                <Badge variant="success">{product.stock > 0 ? `${product.stock} en stock` : 'En stock'}</Badge>
               ) : (
                 <Badge variant="error">Sin stock</Badge>
+              )}
+              {product.disponible && product.stock > 0 && product.stock <= 5 && (
+                <span className="font-sans text-xs text-[var(--color-error)]">¡Últimas unidades!</span>
               )}
             </div>
 

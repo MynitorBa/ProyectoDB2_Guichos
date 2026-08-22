@@ -23,6 +23,7 @@ export function ProductCard({ product }) {
   async function handleAdd(e) {
     e.preventDefault()
     if (!user) { toast.error('Inicia sesión para agregar al carrito'); return }
+    if (!product.mysql_id) { toast.error('Producto no disponible para compra'); return }
     setAdding(true)
     try {
       await add(product.mysql_id, 1)
@@ -78,6 +79,12 @@ export function ProductCard({ product }) {
             {formatQ(product.precio)}
           </span>
         </div>
+
+        {product.stock !== undefined && product.stock !== null && product.disponible && product.stock > 0 && (
+          product.stock <= 5
+            ? <span className="font-sans text-xs text-[var(--color-error)]">¡Solo {product.stock} en stock!</span>
+            : <span className="font-sans text-xs text-[var(--color-text-muted)]">{product.stock} en stock</span>
+        )}
 
         <Button
           variant={added ? 'jade' : 'primary'}

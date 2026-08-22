@@ -12,6 +12,7 @@ class ProductoCreate(BaseModel):
     categoria_slug: str
     atributos: dict[str, Any] = {}
     imagenes: list[str] = []
+    stock: int = 0
 
 
 class ProductoUpdate(BaseModel):
@@ -21,6 +22,7 @@ class ProductoUpdate(BaseModel):
     atributos: dict[str, Any] | None = None
     disponible: bool | None = None
     estado: str | None = None
+    stock: int | None = None
 
 
 class ProductoResponse(BaseModel):

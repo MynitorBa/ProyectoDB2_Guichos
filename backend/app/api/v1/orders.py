@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.database import Database
 from sqlalchemy.orm import Session
 
+from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.deps import get_current_user
 from app.models.usuario import Usuario
@@ -16,10 +18,12 @@ def checkout(
     payload: CheckoutRequest,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
+    mongo_db: Database = Depends(get_mongo_db),
 ):
     try:
         pedido = procesar_checkout(
             db,
+            mongo_db,
             usuario_id=current_user.id,
             direccion_id=payload.direccion_id,
             metodo_pago_id=payload.metodo_pago_id,

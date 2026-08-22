@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { SlidersHorizontal, X, ChevronLeft, ChevronRight, Search } from 'lucide-react'
@@ -118,6 +118,16 @@ export default function CatalogPage() {
     precio_max: '',
     sort: 'nuevo',
   })
+
+  // Sync filters when URL params change (e.g. user clicks a category in the header)
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, categoria }))
+    setPage(1)
+  }, [categoria])
+
+  useEffect(() => {
+    setLocalSearch(q)
+  }, [q])
 
   function updateFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }))

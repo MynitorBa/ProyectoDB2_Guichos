@@ -5,11 +5,16 @@ from pymongo.database import Database
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from bson import ObjectId
+
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.deps import get_admin_user
 from app.models.categoria import Categoria
+from app.models.inventario import Inventario
+from app.models.producto import Producto as ProductoSQL
 from app.models.usuario import Rol, Usuario, UsuarioRol
+from app.models.vendedor import Vendedor
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
@@ -126,6 +131,7 @@ def crear_producto(
     payload: ProductoCreate,
     current_user: Usuario = Depends(get_admin_user),
     db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
 ):
     esquema = db.categoria_esquemas.find_one({'categoria_slug': payload.categoria_slug})
     categoria_nombre = esquema['categoria_nombre'] if esquema else payload.categoria_slug
@@ -142,8 +148,46 @@ def crear_producto(
         'vendedor_id': str(current_user.id),
         'vendedor_nombre': f'{current_user.nombre} {current_user.apellido}',
         'resumen_resenas': {'promedio': 0.0, 'total': 0},
+        'stock': payload.stock,
+        'disponible': payload.stock > 0,
     }
-    return catalog_service.crear_producto(db, doc, usuario_id=str(current_user.id))
+    producto_mongo = catalog_service.crear_producto(db, doc, usuario_id=str(current_user.id))
+
+    # Persist to MySQL (productos + inventario) and back-link mysql_id into MongoDB
+    cat = mysql_db.query(Categoria).filter_by(slug=payload.categoria_slug).first()
+    categoria_id = cat.id if cat else 1
+
+    vendedor = mysql_db.query(Vendedor).filter_by(usuario_id=current_user.id).first()
+    vendedor_id = vendedor.id if vendedor else 1
+
+    prod_sql = ProductoSQL(
+        sku=payload.sku,
+        nombre=payload.nombre,
+        descripcion=payload.descripcion,
+        precio=payload.precio,
+        categoria_id=categoria_id,
+        vendedor_id=vendedor_id,
+        producto_ref=producto_mongo['_id'],
+        estado='activo',
+    )
+    mysql_db.add(prod_sql)
+    mysql_db.flush()
+
+    inv = Inventario(
+        producto_id=prod_sql.id,
+        cantidad_disponible=payload.stock,
+        bodega='principal',
+    )
+    mysql_db.add(inv)
+    mysql_db.commit()
+
+    db.productos.update_one(
+        {'_id': ObjectId(producto_mongo['_id'])},
+        {'$set': {'mysql_id': prod_sql.id}},
+    )
+    producto_mongo['mysql_id'] = prod_sql.id
+
+    return producto_mongo
 
 
 @router.put('/products/{producto_id}')
@@ -152,16 +196,32 @@ def actualizar_producto(
     payload: ProductoUpdate,
     current_user: Usuario = Depends(get_admin_user),
     db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
 ):
     cambios = payload.model_dump(exclude_none=True)
     if 'precio' in cambios:
         cambios['precio'] = float(cambios['precio'])
+
+    nuevo_stock = None
+    if 'stock' in cambios:
+        nuevo_stock = cambios['stock']
+        if nuevo_stock <= 0:
+            cambios['disponible'] = False
 
     producto = catalog_service.actualizar_producto(
         db, producto_id, cambios, usuario_id=str(current_user.id)
     )
     if not producto:
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
+
+    if nuevo_stock is not None and producto.get('mysql_id'):
+        inv = mysql_db.query(Inventario).filter_by(
+            producto_id=producto['mysql_id'], bodega='principal'
+        ).first()
+        if inv:
+            inv.cantidad_disponible = nuevo_stock
+            mysql_db.commit()
+
     return producto
 
 
@@ -217,6 +277,31 @@ def estado_en_fecha(
             detail=f'El producto no existía o no tiene eventos hasta {fecha}.'
         )
     return estado
+
+
+# ── Migración de stock ────────────────────────────────────────────────────────
+
+@router.post('/migrate-stock', status_code=200)
+def migrar_stock(
+    _: Usuario = Depends(get_admin_user),
+    db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
+):
+    """Sincroniza stock de MySQL inventario → MongoDB para productos existentes."""
+    actualizados = 0
+    productos = list(db.productos.find({'mysql_id': {'$exists': True}}, {'_id': 1, 'mysql_id': 1, 'disponible': 1}))
+    for prod in productos:
+        mysql_id = prod.get('mysql_id')
+        if not mysql_id:
+            continue
+        inv = mysql_db.query(Inventario).filter_by(producto_id=mysql_id, bodega='principal').first()
+        if inv:
+            set_data = {'stock': inv.cantidad_disponible}
+            if inv.cantidad_disponible <= 0:
+                set_data['disponible'] = False
+            db.productos.update_one({'_id': prod['_id']}, {'$set': set_data})
+            actualizados += 1
+    return {'actualizados': actualizados}
 
 
 # ── Gestión de categorías ─────────────────────────────────────────────────────

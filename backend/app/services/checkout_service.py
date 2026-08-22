@@ -5,9 +5,11 @@ para poder hacer pruebas unitarias y de concurrencia directamente.
 """
 from decimal import Decimal
 
+from bson import ObjectId
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.models.carrito import Carrito, CarritoItem
 from app.models.inventario import Inventario, MovimientoInventario
 from app.models.pedido import Pedido, PedidoLinea
 from app.models.pago import Pago
@@ -29,6 +31,8 @@ class CheckoutError(Exception):
 
 def procesar_checkout(
     db: Session,
+    mongo_db=None,
+    *,
     usuario_id: int,
     direccion_id: int,
     metodo_pago_id: int,
@@ -114,6 +118,7 @@ def procesar_checkout(
     db.flush()  # Obtener el id del pedido antes de commit
 
     # Crear líneas, descontar inventario, registrar movimientos
+    mongo_updates = []
     for item in items:
         prod = productos[item.producto_id]
         subtotal_linea = prod.precio * item.cantidad
@@ -132,6 +137,9 @@ def procesar_checkout(
         # Descontar inventario
         inv = inventario_map[item.producto_id]
         inv.cantidad_disponible -= item.cantidad
+
+        if prod.producto_ref:
+            mongo_updates.append({'ref': prod.producto_ref, 'stock': max(0, inv.cantidad_disponible)})
 
         # Movimiento de salida
         mov = MovimientoInventario(
@@ -155,6 +163,25 @@ def procesar_checkout(
     )
     db.add(pago)
 
+    # Vaciar el carrito eliminando sus items (evita conflicto con índice único por estado)
+    carrito = db.query(Carrito).filter_by(usuario_id=usuario_id, estado='activo').first()
+    if carrito:
+        db.query(CarritoItem).filter_by(carrito_id=carrito.id).delete()
+
     db.commit()
+
+    if mongo_db is not None:
+        for upd in mongo_updates:
+            try:
+                set_data = {'stock': upd['stock']}
+                if upd['stock'] <= 0:
+                    set_data['disponible'] = False
+                mongo_db.productos.update_one(
+                    {'_id': ObjectId(upd['ref'])},
+                    {'$set': set_data}
+                )
+            except Exception:
+                pass
+
     db.refresh(pedido)
     return pedido
