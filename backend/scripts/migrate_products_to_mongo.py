@@ -285,7 +285,7 @@ def _extraer_hogar(desc):
 # ── Lógica principal ──────────────────────────────────────────────────────────
 
 def main(dry_run: bool = False, reset: bool = False):
-    print(f"{'[DRY-RUN] ' if dry_run else ''}Iniciando migración MySQL → MongoDB")
+    print(f"{'[DRY-RUN] ' if dry_run else ''}Iniciando migracion MySQL -> MongoDB")
 
     # Conexión MySQL
     conn = pymysql.connect(
@@ -365,10 +365,16 @@ def main(dry_run: bool = False, reset: bool = False):
                 'mysql_id': p['id'],  # referencia cruzada
             }
 
-            # Upsert por SKU: idempotente aunque se corra varias veces
+            # Upsert por SKU: idempotente aunque se corra varias veces.
+            # fecha_creacion solo se escribe en la inserción inicial (setOnInsert),
+            # no en actualizaciones posteriores.
+            doc_sin_fecha_creacion = {k: v for k, v in doc.items() if k != 'fecha_creacion'}
             op = UpdateOne(
                 {'sku': p['sku']},
-                {'$set': doc, '$setOnInsert': {'fecha_creacion': p['fecha_creacion']}},
+                {
+                    '$set': doc_sin_fecha_creacion,
+                    '$setOnInsert': {'fecha_creacion': p['fecha_creacion']},
+                },
                 upsert=True
             )
             operaciones.append((p['id'], p['sku'], op))
@@ -411,23 +417,23 @@ def main(dry_run: bool = False, reset: bool = False):
     # Validación de consistencia
     total_mysql = leidos - errores
     total_mongo = mongo.productos.count_documents({})
-    print(f'\n── Resumen ──────────────────────────────')
-    print(f'  Leídos MySQL:        {leidos}')
+    print(f'\n-- Resumen ------------------------------------------')
+    print(f'  Leidos MySQL:        {leidos}')
     print(f'  Insertados (nuevos): {migrados}')
     print(f'  Actualizados:        {actualizados}')
     print(f'  Omitidos (errores):  {errores}')
     print(f'  Total en MongoDB:    {total_mongo}')
     if total_mongo != total_mysql:
-        print(f'  ⚠ DISCREPANCIA: MySQL tiene {total_mysql}, Mongo tiene {total_mongo}')
+        print(f'  DISCREPANCIA: MySQL tiene {total_mysql}, Mongo tiene {total_mongo}')
     else:
-        print(f'  ✓ Conteos coinciden.')
+        print(f'  OK: Conteos coinciden.')
 
     conn.close()
     client.close()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Migración productos MySQL → MongoDB')
+    parser = argparse.ArgumentParser(description='Migracion productos MySQL -> MongoDB')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--reset', action='store_true')
     args = parser.parse_args()

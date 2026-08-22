@@ -28,7 +28,7 @@ CREATE PROCEDURE sp_crear_pedido(
   OUT p_pedido_id      INT UNSIGNED,
   OUT p_error          VARCHAR(500)
 )
-BEGIN
+proc_block: BEGIN
   -- Variables de trabajo
   DECLARE v_num_items    INT DEFAULT 0;
   DECLARE v_i            INT DEFAULT 0;
@@ -59,7 +59,7 @@ BEGIN
     SELECT 1 FROM usuarios WHERE id = p_usuario_id AND estado = 'activo'
   ) THEN
     SET p_error = 'Usuario no existe o está inactivo.';
-    LEAVE sp_crear_pedido;
+    LEAVE proc_block;
   END IF;
 
   -- 2. Validar que la dirección existe y pertenece al usuario
@@ -68,14 +68,14 @@ BEGIN
     WHERE id = p_direccion_id AND usuario_id = p_usuario_id AND activa = 1
   ) THEN
     SET p_error = 'Dirección no válida para este usuario.';
-    LEAVE sp_crear_pedido;
+    LEAVE proc_block;
   END IF;
 
   -- 3. Validar que hay ítems
   SET v_num_items = JSON_LENGTH(p_items);
   IF v_num_items = 0 THEN
     SET p_error = 'El carrito está vacío.';
-    LEAVE sp_crear_pedido;
+    LEAVE proc_block;
   END IF;
 
   START TRANSACTION;
@@ -95,14 +95,14 @@ BEGIN
     IF v_stock IS NULL THEN
       SET p_error = CONCAT('Producto id=', v_producto_id, ' no tiene registro de inventario.');
       ROLLBACK;
-      LEAVE sp_crear_pedido;
+      LEAVE proc_block;
     END IF;
 
     IF v_stock < v_cantidad THEN
       SET p_error = CONCAT('Stock insuficiente para producto id=', v_producto_id,
                            '. Disponible: ', v_stock, ', solicitado: ', v_cantidad);
       ROLLBACK;
-      LEAVE sp_crear_pedido;
+      LEAVE proc_block;
     END IF;
 
     SET v_i = v_i + 1;
@@ -163,6 +163,6 @@ BEGIN
 
   COMMIT;
 
-END //
+END proc_block //
 
 DELIMITER ;

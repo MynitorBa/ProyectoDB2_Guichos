@@ -74,14 +74,14 @@ def main():
                 print(f'  linea_id={h["id"]} producto_ref={h["producto_ref"]}')
             ok = False
         else:
-            print(f'Integridad referencial MySQL↔MongoDB: OK (0 huérfanas)')
+            print(f'Integridad referencial MySQL<->MongoDB: OK (0 huerfanas)')
 
         client.close()
     except Exception as e:
-        print(f'MongoDB: ERROR — {e}')
+        print(f'MongoDB: ERROR - {e}')
         ok = False
 
-    print(f'\n{"✓ Setup completo." if ok else "✗ Hay problemas que corregir."}')
+    print(f'\n{"[OK] Setup completo." if ok else "[ERROR] Hay problemas que corregir."}')
     sys.exit(0 if ok else 1)
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.deps import get_admin_user
+from app.models.categoria import Categoria
 from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
@@ -18,6 +19,27 @@ router = APIRouter(prefix='/admin', tags=['Admin'])
 
 class RolesUpdate(BaseModel):
     roles: list[str]
+
+
+class AtributoEsquema(BaseModel):
+    nombre: str
+    etiqueta: str
+    tipo: str = 'string'        # string | number | boolean
+    requerido: bool = False
+    placeholder: str | None = None
+
+
+class CategoriaCreate(BaseModel):
+    nombre: str
+    slug: str
+    descripcion: str | None = None
+    padre_id: int | None = None
+    atributos: list[AtributoEsquema] = []
+
+
+class EsquemaUpdate(BaseModel):
+    atributos: list[AtributoEsquema]
+    categoria_nombre: str | None = None
 
 
 # ── Gestión de usuarios ───────────────────────────────────────────────────────
@@ -195,3 +217,113 @@ def estado_en_fecha(
             detail=f'El producto no existía o no tiene eventos hasta {fecha}.'
         )
     return estado
+
+
+# ── Gestión de categorías ─────────────────────────────────────────────────────
+
+@router.get('/categories')
+def listar_categorias_admin(
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    """Lista categorías de MySQL enriquecidas con su esquema de MongoDB."""
+    categorias = db.query(Categoria).order_by(Categoria.orden, Categoria.nombre).all()
+    esquemas = {
+        e['categoria_slug']: e.get('atributos', [])
+        for e in mongo.categoria_esquemas.find({}, {'categoria_slug': 1, 'atributos': 1})
+    }
+    return [
+        {
+            'id': c.id,
+            'nombre': c.nombre,
+            'slug': c.slug,
+            'descripcion': c.descripcion,
+            'padre_id': c.categoria_padre_id,
+            'activa': c.activa,
+            'atributos': esquemas.get(c.slug, []),  # schema desde Mongo
+        }
+        for c in categorias
+    ]
+
+
+@router.post('/categories', status_code=201)
+def crear_categoria(
+    payload: CategoriaCreate,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    """
+    Crea la categoría en MySQL (nombre, slug, jerarquía) y su definición
+    de campos en MongoDB (categoria_esquemas). Cada BD almacena lo que le
+    corresponde según su naturaleza.
+    """
+    if db.query(Categoria).filter_by(slug=payload.slug).first():
+        raise HTTPException(400, f'Ya existe una categoría con slug "{payload.slug}".')
+
+    # 1. Guardar estructura relacional en MySQL
+    cat = Categoria(
+        nombre=payload.nombre,
+        slug=payload.slug,
+        descripcion=payload.descripcion,
+        categoria_padre_id=payload.padre_id,
+        activa=True,
+    )
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+
+    # 2. Guardar definición de atributos en MongoDB (upsert por slug)
+    mongo.categoria_esquemas.update_one(
+        {'categoria_slug': payload.slug},
+        {'$set': {
+            'categoria_slug': payload.slug,
+            'categoria_nombre': payload.nombre,
+            'atributos': [a.model_dump() for a in payload.atributos],
+        }},
+        upsert=True,
+    )
+
+    return {'id': cat.id, 'slug': cat.slug, 'nombre': cat.nombre}
+
+
+@router.put('/categories/{slug}/schema')
+def actualizar_esquema(
+    slug: str,
+    payload: EsquemaUpdate,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    """Actualiza los campos del esquema en MongoDB sin tocar MySQL."""
+    cat = db.query(Categoria).filter_by(slug=slug).first()
+    if not cat:
+        raise HTTPException(404, 'Categoría no encontrada.')
+
+    mongo.categoria_esquemas.update_one(
+        {'categoria_slug': slug},
+        {'$set': {
+            'categoria_nombre': payload.categoria_nombre or cat.nombre,
+            'atributos': [a.model_dump() for a in payload.atributos],
+        }},
+        upsert=True,
+    )
+    return {'slug': slug, 'atributos': len(payload.atributos)}
+
+
+@router.delete('/categories/{slug}', status_code=204)
+def eliminar_categoria(
+    slug: str,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    """Elimina la categoría de MySQL y su esquema de MongoDB."""
+    cat = db.query(Categoria).filter_by(slug=slug).first()
+    if not cat:
+        raise HTTPException(404, 'Categoría no encontrada.')
+
+    db.delete(cat)
+    db.commit()
+    mongo.categoria_esquemas.delete_one({'categoria_slug': slug})

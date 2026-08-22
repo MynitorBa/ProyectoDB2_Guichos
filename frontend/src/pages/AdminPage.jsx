@@ -1,24 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User } from 'lucide-react'
+import { BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User, Plus, Edit, Trash2, FolderTree, GripVertical, X as XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { getCatalogStats, getProducts } from '../api/products'
-import { getAdminUsers, updateUserRoles } from '../api/admin'
+import { getCatalogStats, getProducts, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
+import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '../components/ui/dialog'
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
 import { formatQ } from '../lib/utils'
 import { cn } from '../lib/utils'
 
 const NAV_ITEMS = [
-  { id: 'stats',    label: 'Estadísticas', icon: BarChart2 },
-  { id: 'products', label: 'Productos',    icon: Package   },
-  { id: 'users',    label: 'Usuarios',     icon: Users     },
+  { id: 'stats',      label: 'Estadísticas', icon: BarChart2  },
+  { id: 'products',   label: 'Productos',    icon: Package    },
+  { id: 'categories', label: 'Categorías',   icon: FolderTree },
+  { id: 'users',      label: 'Usuarios',     icon: Users      },
 ]
 
 const ROLE_META = {
@@ -27,6 +32,9 @@ const ROLE_META = {
   comprador:     { label: 'Comprador', Icon: User,          active: 'bg-[var(--color-border-strong)] text-[var(--color-text-primary)] border-[var(--color-border-strong)]', inactive: 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text-primary)]' },
 }
 const ALL_ROLES = ['comprador', 'vendedor', 'administrador']
+
+// Los campos de cada categoría vienen de MongoDB (categoria_esquemas), no hardcodeados aquí.
+// El campo tiene: nombre (key), etiqueta (label), tipo (string|number|boolean), requerido, placeholder
 
 function StatCard({ label, value, sub }) {
   return (
@@ -225,15 +233,237 @@ function StatsSection() {
   )
 }
 
+function ProductFormModal({ open, onOpenChange, product, onSuccess }) {
+  const isEdit = !!product
+  const queryClient = useQueryClient()
+
+  const EMPTY = { sku: '', nombre: '', descripcion: '', precio: '', categoria_slug: '', disponible: true, estado: 'activo', atributos: {} }
+  const [form, setForm] = useState(EMPTY)
+
+  useEffect(() => {
+    if (open) {
+      setForm(isEdit ? {
+        sku: product.sku || '',
+        nombre: product.nombre || '',
+        descripcion: product.descripcion || '',
+        precio: String(product.precio || ''),
+        categoria_slug: product.categoria?.slug || '',
+        disponible: product.disponible ?? true,
+        estado: product.estado || 'activo',
+        atributos: { ...(product.atributos || {}) },
+      } : EMPTY)
+    }
+  }, [open, product])
+
+  const { data: categoriesData } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => getCategories().then((r) => r.data),
+  })
+  const categories = categoriesData || []
+
+  const mutation = useMutation({
+    mutationFn: (payload) =>
+      isEdit
+        ? updateProduct(product._id, payload)
+        : createProduct(payload),
+    onSuccess: () => {
+      toast.success(isEdit ? 'Producto actualizado.' : 'Producto creado.')
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      onOpenChange(false)
+      onSuccess?.()
+    },
+    onError: (err) => {
+      const detail = err?.response?.data?.detail
+      toast.error(typeof detail === 'string' ? detail : 'Error al guardar el producto.')
+    },
+  })
+
+  function set(key, value) { setForm((p) => ({ ...p, [key]: value })) }
+  function setAttr(key, value) { setForm((p) => ({ ...p, atributos: { ...p.atributos, [key]: value } })) }
+
+  // Carga el esquema de campos desde MongoDB cuando cambia la categoría
+  const { data: schemaData } = useQuery({
+    queryKey: ['category-schema', form.categoria_slug],
+    queryFn: () => getCategorySchema(form.categoria_slug).then((r) => r.data),
+    enabled: !!form.categoria_slug,
+    staleTime: 5 * 60 * 1000,
+  })
+  const attrFields = schemaData?.atributos || []
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    if (!form.nombre || !form.precio) return toast.error('Nombre y precio son obligatorios.')
+    if (!isEdit && !form.sku) return toast.error('El SKU es obligatorio.')
+    if (!isEdit && !form.categoria_slug) return toast.error('Selecciona una categoría.')
+
+    const atributos = {}
+    attrFields.forEach(({ nombre, tipo }) => {
+      const v = form.atributos[nombre]
+      if (v === '' || v === undefined || v === null) return
+      atributos[nombre] = tipo === 'number' ? Number(v) : v
+    })
+
+    const payload = isEdit
+      ? { nombre: form.nombre, descripcion: form.descripcion, precio: Number(form.precio), disponible: form.disponible, estado: form.estado, atributos }
+      : { sku: form.sku, nombre: form.nombre, descripcion: form.descripcion, precio: Number(form.precio), categoria_slug: form.categoria_slug, atributos }
+
+    mutation.mutate(payload)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogTitle>{isEdit ? 'Editar producto' : 'Nuevo producto'}</DialogTitle>
+        <DialogDescription>
+          {isEdit ? `SKU: ${product?.sku}` : 'Los campos con * son obligatorios.'}
+        </DialogDescription>
+
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div className="grid grid-cols-2 gap-3">
+            {!isEdit && (
+              <div>
+                <Label>SKU *</Label>
+                <Input value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="LAP-001" />
+              </div>
+            )}
+            <div className={isEdit ? 'col-span-2' : ''}>
+              <Label>Nombre *</Label>
+              <Input value={form.nombre} onChange={(e) => set('nombre', e.target.value)} placeholder="Laptop ASUS..." />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Precio (GTQ) *</Label>
+              <Input type="number" step="0.01" min="0" value={form.precio} onChange={(e) => set('precio', e.target.value)} placeholder="999.99" />
+            </div>
+            {!isEdit ? (
+              <div>
+                <Label>Categoría *</Label>
+                <Select value={form.categoria_slug} onValueChange={(v) => { set('categoria_slug', v); set('atributos', {}) }}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c.slug} value={c.slug}>{c.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div>
+                <Label>Estado</Label>
+                <Select value={form.estado} onValueChange={(v) => set('estado', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="activo">Activo</SelectItem>
+                    <SelectItem value="inactivo">Inactivo</SelectItem>
+                    <SelectItem value="descontinuado">Descontinuado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Label>Descripción</Label>
+            <textarea
+              value={form.descripcion || ''}
+              onChange={(e) => set('descripcion', e.target.value)}
+              rows={2}
+              placeholder="Descripción del producto..."
+              className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm font-sans text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-action)] resize-none"
+            />
+          </div>
+
+          {isEdit && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.disponible} onChange={(e) => set('disponible', e.target.checked)}
+                className="h-4 w-4 accent-[var(--color-action)]" />
+              <span className="font-sans text-sm text-[var(--color-text-primary)]">Disponible (en stock)</span>
+            </label>
+          )}
+
+          {attrFields.length > 0 && (
+            <>
+              <Separator />
+              <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                Atributos de {categories.find(c => c.slug === form.categoria_slug)?.nombre || 'categoría'}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {attrFields.map((field) => (
+                  <div key={field.nombre} className={field.tipo === 'boolean' ? 'flex items-center gap-2 col-span-1' : ''}>
+                    {field.tipo === 'boolean' ? (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!form.atributos[field.nombre]}
+                          onChange={(e) => setAttr(field.nombre, e.target.checked)}
+                          className="h-4 w-4 accent-[var(--color-action)]"
+                        />
+                        <span className="font-sans text-sm text-[var(--color-text-primary)]">{field.etiqueta}</span>
+                      </label>
+                    ) : (
+                      <>
+                        <Label>{field.etiqueta}</Label>
+                        <Input
+                          type={field.tipo === 'number' ? 'number' : 'text'}
+                          step={field.tipo === 'number' ? 'any' : undefined}
+                          placeholder={field.placeholder || ''}
+                          value={form.atributos[field.nombre] ?? ''}
+                          onChange={(e) => setAttr(field.nombre, e.target.value)}
+                        />
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">Cancelar</Button>
+            </DialogClose>
+            <Button type="submit" loading={mutation.isPending}>
+              {isEdit ? 'Guardar cambios' : 'Crear producto'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ProductsSection() {
   const [page, setPage] = useState(1)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editProduct, setEditProduct] = useState(null)
   const PAGE_SIZE = 15
+  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-products', page],
     queryFn: () => getProducts({ page, page_size: PAGE_SIZE }).then((r) => r.data),
     placeholderData: keepPreviousData,
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => deleteProduct(id),
+    onSuccess: () => {
+      toast.success('Producto eliminado.')
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+    onError: () => toast.error('No se pudo eliminar el producto.'),
+  })
+
+  function openCreate() { setEditProduct(null); setModalOpen(true) }
+  function openEdit(prod) { setEditProduct(prod); setModalOpen(true) }
+  function handleDelete(prod) {
+    if (!window.confirm(`¿Eliminar "${prod.nombre}"? Esta acción no se puede deshacer.`)) return
+    deleteMutation.mutate(prod._id)
+  }
 
   const products = data?.items || []
   const totalPages = data?.total_pages || 1
@@ -249,17 +479,20 @@ function ProductsSection() {
   }
 
   return (
-    <div>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={openCreate}>
+          <Plus size={14} /> Nuevo producto
+        </Button>
+      </div>
+
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[var(--color-background)]">
                 {['Nombre', 'Categoría', 'Precio', 'Disponible', 'Acciones'].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]"
-                  >
+                  <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
                     {h}
                   </th>
                 ))}
@@ -274,11 +507,9 @@ function ProductsSection() {
                     idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]'
                   )}
                 >
-                  <td className="px-4 py-3 font-display font-semibold text-[var(--color-text-primary)] max-w-[220px]">
+                  <td className="px-4 py-3 font-display font-semibold text-[var(--color-text-primary)] max-w-[200px]">
                     <span className="line-clamp-1">{prod.nombre}</span>
-                    <span className="font-mono font-normal text-[10px] text-[var(--color-text-muted)] block">
-                      {prod.sku}
-                    </span>
+                    <span className="font-mono font-normal text-[10px] text-[var(--color-text-muted)] block">{prod.sku}</span>
                   </td>
                   <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)]">
                     {prod.categoria?.nombre || '—'}
@@ -292,11 +523,25 @@ function ProductsSection() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link to={`/admin/products/${prod._id}/history`}>
-                        <History size={13} /> Historial
-                      </Link>
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(prod)}>
+                        <Edit size={13} /> Editar
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/admin/products/${prod._id}/history`}>
+                          <History size={13} /> Historial
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[var(--color-error)] hover:text-[var(--color-error)] hover:bg-[var(--color-error)]/10"
+                        onClick={() => handleDelete(prod)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 size={13} />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -307,27 +552,361 @@ function ProductsSection() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-3 mt-5">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
+          <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             Anterior
           </Button>
-          <span className="font-sans text-sm text-[var(--color-text-secondary)]">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
+          <span className="font-sans text-sm text-[var(--color-text-secondary)]">{page} / {totalPages}</span>
+          <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
             Siguiente
           </Button>
         </div>
       )}
+
+      <ProductFormModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        product={editProduct}
+      />
+    </div>
+  )
+}
+
+function CategoriesSection() {
+  const queryClient = useQueryClient()
+
+  // ── state ──────────────────────────────────────────────────────────────────
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState(null) // category being edited
+  const [editOpen, setEditOpen] = useState(false)
+
+  // create form
+  const [newNombre, setNewNombre] = useState('')
+  const [newSlug, setNewSlug] = useState('')
+  const [newDesc, setNewDesc] = useState('')
+  const [newAttrs, setNewAttrs] = useState([])
+
+  // edit form (schema only)
+  const [editAttrs, setEditAttrs] = useState([])
+
+  // ── data ───────────────────────────────────────────────────────────────────
+  const { data: cats = [], isLoading } = useQuery({
+    queryKey: ['admin-categories'],
+    queryFn: () => getAdminCategories().then((r) => r.data),
+  })
+
+  // ── mutations ──────────────────────────────────────────────────────────────
+  const createMut = useMutation({
+    mutationFn: (data) => createCategory(data),
+    onSuccess: () => {
+      toast.success('Categoría creada.')
+      queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['categories'] })
+      setCreateOpen(false)
+      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewAttrs([])
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al crear categoría.'),
+  })
+
+  const schemaMut = useMutation({
+    mutationFn: ({ slug, data }) => updateCategorySchema(slug, data),
+    onSuccess: () => {
+      toast.success('Esquema actualizado.')
+      queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['category-schema'] })
+      setEditOpen(false)
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al actualizar esquema.'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (slug) => deleteCategory(slug),
+    onSuccess: () => {
+      toast.success('Categoría eliminada.')
+      queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['categories'] })
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al eliminar.'),
+  })
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  function slugify(str) {
+    return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  }
+
+  function emptyAttr() {
+    return { nombre: '', etiqueta: '', tipo: 'string', requerido: false, placeholder: '' }
+  }
+
+  function AttrRow({ attr, onChange, onRemove }) {
+    return (
+      <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2 items-center">
+        <Input
+          placeholder="nombre (key)"
+          value={attr.nombre}
+          onChange={(e) => onChange({ ...attr, nombre: e.target.value.replace(/\s/g, '_') })}
+          className="font-mono text-xs"
+        />
+        <Input
+          placeholder="etiqueta (label)"
+          value={attr.etiqueta}
+          onChange={(e) => onChange({ ...attr, etiqueta: e.target.value })}
+          className="text-xs"
+        />
+        <Select value={attr.tipo} onValueChange={(v) => onChange({ ...attr, tipo: v })}>
+          <SelectTrigger className="w-28 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="string">Texto</SelectItem>
+            <SelectItem value="number">Número</SelectItem>
+            <SelectItem value="boolean">Sí/No</SelectItem>
+          </SelectContent>
+        </Select>
+        <label className="flex items-center gap-1 text-xs text-[var(--color-text-secondary)] whitespace-nowrap cursor-pointer">
+          <input
+            type="checkbox"
+            checked={attr.requerido}
+            onChange={(e) => onChange({ ...attr, requerido: e.target.checked })}
+            className="h-3 w-3 accent-[var(--color-action)]"
+          />
+          Req.
+        </label>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-[var(--color-text-muted)] hover:text-[var(--color-error)] transition-colors"
+        >
+          <XIcon size={14} />
+        </button>
+      </div>
+    )
+  }
+
+  function openEdit(cat) {
+    setEditTarget(cat)
+    setEditAttrs(cat.atributos.length ? cat.atributos.map((a) => ({ ...a })) : [])
+    setEditOpen(true)
+  }
+
+  function handleDelete(cat) {
+    if (!window.confirm(`¿Eliminar categoría "${cat.nombre}"? Esto también eliminará su esquema de campos.`)) return
+    deleteMut.mutate(cat.slug)
+  }
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus size={14} /> Nueva categoría
+        </Button>
+      </div>
+
+      {/* Category list */}
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-[var(--color-background)]">
+              {['Nombre', 'Slug', 'Campos (MongoDB)', 'Acciones'].map((h) => (
+                <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cats.map((cat, idx) => (
+              <tr
+                key={cat.id}
+                className={cn(
+                  'border-b border-[var(--color-border)] last:border-0',
+                  idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]'
+                )}
+              >
+                <td className="px-4 py-3 font-display font-semibold text-[var(--color-text-primary)]">
+                  {cat.nombre}
+                  {!cat.activa && <Badge variant="error" className="ml-2 text-[10px]">inactiva</Badge>}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-secondary)]">{cat.slug}</td>
+                <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)]">
+                  {cat.atributos.length > 0
+                    ? cat.atributos.map((a) => a.etiqueta).join(', ')
+                    : <span className="text-[var(--color-text-muted)] italic">sin campos</span>}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openEdit(cat)}>
+                      <Edit size={13} /> Editar campos
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-[var(--color-error)] hover:text-[var(--color-error)] hover:bg-[var(--color-error)]/10"
+                      onClick={() => handleDelete(cat)}
+                      disabled={deleteMut.isPending}
+                    >
+                      <Trash2 size={13} />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {cats.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">
+                  No hay categorías todavía.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Create dialog ───────────────────────────────────────────────────── */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogTitle>Nueva categoría</DialogTitle>
+          <DialogDescription>
+            Los datos básicos se guardan en MySQL. Los campos personalizados se guardan en MongoDB.
+          </DialogDescription>
+          <form
+            className="space-y-4 mt-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              createMut.mutate({
+                nombre: newNombre,
+                slug: newSlug || slugify(newNombre),
+                descripcion: newDesc || undefined,
+                atributos: newAttrs.filter((a) => a.nombre && a.etiqueta),
+              })
+            }}
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Nombre</Label>
+                <Input
+                  required
+                  value={newNombre}
+                  onChange={(e) => {
+                    setNewNombre(e.target.value)
+                    if (!newSlug) setNewSlug(slugify(e.target.value))
+                  }}
+                  placeholder="ej. Laptops"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Slug (URL)</Label>
+                <Input
+                  required
+                  value={newSlug}
+                  onChange={(e) => setNewSlug(e.target.value)}
+                  placeholder="ej. laptops"
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Descripción (opcional)</Label>
+              <Input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Breve descripción..." />
+            </div>
+
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                  Campos personalizados (MongoDB)
+                </p>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setNewAttrs((a) => [...a, emptyAttr()])}>
+                  <Plus size={13} /> Agregar campo
+                </Button>
+              </div>
+              <p className="font-sans text-xs text-[var(--color-text-muted)]">
+                Estos campos aparecerán al crear/editar productos de esta categoría.
+              </p>
+              {newAttrs.length === 0 && (
+                <p className="font-sans text-xs text-[var(--color-text-muted)] italic py-2">
+                  Sin campos aún. Agrega los atributos que diferencian esta categoría.
+                </p>
+              )}
+              <div className="space-y-2">
+                {newAttrs.map((attr, i) => (
+                  <AttrRow
+                    key={i}
+                    attr={attr}
+                    onChange={(updated) => setNewAttrs((a) => a.map((x, j) => j === i ? updated : x))}
+                    onRemove={() => setNewAttrs((a) => a.filter((_, j) => j !== i))}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <DialogClose asChild>
+                <Button type="button" variant="secondary">Cancelar</Button>
+              </DialogClose>
+              <Button type="submit" loading={createMut.isPending}>Crear categoría</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit schema dialog ──────────────────────────────────────────────── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogTitle>Editar campos — {editTarget?.nombre}</DialogTitle>
+          <DialogDescription>
+            Modifica los campos personalizados de esta categoría (solo MongoDB).
+          </DialogDescription>
+          <form
+            className="space-y-4 mt-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              schemaMut.mutate({
+                slug: editTarget.slug,
+                data: { atributos: editAttrs.filter((a) => a.nombre && a.etiqueta) },
+              })
+            }}
+          >
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                  Campos personalizados
+                </p>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setEditAttrs((a) => [...a, emptyAttr()])}>
+                  <Plus size={13} /> Agregar campo
+                </Button>
+              </div>
+              {editAttrs.length === 0 && (
+                <p className="font-sans text-xs text-[var(--color-text-muted)] italic py-2">Sin campos. Agrega los atributos de esta categoría.</p>
+              )}
+              <div className="space-y-2">
+                {editAttrs.map((attr, i) => (
+                  <AttrRow
+                    key={i}
+                    attr={attr}
+                    onChange={(updated) => setEditAttrs((a) => a.map((x, j) => j === i ? updated : x))}
+                    onRemove={() => setEditAttrs((a) => a.filter((_, j) => j !== i))}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <DialogClose asChild>
+                <Button type="button" variant="secondary">Cancelar</Button>
+              </DialogClose>
+              <Button type="submit" loading={schemaMut.isPending}>Guardar esquema</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -495,6 +1074,7 @@ export default function AdminPage() {
           </h2>
           {activeSection === 'stats' && <StatsSection />}
           {activeSection === 'products' && <ProductsSection />}
+          {activeSection === 'categories' && <CategoriesSection />}
           {activeSection === 'users' && <UsersSection />}
         </main>
       </div>
