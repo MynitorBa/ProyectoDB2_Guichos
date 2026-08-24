@@ -123,6 +123,7 @@ con `scripts\complete-phase7-reference-integrity.ps1`. La evidencia está en
 - [Plan y evidencia de migración](docs/09-plan-migracion-incremental.md)
 - [Evidencia de integridad de referencias](docs/16-fase7-integridad-referencias.md)
 - [Pruebas funcionales integrales](docs/17-pruebas-funcionales.md)
+- [Guía de revisión para el equipo](docs/18-guia-revision-companeros.md)
 
 ## Entregas del proyecto
 
