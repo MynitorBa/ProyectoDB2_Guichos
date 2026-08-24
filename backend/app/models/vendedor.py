@@ -3,6 +3,7 @@ from sqlalchemy import String, Enum, ForeignKey, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
+from app.core.time import utc_now
 
 
 class Vendedor(Base):
@@ -17,9 +18,4 @@ class Vendedor(Base):
     estado_verificacion: Mapped[str] = mapped_column(
         Enum('pendiente', 'verificado', 'rechazado'), default='pendiente'
     )
-    fecha_registro: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    productos: Mapped[list['Producto']] = relationship(back_populates='vendedor')
-
-
-from app.models.producto import Producto  # noqa: E402
+    fecha_registro: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

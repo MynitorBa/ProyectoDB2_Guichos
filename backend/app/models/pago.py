@@ -4,6 +4,7 @@ from sqlalchemy import String, Enum, ForeignKey, DateTime, DECIMAL
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
+from app.core.time import utc_now
 
 
 class MetodoPago(Base):
@@ -25,7 +26,7 @@ class Pago(Base):
         Enum('pendiente', 'aprobado', 'rechazado', 'reembolsado'), default='pendiente'
     )
     referencia_transaccion: Mapped[str | None] = mapped_column(String(100))
-    fecha: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     pedido: Mapped['Pedido'] = relationship(back_populates='pagos')
     metodo: Mapped['MetodoPago'] = relationship()

@@ -23,10 +23,10 @@ export function ProductCard({ product }) {
   async function handleAdd(e) {
     e.preventDefault()
     if (!user) { toast.error('Inicia sesión para agregar al carrito'); return }
-    if (!product.mysql_id) { toast.error('Producto no disponible para compra'); return }
+    if (!product.oferta_id) { toast.error('Producto no disponible para compra'); return }
     setAdding(true)
     try {
-      await add(product.mysql_id, 1)
+      await add(product.oferta_id, 1)
       setAdded(true)
       toast.success(`${product.nombre} agregado al carrito`)
       setTimeout(() => setAdded(false), 2000)

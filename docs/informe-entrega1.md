@@ -1,190 +1,189 @@
 # Informe Entrega 1 — TiendaYa
+
 **Bases de Datos 2 · UNIS · Segundo Semestre 2026**
+**Estado verificado:** 24 de agosto de 2026
 
----
+## 1. Arquitectura políglota
 
-## 1. Modelo Relacional y Normalización
+TiendaYa utiliza MySQL 8 y MongoDB 7 detrás de una API FastAPI. La separación
+no se hace por tecnología sino por semántica:
 
-El modelo relacional de TiendaYa está compuesto por 17 tablas en MySQL 8 y fue diseñado siguiendo la Tercera Forma Normal (3NF). El proceso de normalización implicó identificar y eliminar dependencias transitivas que habría generado anomalías de actualización en operaciones cotidianas del sistema.
+- MongoDB `productos`: nombre, descripción, categoría, atributos variables e
+  imágenes.
+- MySQL: usuarios, vendedores, ofertas, precios, inventario, pedidos, pagos,
+  carrito, reseñas, notificaciones y outbox.
+- MongoDB `producto_eventos`: historial documental y eventos proyectados.
 
-Las decisiones de normalización más importantes fueron tres. Primero, separar la información de vendedores de la tabla de productos: en un diseño inicial, columnas como `vendedor_nombre` y `vendedor_email` vivían en `productos`, creando una dependencia transitiva `producto_id → vendedor_id → vendedor_email`. La tabla `vendedores` resuelve esto con su propia PK. Segundo, modelar la relación usuario-rol con una tabla puente `usuario_rol` porque la relación es genuinamente N:M — un usuario puede tener múltiples roles (cliente y vendedor simultáneamente) y un rol puede asignarse a miles de usuarios. Una columna de roles en `usuarios` no puede representar esta realidad sin violar 1NF. Tercero, separar `categorias` como entidad propia con auto-referencia en `padre_id` para soportar la jerarquía de dos niveles del catálogo sin redundancia.
+MongoDB responde qué es el producto. MySQL responde quién lo vende, a qué
+precio, en qué moneda y con cuánto inventario. El catálogo combina ambas
+fuentes; el checkout usa únicamente MySQL para las decisiones transaccionales.
 
-El caso de `precio_unitario` en `pedido_lineas` merece explicación separada porque parece una violación de 3NF pero no lo es. Este campo representa el precio al momento de la compra, no el precio actual del producto — son semánticamente distintos. `precio_unitario` depende de la PK compuesta `(pedido_id, producto_ref)` de la tabla, sin pasar por otra columna no-clave. La 3NF se mantiene intacta. La "redundancia" es deliberada: protege la integridad histórica de las órdenes ante cambios futuros de precio.
+## 2. Modelo relacional y normalización
 
-<!-- CAPTURA: Diagrama ER generado desde MySQL Workbench o DBeaver mostrando las 17 tablas con sus relaciones -->
+El esquema final contiene 22 tablas. Las decisiones principales de 3FN son:
 
-<!-- CAPTURA: Resultado de SHOW CREATE TABLE pedido_lineas en MySQL para evidenciar la definición del campo precio_unitario y producto_ref -->
+- `usuarios` y `roles` se relacionan N:M mediante `usuario_rol`.
+- `vendedores` separa el perfil comercial de la cuenta de usuario.
+- `ofertas` separa el producto general de la propuesta de cada vendedor.
+- `oferta_precios_historial` separa el precio vigente de sus intervalos
+  históricos.
+- `inventario` pertenece a `(oferta, bodega)` y los movimientos referencian la
+  fila exacta de inventario.
+- `pedido_vendedores` separa la preparación y entrega de cada vendedor dentro
+  de un pedido global.
+- `producto_referencias` mantiene la identidad SQL del documento y una FK a
+  su categoría; las ofertas referencian esa identidad sin duplicar el catálogo.
 
----
+`pedido_lineas` y `pedido_direcciones` contienen snapshots. No representan una
+violación de 3FN: el nombre, SKU, vendedor, precio y dirección almacenados son
+hechos históricos del contrato, diferentes del estado vigente de esas
+entidades.
 
-## 2. Diagnóstico del Problema de Heterogeneidad
+El ER completo está en [`02-diagrama-ER.md`](02-diagrama-ER.md).
 
-El detonante para adoptar un esquema polígota fue el problema concreto de atributos heterogéneos entre las 8 categorías del catálogo. Cuando intenté modelar todos los productos en una sola tabla MySQL, el resultado fue un esquema con más de 40 columnas donde la mayoría de los valores eran NULL dependiendo de la categoría:
+## 3. Heterogeneidad documental
 
-- Una **computadora** usa: `procesador`, `ram_gb`, `almacenamiento_gb`, `pulgadas` — pero no `talla`, `isbn` ni `voltaje`.
-- Una **camisa** usa: `talla`, `color`, `material`, `genero` — pero no `ram_gb`, `paginas` ni `potencia_w`.
-- Un **libro** usa: `autor`, `isbn`, `paginas`, `editorial` — pero no `procesador`, `talla` ni `ingredientes`.
-- Un **alimento** usa: `peso_gr`, `calorias`, `ingredientes`, `fecha_vencimiento` — completamente distinto a todas las anteriores.
+Una computadora, una camisa, un libro y un alimento requieren atributos de
+tipos y nombres diferentes. Una tabla única produciría decenas de columnas no
+aplicables; EAV perdería tipos e índices útiles; una tabla por categoría
+obligaría a cambiar el esquema y usar `UNION` para búsquedas transversales.
 
-Evalué dos alternativas antes de decidir. El modelo EAV (Entity-Attribute-Value) con una tabla `atributos_producto(producto_id, nombre, valor_texto)` resuelve el NULL masivo pero destruye la capacidad de consultar por tipo: buscar laptops con RAM > 16 GB requiere castings y condiciones sobre strings que no se pueden indexar eficientemente. El modelo de tabla por categoría (`productos_electronica`, `productos_ropa`, etc.) preserva los tipos pero hace que agregar una categoría sea un cambio de esquema y que las consultas transversales sean UNIONs de 8 tablas.
-
-<!-- CAPTURA: Consulta en MySQL mostrando una fila de producto con columnas NULL (evidencia del problema antes de la migración, puede ser un ejemplo simulado) -->
-
----
-
-## 3. Decisión de Modelado Documental
-
-La solución adoptada fue mover el catálogo de productos a MongoDB 7, donde cada documento en la colección `catalogo` puede tener un subdocumento `atributos` con la estructura exacta de su categoría. Los datos donde la consistencia transaccional es crítica — pedidos, pagos, inventario, usuarios — permanecen en MySQL.
-
-La arquitectura resultante es polígota: FastAPI actúa como orquestador y decide qué base de datos consultar según la naturaleza de la operación. Una consulta de catálogo (leer atributos, ver imágenes, ver historial de precio) va a MongoDB. Una transacción de compra (descontar inventario, crear pedido, procesar pago) va a MySQL con transacción ACID.
-
-La colección `catalogo` en MongoDB tiene a la fecha 65 documentos correspondientes a los productos del seed. Cada documento tiene un campo `atributos` de esquema variable y un array `imagenes` embebido. La colección `producto_eventos` tiene el historial append-only de cambios.
-
-<!-- CAPTURA: Resultado de db.catalogo.findOne() en MongoDB Compass o mongosh mostrando un documento de laptop con sus atributos -->
-
-<!-- CAPTURA: Resultado de db.catalogo.findOne() mostrando un documento de libro con atributos distintos (isbn, autor, paginas) para contrastar -->
-
-<!-- CAPTURA: Vista de la colección producto_eventos en MongoDB mostrando varios documentos de eventos para un mismo producto_id -->
-
----
-
-## 4. Embeber vs. Referenciar
-
-Las decisiones de modelado dentro de MongoDB siguieron tres criterios: frecuencia de acceso conjunta, volumen potencial de datos, y tasa de cambio independiente.
-
-**Imágenes: embebidas.** Cada producto tiene entre 1 y 5 imágenes. El array de imágenes pesa menos de 1 KB, siempre se necesita junto con el documento del producto, y su ciclo de vida está ligado al del producto. No hay razón para separarlo.
-
-**Reseñas: colección separada `resenas` con resumen embebido.** Las reseñas pueden crecer de forma ilimitada en un producto popular. Un producto con 500 reseñas con texto extenso superaría el límite de 16 MB del documento BSON. Además, las reseñas se escriben de forma independiente al producto — no tiene sentido bloquear el documento del producto cada vez que alguien deja una opinión. El compromiso es guardar un campo `resumen_resenas { promedio, total }` en el documento del producto para evitar un join en cada carga del catálogo.
-
-**Vendedor: referenciado con nombre desnormalizado.** El perfil completo del vendedor vive en MySQL (`vendedores`). Pero el nombre de la tienda aparece en cada card del catálogo, así que desnormalizarlo en el documento del producto evita un join en la operación más frecuente. Los cambios de nombre de tienda son infrecuentes y manejables mediante un proceso de actualización explícito.
-
-<!-- CAPTURA: Documento de producto en MongoDB mostrando el array imagenes embebido y el campo resumen_resenas -->
-
----
-
-## 5. Índices y Consultas de Agregación
-
-### Índice compuesto — patrón de consulta del catálogo
-
-El patrón de consulta más frecuente del catálogo es: *"dame los productos disponibles de la categoría X, ordenados por precio"*. Sin un índice, MongoDB haría un collection scan sobre los 65 documentos (y eventualmente miles) para filtrar y ordenar. Se creó el siguiente índice compuesto:
+MongoDB permite que cada documento conserve exactamente sus atributos:
 
 ```javascript
-db.productos.createIndex(
-  { "categoria.slug": 1, "disponible": 1, "precio": 1 },
-  { name: "idx_categoria_disponible_precio" }
+// Computadora
+db.productos.findOne(
+  { "categoria.slug": "computadoras" },
+  { nombre: 1, atributos: 1, imagenes: 1 }
+)
+
+// Libro
+db.productos.findOne(
+  { "categoria.slug": "libros" },
+  { nombre: 1, atributos: 1, imagenes: 1 }
 )
 ```
 
-Los tres campos van en ese orden porque MongoDB puede usar el índice para:
-- **Filtrado exacto** por `categoria.slug` (el filtro más selectivo)
-- **Filtrado booleano** por `disponible`
-- **Ordenamiento** por `precio` sin un stage adicional de SORT
+La colección real se llama `productos`; no existe una colección activa llamada
+`catalogo`.
 
-Esto es un índice compuesto ESR (Equality → Sort → Range), el patrón de diseño recomendado para índices de consulta en MongoDB.
+## 4. Embeber frente a referenciar
 
-Adicionalmente, se creó un índice de texto en `nombre` y `descripcion` para búsqueda fulltext:
+| Dato | Ubicación | Motivo |
+|---|---|---|
+| Imágenes | Embebidas en MongoDB | Se leen junto al producto y su volumen es acotado |
+| Reseñas completas | MySQL `resenas` | Pertenencia a usuario/producto y unicidad mediante FK/UNIQUE |
+| Resumen de reseñas | MongoDB | Proyección compacta para tarjetas del catálogo |
+| Vendedor, precio y estado | MySQL `ofertas` | Autoridad comercial y consistencia transaccional |
+| Stock | MySQL `inventario` | Bloqueo y prevención de sobreventa |
+
+Los campos comerciales presentes en MongoDB son proyecciones eventuales. El
+catálogo los reemplaza con los valores de ofertas MySQL antes de responder.
+
+## 5. Índices y consultas MongoDB
+
+Los índices relevantes se crean en `database/mongo/02_indexes.js` y también se
+aseguran al arrancar FastAPI:
+
 ```javascript
+db.productos.createIndex({ sku: 1 }, { unique: true, name: "uidx_sku" })
 db.productos.createIndex(
-  { "nombre": "text", "descripcion": "text" },
+  { "categoria.slug": 1, disponible: 1, precio: -1 },
+  { name: "idx_catalogo_categoria_disponible_precio" }
+)
+db.productos.createIndex(
+  { nombre: "text", descripcion: "text" },
   { name: "idx_texto_nombre_descripcion", default_language: "spanish" }
 )
-```
-
-Y un índice compuesto en `producto_eventos` para acelerar las reconstrucciones históricas:
-```javascript
 db.producto_eventos.createIndex(
-  { "producto_id": 1, "timestamp": 1 },
-  { name: "idx_producto_timestamp" }
+  { producto_id: 1, timestamp: -1 },
+  { name: "idx_eventos_producto_timestamp" }
+)
+db.producto_eventos.createIndex(
+  { outbox_id: 1 },
+  { unique: true, sparse: true, name: "uidx_evento_outbox" }
 )
 ```
 
-Los tres índices se crean automáticamente al arrancar la API (`@app.on_event('startup')`) mediante `pymongo.create_index()`, que es idempotente.
+El panel administrativo utiliza `$facet`, `$group`, `$sort`, `$limit` y
+`$project` para obtener estadísticas documentales en una sola agregación.
 
-<!-- CAPTURA: Resultado de db.productos.getIndexes() en mongosh mostrando los tres índices creados -->
+## 6. Referencia MySQL–MongoDB
 
-### Consulta de agregación — estadísticas del catálogo
+El ObjectId se representa como `CHAR(24)` en `producto_referencias`, `ofertas`,
+`pedido_lineas`, `carrito_items` y `outbox_eventos`. MySQL impone la relación
+de ofertas y categorías mediante FKs; solo el salto entre
+`producto_referencias.producto_ref` y MongoDB requiere controles de aplicación:
 
-El panel administrativo usa el siguiente pipeline de agregación con `$facet` para obtener métricas del catálogo en una sola query:
+- FKs internas en MySQL.
+- Validación durante migraciones.
+- `backend/scripts/verify_setup.py` para detectar referencias huérfanas.
+- Snapshots históricos que mantienen legibles las órdenes.
 
-```javascript
-db.productos.aggregate([
-  { $facet: {
-    "por_categoria": [
-      { $group: { _id: "$categoria.slug", total: { $sum: 1 },
-                  precio_promedio: { $avg: "$precio" } } },
-      { $sort: { total: -1 } }
-    ],
-    "top_productos_precio": [
-      { $sort: { precio: -1 } },
-      { $limit: 5 },
-      { $project: { nombre: 1, precio: 1, categoria: "$categoria.nombre" } }
-    ],
-    "resumen_global": [
-      { $group: { _id: null,
-                  total_productos: { $sum: 1 },
-                  total_disponibles: { $sum: { $cond: ["$disponible", 1, 0] } },
-                  precio_promedio_global: { $avg: "$precio" } } }
-    ]
-  }}
-])
+La identidad comprable es `oferta_id`; el frontend, carrito y checkout ya no
+aceptan el antiguo `producto_id` SQL.
+
+## 7. Checkout y prevención de sobreventa
+
+El servicio de checkout ejecuta una sola transacción MySQL:
+
+1. Valida usuario y dirección.
+2. Bloquea ofertas e inventarios en orden estable con `FOR UPDATE`.
+3. Verifica stock disponible.
+4. Crea pedido, subpedidos, snapshot de dirección y líneas.
+5. Descuenta inventario y registra movimientos.
+6. Registra pago y mensajes en `outbox_eventos`.
+7. Confirma mediante `COMMIT`.
+
+La prueba `test_concurrencia_ultima_unidad` lanza dos compras simultáneas sobre
+una sola unidad y comprueba que exactamente una tiene éxito.
+
+## 8. Outbox e historial
+
+Los cambios de precio e inventario se confirman primero en MySQL junto con un
+mensaje outbox. El worker reclama mensajes, actualiza MongoDB, registra el
+evento y marca el mensaje procesado. `outbox_id` único hace idempotente el
+reintento.
+
+`producto_eventos` se usa como historial y permite replay completo para el
+volumen actual. La aplicación inserta eventos y no los modifica en su flujo
+normal, pero no se ha configurado un rol MongoDB que prohíba `update` y
+`delete`; por tanto, la inmutabilidad no se presenta como garantía del motor.
+
+El precio histórico autoritativo también se conserva relacionalmente en
+`oferta_precios_historial`, mientras que el precio contractual queda congelado
+en `pedido_lineas.precio_unitario`.
+
+## 9. Evidencia reproducible
+
+Ejecutar desde `backend`:
+
+```powershell
+.\venv\Scripts\python.exe -m pytest tests -q
+.\venv\Scripts\python.exe scripts\verify_setup.py
 ```
 
-Este pipeline usa `$facet` (procesamiento paralelo de múltiples pipelines sobre el mismo conjunto de datos), `$group` con acumuladores, `$sort`, `$limit` y `$project` — cuatro de los stages fundamentales del aggregation framework.
+Resultado verificado el 24 de agosto de 2026:
 
-<!-- CAPTURA: Output de la query de agregación en mongosh o en la respuesta del endpoint /api/v1/admin/stats mostrando las tres facetas -->
+- 27 pruebas aprobadas y 0 fallos.
+- 65 referencias mínimas y 65 ofertas.
+- 65 documentos en MongoDB `productos`.
+- 31 subpedidos por vendedor.
+- 477 eventos de producto.
+- Cero referencias huérfanas.
+- Proyecciones de oferta sincronizadas.
+- Compilación Vite completada.
+- Corte físico 6B confirmado.
 
----
+Las advertencias de `datetime.utcnow()` y `pytest-asyncio` son deprecaciones
+futuras, no fallos funcionales.
 
-## 6. Referencia Cruzada MySQL ↔ MongoDB
+## 10. Reproducción del esquema
 
-Al crear un pedido, la tabla `pedido_lineas` en MySQL necesita referenciar el producto en MongoDB. Como no existe FK inter-motor, la solución usa dos mecanismos complementarios:
+El setup crea el esquema base, migra los documentos, ejecuta los backfills y
+aplica las fases hasta `10_phase6b_cutover.sql`. El DDL inicial conserva la ruta
+de migración como evidencia; el estado final no contiene las tablas
+transicionales `productos` ni `producto_imagenes`.
 
-**Columna `producto_ref CHAR(24)`**: guarda el ObjectId de MongoDB como string hexadecimal de 24 caracteres. Es una referencia lógica sin validación automática.
-
-**Snapshot desnormalizado**: `producto_nombre` y `precio_unitario` se congelan en el momento de la compra. Esto garantiza que el historial de pedidos sea legible aunque el producto cambie de nombre o sea descontinuado.
-
-La validación de que `producto_ref` apunta a un documento válido se hace en la capa de aplicación (FastAPI verifica en MongoDB antes de llamar al stored procedure de MySQL). La documentación detallada está en `docs/07-referencia-sql-mongo.md`.
-
-<!-- CAPTURA: Resultado de SELECT linea_id, pedido_id, producto_ref, producto_nombre, precio_unitario FROM pedido_lineas LIMIT 5 en MySQL mostrando la columna producto_ref con valores de ObjectId -->
-
----
-
-## 7. Historial de Cambios — Event Sourcing
-
-El historial de cambios de productos se implementó con event sourcing sobre la colección `producto_eventos`. Cada modificación a un producto genera un nuevo documento de evento; los documentos existentes nunca se modifican ni eliminan.
-
-Los seis tipos de evento implementados son: `PRODUCTO_CREADO`, `PRECIO_ACTUALIZADO`, `DESCRIPCION_ACTUALIZADA`, `DISPONIBILIDAD_CAMBIADA`, `ATRIBUTOS_ACTUALIZADOS` y `PRODUCTO_DESCONTINUADO`. La colección tiene configurado un rol de solo `insert` y `find` a nivel de permisos de MongoDB para hacer cumplir la garantía append-only por construcción.
-
-La reconstrucción del estado en una fecha dada se hace con replay completo: la función `reconstruir_estado(producto_id, hasta_fecha)` lee todos los eventos del producto en orden cronológico y los aplica secuencialmente hasta la fecha solicitada. Se eligió replay completo sobre snapshots porque el volumen de eventos por producto en este sistema no justifica la complejidad adicional de gestionar snapshots.
-
-Esta arquitectura permite responder con exactitud preguntas como "¿cuánto costaba este producto el 15 de julio?" o "¿cuándo se cambió la descripción?", que son imposibles de responder en un modelo CRUD tradicional donde el UPDATE sobreescribe el valor anterior.
-
-<!-- CAPTURA: Resultado de db.producto_eventos.find({ producto_id: ObjectId("...") }).sort({ timestamp: 1 }) mostrando la secuencia completa de eventos de un producto -->
-
-<!-- CAPTURA: Output de la función reconstruir_estado llamada con dos fechas distintas para el mismo producto, mostrando estados diferentes -->
-
----
-
-## 8. Evidencias de Funcionamiento
-
-Esta sección consolida las capturas de pantalla que demuestran el sistema funcionando de extremo a extremo.
-
-<!-- CAPTURA: Pantalla del frontend React mostrando el listado del catálogo con productos de distintas categorías -->
-
-<!-- CAPTURA: Ficha de detalle de un producto (laptop) mostrando atributos específicos como procesador, RAM, almacenamiento -->
-
-<!-- CAPTURA: Ficha de detalle de otro producto (libro o ropa) mostrando atributos completamente distintos — evidencia de heterogeneidad resuelta -->
-
-<!-- CAPTURA: Proceso de checkout — carrito y confirmación de orden -->
-
-<!-- CAPTURA: Docker Compose levantado con los tres servicios activos: backend (FastAPI), mysql, mongo — output de docker-compose ps -->
-
-<!-- CAPTURA: Colección catalogo en MongoDB Compass mostrando la lista de 65 documentos del seed -->
-
-<!-- CAPTURA: Tablas en MySQL Workbench o similar mostrando registros en pedidos y pedido_lineas, con la columna producto_ref visible -->
-
-<!-- CAPTURA: Endpoint de la API FastAPI (Swagger UI en /docs) mostrando los endpoints disponibles -->
-
----
-
-*Informe preparado para la Entrega 1 — Bases de Datos 2, UNIS, Segundo Semestre 2026.*
+La evidencia detallada del corte está en
+[`15-fase6b-corte-fisico.md`](15-fase6b-corte-fisico.md).

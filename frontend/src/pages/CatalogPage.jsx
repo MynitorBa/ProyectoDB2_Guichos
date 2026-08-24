@@ -13,7 +13,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Separator } from '../components/ui/separator'
 
 const SORT_OPTIONS = [
-  { value: 'nuevo', label: 'Más recientes' },
+  { value: 'reciente', label: 'Más recientes' },
   { value: 'precio_asc', label: 'Precio: menor a mayor' },
   { value: 'precio_desc', label: 'Precio: mayor a menor' },
 ]
@@ -116,7 +116,7 @@ export default function CatalogPage() {
     categoria,
     precio_min: '',
     precio_max: '',
-    sort: 'nuevo',
+    sort: 'reciente',
   })
 
   // Sync filters when URL params change (e.g. user clicks a category in the header)
@@ -141,7 +141,7 @@ export default function CatalogPage() {
   }
 
   function clearFilters() {
-    setFilters({ categoria: '', precio_min: '', precio_max: '', sort: 'nuevo' })
+    setFilters({ categoria: '', precio_min: '', precio_max: '', sort: 'reciente' })
     setLocalSearch('')
     setSearchParams({})
     setPage(1)
@@ -163,7 +163,7 @@ export default function CatalogPage() {
     ...(q && { q }),
     ...(filters.precio_min && { precio_min: filters.precio_min }),
     ...(filters.precio_max && { precio_max: filters.precio_max }),
-    ...(filters.sort && { sort: filters.sort }),
+    ...(filters.sort && { orden: filters.sort }),
   }
 
   const { data, isLoading, isError } = useQuery({

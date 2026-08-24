@@ -1,6 +1,6 @@
 # ADR-001: Mover el catálogo de productos a MongoDB
 
-**Estado:** Aceptado  
+**Estado:** Aceptado y actualizado tras la Fase 6B
 **Fecha:** 2026-08-21  
 **Autor:** Estudiante — Bases de Datos 2, UNIS
 
@@ -22,7 +22,7 @@ Intenté modelar esto en MySQL y el resultado fue terrible: una tabla `productos
 
 ## Alternativas evaluadas
 
-### Alternativa 1: No cambiar nada — tabla única con columnas para cada atributo posible
+### Alternativa 1: Modelo EAV en MySQL
 
 Mantener un solo modelo relacional con una tabla `atributos_producto(producto_id, nombre_atributo, valor_texto)` en estilo EAV (Entity-Attribute-Value).
 
@@ -46,7 +46,9 @@ Mover la colección de productos a MongoDB, donde cada documento puede tener un 
 
 ## Decisión
 
-Adoptar un esquema **polígota**: MongoDB 7 para el catálogo de productos, MySQL 8 para todo lo demás.
+Adoptar un esquema **políglota**: MongoDB 7 para el contenido documental del
+producto y MySQL 8 para identidad, ofertas, precios, inventario, pedidos y
+demás datos transaccionales.
 
 ---
 
@@ -64,9 +66,13 @@ El modelo de documento de MongoDB permite que cada producto tenga exactamente lo
 { "nombre": "Camisa Oxford", "atributos": { "talla": "M", "color": "azul", "material": "algodón" } }
 ```
 
-Ambos viven en la misma colección `catalogo`, se consultan con la misma API, y el campo `atributos` simplemente tiene contenido distinto. No hay NULLs espurios, no hay esquema mentiroso.
+Ambos viven en la misma colección `productos`, se consultan con la misma API,
+y el campo `atributos` simplemente tiene contenido distinto. No hay NULLs
+espurios ni una tabla ancha con atributos que no aplican.
 
-Adicionalmente, MongoDB me permite implementar event sourcing en la colección `producto_eventos` de forma natural con documentos append-only, algo que en MySQL requeriría más esfuerzo de modelado.
+Adicionalmente, MongoDB permite conservar el historial documental en
+`producto_eventos`. Precio e inventario se originan en MySQL; sus cambios se
+publican mediante el outbox transaccional y se registran después en MongoDB.
 
 ---
 
@@ -79,6 +85,13 @@ Adicionalmente, MongoDB me permite implementar event sourcing en la colección `
 - El catálogo escala horizontalmente si fuera necesario.
 
 **Negativas y mitigaciones:**
-- No hay FK entre `pedido_lineas.producto_ref` y la colección de MongoDB. Mitigo esto con validación en capa de aplicación al crear órdenes y un job de reconciliación periódico.
-- Joins a nivel de aplicación entre MySQL y MongoDB añaden latencia. Los mitigamos desnormalizando `vendedor_nombre` dentro del documento de producto para las vistas de catálogo más frecuentes.
+- No hay FK física entre un ObjectId y MySQL. `producto_referencias` ofrece una
+  identidad mínima para reseñas y `verify_setup.py` comprueba las referencias
+  cruzadas.
+- El catálogo requiere combinar documentos MongoDB con ofertas MySQL. FastAPI
+  resuelve las ofertas de una página en una sola consulta por lote, evitando
+  una consulta SQL por producto.
+- La sincronización entre motores no es atómica. El outbox guarda el cambio y
+  el mensaje dentro de la misma transacción MySQL; un worker idempotente
+  actualiza después la proyección MongoDB.
 - El equipo necesita manejar dos motores de base de datos. Para este proyecto es asumible; en producción real requeriría mayor madurez operacional.

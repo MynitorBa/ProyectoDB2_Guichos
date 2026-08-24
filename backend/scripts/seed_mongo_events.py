@@ -10,12 +10,14 @@ de modo que se puede demostrar la reconstrucción de estado en cualquier fecha.
 import sys
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pymongo import MongoClient
 from dotenv import load_dotenv
+
+from app.core.time import utc_now
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -26,7 +28,7 @@ random.seed(42)
 
 
 def fecha_hace_dias(dias: int, variacion: int = 0) -> datetime:
-    d = datetime.utcnow() - timedelta(days=dias)
+    d = utc_now() - timedelta(days=dias)
     if variacion:
         d += timedelta(hours=random.randint(-variacion, variacion))
     return d

@@ -21,7 +21,7 @@ if (-not (Test-Path $PythonExe)) {
     # Intentar encontrar Python en PATH
     $PythonExe = "python"
 }
-Write-Host "[1/7] Python: " -NoNewline
+Write-Host "[1/8] Python: " -NoNewline
 try {
     $pyver = & $PythonExe --version 2>&1
     Write-Host $pyver -ForegroundColor Green
@@ -33,7 +33,7 @@ try {
 
 # ── 2. Levantar Docker ────────────────────────────────────────────────────────
 if (-not $SkipDocker) {
-    Write-Host "`n[2/7] Levantando contenedores Docker..." -ForegroundColor Cyan
+    Write-Host "`n[2/8] Levantando contenedores Docker..." -ForegroundColor Cyan
 
     # Copiar .env.example si no existe .env
     if (-not (Test-Path "$Root\.env")) {
@@ -64,11 +64,11 @@ if (-not $SkipDocker) {
     $mongoHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_mongo 2>$null
     Write-Host "  MongoDB estado: $mongoHealth" -ForegroundColor Green
 } else {
-    Write-Host "[2/7] Docker: OMITIDO" -ForegroundColor Gray
+    Write-Host "[2/8] Docker: OMITIDO" -ForegroundColor Gray
 }
 
 # ── 3. Configurar entorno Python ──────────────────────────────────────────────
-Write-Host "`n[3/7] Configurando entorno Python..." -ForegroundColor Cyan
+Write-Host "`n[3/8] Configurando entorno Python..." -ForegroundColor Cyan
 $venvPath = "$Root\backend\venv"
 if (-not (Test-Path $venvPath)) {
     & $PythonExe -m venv $venvPath
@@ -90,7 +90,7 @@ if (-not (Test-Path "$Root\backend\.env")) {
 Write-Host "  Python listo." -ForegroundColor Green
 
 # ── 4. Migrar productos a MongoDB ─────────────────────────────────────────────
-Write-Host "`n[4/7] Migrando productos MySQL → MongoDB..." -ForegroundColor Cyan
+Write-Host "`n[4/8] Migrando productos MySQL → MongoDB..." -ForegroundColor Cyan
 Set-Location "$Root\backend"
 try {
     & $python scripts\migrate_products_to_mongo.py --reset
@@ -101,7 +101,38 @@ try {
 }
 
 # ── 5. Sembrar eventos de historial ───────────────────────────────────────────
-Write-Host "`n[5/7] Sembrando historial de eventos en MongoDB..." -ForegroundColor Cyan
+Write-Host "`n[5/8] Completando ofertas, inventario y pedidos históricos..." -ForegroundColor Cyan
+& $python scripts\apply_phase3_backfill.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo completar la Fase 3; se aborta la instalación.'
+}
+Write-Host "  Backfill completado." -ForegroundColor Green
+
+& $python scripts\apply_phase4_dual_read.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo preparar el carrito para la lectura dual.'
+}
+Write-Host "  Contrato de ofertas del carrito instalado." -ForegroundColor Green
+
+& $python scripts\apply_phase6b_additive.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo preparar la identidad mínima de productos de la Fase 6B.'
+}
+Write-Host "  Referencias mínimas y FKs nuevas instaladas." -ForegroundColor Green
+
+& $python scripts\apply_phase6b_cutover.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo completar el corte físico de la Fase 6B.'
+}
+Write-Host "  Esquema heredado de productos retirado." -ForegroundColor Green
+
+& $python scripts\apply_phase7_reference_integrity.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo relacionar categorías, productos y ofertas.'
+}
+Write-Host "  Categorías, referencias y ofertas enlazadas con FKs." -ForegroundColor Green
+
+Write-Host "`n[6/8] Sembrando historial de eventos en MongoDB..." -ForegroundColor Cyan
 try {
     & $python scripts\seed_mongo_events.py
     Write-Host "  Eventos generados." -ForegroundColor Green
@@ -113,7 +144,7 @@ try {
 Set-Location $Root
 
 # ── 6. Verificar integridad ───────────────────────────────────────────────────
-Write-Host "`n[6/7] Verificando integridad del sistema..." -ForegroundColor Cyan
+Write-Host "`n[7/8] Verificando integridad del sistema..." -ForegroundColor Cyan
 Set-Location "$Root\backend"
 try {
     & $python scripts\verify_setup.py
@@ -124,7 +155,7 @@ Set-Location $Root
 
 # ── 7. Instalar dependencias del frontend ─────────────────────────────────────
 if (-not $SkipFrontend) {
-    Write-Host "`n[7/7] Instalando dependencias del frontend..." -ForegroundColor Cyan
+    Write-Host "`n[8/8] Instalando dependencias del frontend..." -ForegroundColor Cyan
     Set-Location "$Root\frontend"
 
     if (-not (Test-Path "$Root\frontend\.env")) {
@@ -136,7 +167,7 @@ if (-not $SkipFrontend) {
     Write-Host "  Frontend listo." -ForegroundColor Green
     Set-Location $Root
 } else {
-    Write-Host "[7/7] Frontend: OMITIDO" -ForegroundColor Gray
+    Write-Host "[8/8] Frontend: OMITIDO" -ForegroundColor Gray
 }
 
 # ── Resumen ───────────────────────────────────────────────────────────────────

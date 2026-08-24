@@ -61,9 +61,6 @@ db.createCollection('producto_eventos', {
   }
 });
 
-// ─── Colección: resenas (referenciadas desde productos) ───────────────────────
-db.createCollection('resenas');
-
 // ─── Colección: categoria_esquemas ───────────────────────────────────────────
 // Alimenta el formulario dinámico: al seleccionar una categoría, el frontend
 // pide GET /api/v1/categories/{slug}/schema y construye los campos del formulario.

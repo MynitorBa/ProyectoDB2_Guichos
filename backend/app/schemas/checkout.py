@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class CheckoutItem(BaseModel):
-    producto_id: int
+    oferta_id: int
     cantidad: int
 
 

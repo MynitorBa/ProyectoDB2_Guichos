@@ -6,8 +6,8 @@ Portal de e-commerce con arquitectura políglota: MySQL 8 para datos relacionale
 ## Arquitectura actual (Entrega 1)
 
 ```
-React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, pedidos, inventario)
-                                → MongoDB 7 (catálogo de productos, eventos)
+React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inventario, outbox)
+                                → MongoDB 7 (catálogo documental, proyecciones, eventos)
 ```
 
 ## Requisitos
@@ -43,7 +43,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, pedidos, inventario)
 proyecto/
 ├─ docker-compose.yml          # MySQL, MongoDB, Adminer, Mongo Express
 ├─ database/
-│  ├─ mysql/                   # DDL, índices, stored procedure, seed
+│  ├─ mysql/                   # DDL, índices, seed y migraciones versionadas
 │  └─ mongo/                   # Init collections, índices, ejemplos aggregation
 ├─ backend/                    # FastAPI + Python
 │  ├─ app/
@@ -60,22 +60,69 @@ proyecto/
 ## Comandos útiles
 
 ```powershell
-# Resetear todo (borra datos)
-.\scripts\reset-db.ps1
+# Instalación completa desde cero, incluidas las migraciones hasta Fase 7
+.\scripts\setup.ps1
 
-# Solo migrar productos a Mongo (idempotente)
-cd backend
-.\venv\Scripts\python.exe scripts\migrate_products_to_mongo.py
-
-# Regenerar historial de eventos
-.\venv\Scripts\python.exe scripts\seed_mongo_events.py
+# Iniciar TiendaYa
+.\scripts\start-dev.ps1
 
 # Verificar integridad
+cd backend
 .\venv\Scripts\python.exe scripts\verify_setup.py
 
 # Correr pruebas
-.\venv\Scripts\pytest.exe tests/ -v
+.\venv\Scripts\python.exe -m pytest tests -q
+
+# Compilar frontend
+cd ..\frontend
+npm run build
+
+# Reinicializar todos los datos (operación destructiva)
+cd ..
+.\scripts\reset-db.ps1
 ```
+
+La migración de Fase 1 no elimina datos. Antes de crear las nuevas claves
+foráneas comprueba que no existan referencias huérfanas y aborta si encuentra
+alguna. Las instalaciones nuevas la ejecutan automáticamente mediante Docker.
+
+La Fase 3 conserva el modelo anterior y llena en paralelo ofertas, precios,
+relaciones de inventario, subpedidos por vendedor y snapshots históricos. Es
+idempotente: puede repetirse sin duplicar filas.
+
+La Fase 5 hace que MySQL sea la autoridad de precio e inventario. Cada cambio
+genera un mensaje transaccional y el worker del backend actualiza de forma
+idempotente la proyección del catálogo en MongoDB. Consulte
+[`docs/12-fase5-outbox.md`](docs/12-fase5-outbox.md) para ver las garantías y
+la evidencia de pruebas.
+
+La Fase 6A retiró la dependencia operativa de los campos duplicados de la tabla
+SQL `productos`. Consulte
+[`docs/13-fase6a-retiro-logico.md`](docs/13-fase6a-retiro-logico.md) para ver
+la preparación previa al corte físico.
+
+La parte aditiva de Fase 6B creó `producto_referencias` y migró reseñas y
+movimientos hacia FKs definitivas. El corte físico posterior retiró la tabla
+SQL descriptiva `productos`, `producto_imagenes`, las columnas operativas
+`producto_id` y el procedimiento de checkout antiguo. Consulte
+[`docs/14-fase6b-aditiva.md`](docs/14-fase6b-aditiva.md) y
+[`docs/15-fase6b-corte-fisico.md`](docs/15-fase6b-corte-fisico.md).
+
+La extensión de integridad de la Fase 7 enlaza categorías, referencias de
+producto y ofertas mediante FKs. En una base ya existente se aplica y valida
+con `scripts\complete-phase7-reference-integrity.ps1`. La evidencia está en
+[`docs/16-fase7-integridad-referencias.md`](docs/16-fase7-integridad-referencias.md).
+
+## Documentación vigente
+
+- [Modelo relacional definitivo](docs/01-modelo-relacional.md)
+- [Diagrama ER definitivo](docs/02-diagrama-ER.md)
+- [Arquitectura](docs/05-diagrama-arquitectura.md)
+- [Referencias MySQL–MongoDB](docs/07-referencia-sql-mongo.md)
+- [Informe de Entrega 1](docs/informe-entrega1.md)
+- [Plan y evidencia de migración](docs/09-plan-migracion-incremental.md)
+- [Evidencia de integridad de referencias](docs/16-fase7-integridad-referencias.md)
+- [Pruebas funcionales integrales](docs/17-pruebas-funcionales.md)
 
 ## Entregas del proyecto
 

@@ -3,6 +3,7 @@ from sqlalchemy import String, Enum, DateTime, ForeignKey, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
+from app.core.time import utc_now
 
 
 class Rol(Base):
@@ -20,7 +21,7 @@ class UsuarioRol(Base):
 
     usuario_id: Mapped[int] = mapped_column(ForeignKey('usuarios.id'), primary_key=True)
     rol_id: Mapped[int] = mapped_column(ForeignKey('roles.id'), primary_key=True)
-    asignado_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    asignado_en: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     usuario: Mapped['Usuario'] = relationship(back_populates='usuario_roles')
     rol: Mapped['Rol'] = relationship(back_populates='usuarios')
@@ -39,8 +40,8 @@ class Usuario(Base):
         Enum('activo', 'inactivo', 'suspendido'), default='activo'
     )
     email_verificado: Mapped[bool] = mapped_column(default=False)
-    fecha_alta: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_alta: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     usuario_roles: Mapped[list['UsuarioRol']] = relationship(back_populates='usuario', cascade='all, delete-orphan')
     direcciones: Mapped[list['Direccion']] = relationship(back_populates='usuario')

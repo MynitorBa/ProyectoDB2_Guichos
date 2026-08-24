@@ -57,3 +57,8 @@ CREATE INDEX idx_cart_usuario_id     ON carritos (usuario_id);
 
 -- Justifica: listar ítems de un carrito en el sidebar
 CREATE INDEX idx_ci_carrito_id       ON carrito_items (carrito_id);
+
+-- Justifica: listar primero las notificaciones no leídas y más recientes
+-- de un usuario sin recorrer las notificaciones de otros usuarios.
+CREATE INDEX idx_notif_usuario_leida_fecha
+  ON notificaciones (usuario_id, leida, fecha_creacion);

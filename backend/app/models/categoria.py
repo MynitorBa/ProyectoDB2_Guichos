@@ -22,7 +22,3 @@ class Categoria(Base):
     padre: Mapped['Categoria | None'] = relationship(
         'Categoria', back_populates='hijos', remote_side='Categoria.id'
     )
-    productos: Mapped[list['Producto']] = relationship(back_populates='categoria')
-
-
-from app.models.producto import Producto  # noqa: E402

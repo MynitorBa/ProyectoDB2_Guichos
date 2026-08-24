@@ -53,6 +53,13 @@ def ensure_indexes(db: Database) -> None:
         name='idx_producto_timestamp',
         background=True,
     )
+    db.producto_eventos.create_index(
+        [('outbox_id', ASCENDING)],
+        name='uidx_evento_outbox',
+        unique=True,
+        sparse=True,
+        background=True,
+    )
 
 
 def close_mongo():

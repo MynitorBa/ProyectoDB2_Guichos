@@ -4,6 +4,7 @@ from sqlalchemy import String, Enum, ForeignKey, DateTime, Text, DECIMAL, SmallI
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
+from app.core.time import utc_now
 
 
 class Pedido(Base):
@@ -20,8 +21,8 @@ class Pedido(Base):
     impuestos: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=Decimal('0'))
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))
     notas: Mapped[str | None] = mapped_column(Text)
-    fecha_creacion: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_creacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     usuario: Mapped['Usuario'] = relationship(back_populates='pedidos')
     lineas: Mapped[list['PedidoLinea']] = relationship(back_populates='pedido', cascade='all, delete-orphan')
@@ -33,9 +34,18 @@ class PedidoLinea(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     pedido_id: Mapped[int] = mapped_column(ForeignKey('pedidos.id'))
-    producto_id: Mapped[int | None] = mapped_column(ForeignKey('productos.id'), nullable=True)
-    producto_ref: Mapped[str | None] = mapped_column(String(24))
+    pedido_vendedor_id: Mapped[int] = mapped_column(
+        ForeignKey('pedido_vendedores.id')
+    )
+    oferta_id: Mapped[int] = mapped_column(
+        ForeignKey('ofertas.id')
+    )
+    producto_ref: Mapped[str] = mapped_column(String(24))
+    sku_snapshot: Mapped[str] = mapped_column(String(50))
     producto_nombre: Mapped[str] = mapped_column(String(200))
+    vendedor_nombre_snapshot: Mapped[str] = mapped_column(
+        String(150)
+    )
     precio_unitario: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))
     cantidad: Mapped[int] = mapped_column(SmallInteger)
     subtotal_linea: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))

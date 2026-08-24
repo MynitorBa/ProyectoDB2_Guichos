@@ -16,9 +16,9 @@ export function CartProvider({ children }) {
     }
   }, [])
 
-  const add = async (producto_id, cantidad = 1) => {
+  const add = async (oferta_id, cantidad = 1) => {
     setLoading(true)
-    await addItem(producto_id, cantidad)
+    await addItem(oferta_id, cantidad)
     await fetchCart()
     setLoading(false)
   }

@@ -4,11 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from sqlalchemy import text
-
 from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
-from app.core.db_mysql import get_db
+from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor
 
 app = FastAPI(
@@ -20,7 +18,11 @@ app = FastAPI(
 # CORS: permite peticiones del frontend (Vite en :5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, 'http://localhost:5173'],
+    allow_origins=[
+        settings.FRONTEND_URL,
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ],
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -51,42 +53,15 @@ app.include_router(notifications.router, prefix='/api/v1')
 app.include_router(vendor.router,        prefix='/api/v1')
 
 
-def _create_notificaciones_table() -> None:
-    """Creates the notificaciones table if it doesn't exist using raw SQL.
-    Raw SQL avoids SQLAlchemy type-inference conflicts with existing tables."""
-    db = next(get_db())
-    try:
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS notificaciones (
-                id          INT            NOT NULL AUTO_INCREMENT,
-                usuario_id  INT            NOT NULL,
-                tipo        VARCHAR(50)    NOT NULL,
-                titulo      VARCHAR(200)   NOT NULL,
-                mensaje     TEXT           NOT NULL,
-                leida       TINYINT(1)     NOT NULL DEFAULT 0,
-                pedido_id   INT            NULL,
-                fecha_creacion DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id),
-                KEY idx_notif_usuario (usuario_id),
-                KEY idx_notif_pedido  (pedido_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-        """))
-        db.commit()
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning('create notificaciones: %s', exc)
-    finally:
-        db.close()
-
-
 @app.on_event('startup')
 def startup():
-    _create_notificaciones_table()
     ensure_indexes(get_mongo_db())
+    start_outbox_worker()
 
 
 @app.on_event('shutdown')
 def shutdown():
+    stop_outbox_worker()
     close_mongo()
 
 

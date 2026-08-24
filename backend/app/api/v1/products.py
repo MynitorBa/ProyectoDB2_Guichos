@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
+from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
+from app.core.db_mysql import get_db
 from app.services import catalog_service
 
 router = APIRouter(prefix='/products', tags=['Productos'])
@@ -18,9 +20,11 @@ def listar_productos(
     page_size: int = Query(20, ge=1, le=100),
     orden: str = Query('precio_asc', enum=['precio_asc', 'precio_desc', 'nombre_asc', 'reciente']),
     db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
 ):
     return catalog_service.listar_productos(
         db,
+        mysql_db,
         categoria_slug=categoria,
         precio_min=precio_min,
         precio_max=precio_max,
@@ -33,8 +37,12 @@ def listar_productos(
 
 
 @router.get('/{producto_id}')
-def obtener_producto(producto_id: str, db: Database = Depends(get_mongo_db)):
-    producto = catalog_service.obtener_producto(db, producto_id)
+def obtener_producto(
+    producto_id: str,
+    db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
+):
+    producto = catalog_service.obtener_producto(db, producto_id, mysql_db)
     if not producto:
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
     return producto

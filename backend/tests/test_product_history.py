@@ -2,10 +2,12 @@
 Pruebas del servicio de historial de productos.
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
+
+from app.core.time import utc_now
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -26,7 +28,7 @@ def test_reconstruir_estado_en_fecha(mongo_db):
     from app.services.product_history_service import reconstruir_estado, registrar_evento
 
     # Crear un producto de prueba para el test
-    ahora = datetime.utcnow()
+    ahora = utc_now()
     doc = mongo_db.productos.insert_one({
         'sku': 'TEST-HIST-001',
         'nombre': 'Producto de prueba historial',

@@ -13,8 +13,8 @@ flowchart TD
     end
 
     subgraph Datos["Capa de Datos — Activa"]
-        MYS[("MySQL 8\nUsuarios · Pedidos\nInventario · Pagos")]
-        MNG[("MongoDB 7\nCatálogo de productos\nEvento sourcing")]
+        MYS[("MySQL 8\nOfertas · Precios · Inventario\nPedidos · Pagos · Reseñas")]
+        MNG[("MongoDB 7\nProductos documentales\nProyecciones · Historial")]
     end
 
     subgraph Futuro2["Futuro — Entrega 2"]
@@ -36,8 +36,8 @@ flowchart TD
 
     RCT -- "HTTP / JSON\nREST API" --> FPI
 
-    FPI -- "SQLAlchemy ORM\nConsultas transaccionales" --> MYS
-    FPI -- "PyMongo / Motor\nCatálogo + eventos" --> MNG
+    FPI -- "SQLAlchemy ORM\nTransacciones + outbox" --> MYS
+    FPI -- "PyMongo\nDocumentos + eventos" --> MNG
 
     FPI -. "Entrega 2\nredis-py" .-> RED
     FPI -. "Entrega 3\ndriver Neo4j / ClickHouse" .-> GRF
@@ -67,15 +67,27 @@ Las rutas principales de la SPA son: catálogo (listado y ficha de producto), ca
 FastAPI actúa como orquestador entre las dos bases de datos activas. Sus responsabilidades son:
 
 - Autenticación y autorización con JWT.
-- Enrutamiento de queries: las consultas de catálogo y atributos van a MongoDB; las transaccionales (crear orden, verificar stock, procesar pago) van a MySQL.
-- Joins a nivel de aplicación: cuando necesito mostrar una orden con el nombre del producto, FastAPI resuelve el `producto_ref` de `pedido_lineas` contra MongoDB para obtener los datos del catálogo.
-- Validación de integridad cruzada antes de confirmar una compra.
+- Lectura combinada del catálogo: MongoDB aporta contenido documental y MySQL
+  aporta ofertas, precio, vendedor e inventario mediante una consulta por lote.
+- Checkout transaccional: bloquea ofertas e inventario con `SELECT FOR UPDATE`,
+  crea pedido, subpedidos, snapshots, movimientos, pago y mensajes outbox.
+- Sincronización: el worker del outbox proyecta cambios operativos hacia
+  MongoDB de forma idempotente.
+- Validación y verificación periódica de referencias cruzadas mediante
+  `verify_setup.py`.
 
 ### MySQL 8
-Almacena todos los datos donde la consistencia transaccional importa: usuarios, roles, pedidos, pagos, inventario y movimientos de stock. La elección de MySQL aquí es deliberada — necesito transacciones ACID para el proceso de checkout (descontar inventario + crear pedido + registrar pago en una sola transacción atómica).
+Almacena usuarios, roles, vendedores, ofertas, historial de precios,
+inventario, pedidos, pagos, carrito, reseñas, notificaciones y outbox. La
+transacción de checkout descuenta inventario, crea el pedido y sus partes,
+registra el pago y publica el mensaje de sincronización de forma atómica.
 
 ### MongoDB 7
-Almacena el catálogo de productos con sus atributos heterogéneos y la colección `producto_eventos` para el historial de cambios. No participa en transacciones de checkout; su rol es lectura intensiva del catálogo y escritura append-only de eventos.
+Almacena la colección `productos` con atributos heterogéneos e imágenes, y
+`producto_eventos` para el historial. No decide precio ni stock durante el
+checkout. Los eventos se insertan desde escrituras documentales y desde el
+worker del outbox; la idempotencia de estos últimos se garantiza con un índice
+único por `outbox_id`.
 
 ## Componentes planeados
 

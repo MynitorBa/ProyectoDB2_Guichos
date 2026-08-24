@@ -65,12 +65,10 @@ db.producto_eventos.createIndex(
   { name: 'idx_eventos_tipo_timestamp' }
 );
 
-// ─── Colección: resenas ───────────────────────────────────────────────────────
-
-// Para cargar reseñas de un producto con paginación.
-db.resenas.createIndex(
-  { producto_id: 1, fecha: -1 },
-  { name: 'idx_resenas_producto_fecha' }
+// Garantiza que reintentar un mensaje del outbox no duplique el historial.
+db.producto_eventos.createIndex(
+  { outbox_id: 1 },
+  { unique: true, sparse: true, name: 'uidx_evento_outbox' }
 );
 
 // ─── Colección: categoria_esquemas ───────────────────────────────────────────

@@ -1,210 +1,279 @@
-# Diagrama Entidad-Relación — TiendaYa
+# Diagrama ER definitivo — MySQL
 
-El siguiente diagrama cubre todas las tablas del modelo relacional en MySQL 8. Las cardinalidades usan la notación estándar de Mermaid (`||`, `|{`, `}|`, etc.).
+**Estado:** vigente después de la extensión de integridad de la Fase 7.
 
 ```mermaid
 erDiagram
-    usuarios {
-        INT usuario_id PK
-        VARCHAR nombre
-        VARCHAR email
-        VARCHAR password_hash
-        BOOLEAN activo
-        TIMESTAMP creado_en
-        TIMESTAMP actualizado_en
-    }
-
     roles {
-        INT rol_id PK
-        VARCHAR nombre
+        INT id PK
+        VARCHAR nombre UK
         VARCHAR descripcion
     }
-
-    usuario_rol {
-        INT usuario_id FK
-        INT rol_id FK
-        TIMESTAMP asignado_en
-    }
-
-    direcciones {
-        INT direccion_id PK
-        INT usuario_id FK
-        VARCHAR calle
-        VARCHAR ciudad
-        VARCHAR departamento
-        VARCHAR pais
-        VARCHAR codigo_postal
-        BOOLEAN es_principal
-    }
-
-    vendedores {
-        INT vendedor_id PK
-        INT usuario_id FK
-        VARCHAR nombre_tienda
-        VARCHAR nit
+    usuarios {
+        INT id PK
+        VARCHAR email UK
+        VARCHAR password_hash
+        VARCHAR nombre
+        VARCHAR apellido
         VARCHAR telefono
-        TEXT descripcion
-        BOOLEAN verificado
-        TIMESTAMP creado_en
+        ENUM estado
+        BOOLEAN email_verificado
+        DATETIME fecha_alta
+        DATETIME fecha_actualizacion
     }
-
-    categorias {
-        INT categoria_id PK
-        INT padre_id FK
-        VARCHAR nombre
-        TEXT descripcion
-        VARCHAR slug
+    usuario_rol {
+        INT usuario_id PK,FK
+        INT rol_id PK,FK
+        DATETIME asignado_en
     }
-
-    productos {
-        INT producto_id PK
-        INT vendedor_id FK
-        INT categoria_id FK
-        VARCHAR nombre
-        TEXT descripcion
-        DECIMAL precio
-        CHAR mongo_id
-        BOOLEAN activo
-        TIMESTAMP creado_en
-        TIMESTAMP actualizado_en
-    }
-
-    producto_imagenes {
-        INT imagen_id PK
-        INT producto_id FK
-        VARCHAR url
-        BOOLEAN es_principal
-        INT orden
-    }
-
-    inventario {
-        INT inventario_id PK
-        INT producto_id FK
-        INT cantidad_disponible
-        INT cantidad_reservada
-        INT stock_minimo
-        TIMESTAMP actualizado_en
-    }
-
-    movimientos_inventario {
-        INT movimiento_id PK
-        INT inventario_id FK
+    direcciones {
+        INT id PK
         INT usuario_id FK
         ENUM tipo
-        INT cantidad
-        VARCHAR referencia
-        TEXT notas
-        TIMESTAMP creado_en
+        VARCHAR pais
+        VARCHAR departamento
+        VARCHAR municipio
+        VARCHAR linea1
+        VARCHAR linea2
+        VARCHAR codigo_postal
+        BOOLEAN es_predeterminada
+        BOOLEAN activa
     }
-
+    vendedores {
+        INT id PK
+        INT usuario_id FK,UK
+        VARCHAR nombre_comercial
+        VARCHAR nit UK
+        TEXT descripcion
+        VARCHAR logo_url
+        ENUM estado_verificacion
+        DATETIME fecha_registro
+    }
+    categorias {
+        INT id PK
+        INT categoria_padre_id FK
+        VARCHAR nombre
+        VARCHAR slug UK
+        TEXT descripcion
+        VARCHAR imagen_url
+        BOOLEAN activa
+        SMALLINT orden
+    }
+    producto_referencias {
+        INT id PK
+        CHAR producto_ref UK
+        INT categoria_id FK
+        DATETIME fecha_creacion
+    }
+    ofertas {
+        INT id PK
+        CHAR producto_ref FK
+        INT vendedor_id FK
+        VARCHAR sku
+        DECIMAL precio_actual
+        CHAR moneda
+        ENUM estado
+        INT version
+        DATETIME fecha_creacion
+        DATETIME fecha_actualizacion
+    }
+    oferta_precios_historial {
+        BIGINT id PK
+        INT oferta_id FK
+        DECIMAL precio
+        CHAR moneda
+        DATETIME vigente_desde
+        DATETIME vigente_hasta
+        INT cambiado_por FK
+        VARCHAR motivo
+        DATETIME fecha_registro
+    }
+    inventario {
+        INT id PK
+        INT oferta_id FK
+        INT cantidad_disponible
+        INT cantidad_reservada
+        INT punto_reorden
+        VARCHAR bodega
+        DATETIME fecha_actualizacion
+    }
+    movimientos_inventario {
+        BIGINT id PK
+        INT inventario_id FK
+        ENUM tipo
+        INT cantidad
+        VARCHAR motivo
+        INT pedido_id FK
+        INT usuario_id FK
+        DATETIME fecha
+    }
     pedidos {
-        INT pedido_id PK
+        INT id PK
         INT usuario_id FK
         INT direccion_id FK
         ENUM estado
         DECIMAL subtotal
         DECIMAL impuestos
         DECIMAL total
-        TIMESTAMP creado_en
-        TIMESTAMP actualizado_en
+        TEXT notas
+        DATETIME fecha_creacion
+        DATETIME fecha_actualizacion
     }
-
-    pedido_lineas {
-        INT linea_id PK
+    pedido_vendedores {
+        INT id PK
         INT pedido_id FK
+        INT vendedor_id FK
+        ENUM estado
+        DECIMAL subtotal
+        DECIMAL costo_envio
+        DATETIME fecha_creacion
+        DATETIME fecha_actualizacion
+    }
+    pedido_direcciones {
+        INT pedido_id PK,FK
+        VARCHAR receptor_nombre
+        VARCHAR receptor_telefono
+        VARCHAR pais
+        VARCHAR departamento
+        VARCHAR municipio
+        VARCHAR linea1
+        VARCHAR linea2
+        VARCHAR codigo_postal
+    }
+    pedido_lineas {
+        BIGINT id PK
+        INT pedido_id FK
+        INT pedido_vendedor_id FK
+        INT oferta_id FK
         CHAR producto_ref
+        VARCHAR sku_snapshot
         VARCHAR producto_nombre
-        INT cantidad
+        VARCHAR vendedor_nombre_snapshot
         DECIMAL precio_unitario
+        SMALLINT cantidad
         DECIMAL subtotal_linea
     }
-
+    metodos_pago {
+        INT id PK
+        VARCHAR nombre UK
+        BOOLEAN activo
+    }
     pagos {
-        INT pago_id PK
+        INT id PK
         INT pedido_id FK
         INT metodo_pago_id FK
         DECIMAL monto
         ENUM estado
-        VARCHAR referencia_externa
-        TIMESTAMP procesado_en
+        VARCHAR referencia_transaccion
+        DATETIME fecha
     }
-
-    metodos_pago {
-        INT metodo_pago_id PK
-        VARCHAR nombre
-        VARCHAR proveedor
-        BOOLEAN activo
-    }
-
-    resenas {
-        INT resena_id PK
-        INT usuario_id FK
-        INT producto_id FK
-        INT puntuacion
-        TEXT comentario
-        BOOLEAN verificada
-        TIMESTAMP creado_en
-    }
-
     carritos {
-        INT carrito_id PK
+        INT id PK
         INT usuario_id FK
-        TIMESTAMP creado_en
-        TIMESTAMP actualizado_en
+        ENUM estado
+        DATETIME fecha_creacion
+        DATETIME fecha_actualizacion
     }
-
     carrito_items {
-        INT item_id PK
+        BIGINT id PK
         INT carrito_id FK
+        INT oferta_id FK
         CHAR producto_ref
-        INT cantidad
-        DECIMAL precio_capturado
-        TIMESTAMP agregado_en
+        SMALLINT cantidad
+        DECIMAL precio_al_agregar
+        DATETIME fecha_agregado
+    }
+    resenas {
+        BIGINT id PK
+        INT usuario_id FK
+        INT producto_referencia_id FK
+        SMALLINT calificacion
+        TEXT comentario
+        BOOLEAN aprobada
+        DATETIME fecha
+    }
+    notificaciones {
+        BIGINT id PK
+        INT usuario_id FK
+        VARCHAR tipo
+        VARCHAR titulo
+        TEXT mensaje
+        BOOLEAN leida
+        INT pedido_id FK
+        DATETIME fecha_creacion
+    }
+    outbox_eventos {
+        CHAR id PK
+        VARCHAR tipo_evento
+        VARCHAR agregado_tipo
+        VARCHAR agregado_id
+        CHAR producto_ref
+        JSON payload
+        ENUM estado
+        SMALLINT intentos
+        TEXT ultimo_error
+        DATETIME creado_en
+        DATETIME procesado_en
     }
 
-    usuarios ||--o{ usuario_rol : "tiene"
-    roles ||--o{ usuario_rol : "asignado a"
-
-    usuarios ||--o{ direcciones : "registra"
-
-    usuarios ||--o| vendedores : "opera como"
-
-    categorias ||--o{ categorias : "contiene (padre_id)"
-
-    vendedores ||--o{ productos : "publica"
-    categorias ||--o{ productos : "clasifica"
-
-    productos ||--o{ producto_imagenes : "tiene"
-
-    productos ||--|| inventario : "controlado por"
-    inventario ||--o{ movimientos_inventario : "registra"
-
-    movimientos_inventario }o--|| usuarios : "ejecutado por"
-
-    usuarios ||--o{ pedidos : "realiza"
-    direcciones ||--o{ pedidos : "destino de"
-
-    pedidos ||--o{ pedido_lineas : "contiene"
-
-    pedidos ||--o{ pagos : "liquidado con"
-    metodos_pago ||--o{ pagos : "usado en"
-
-    usuarios ||--o{ resenas : "escribe"
-    productos ||--o{ resenas : "recibe"
-
-    usuarios ||--o| carritos : "posee"
-    carritos ||--o{ carrito_items : "contiene"
+    usuarios ||--o{ usuario_rol : recibe
+    roles ||--o{ usuario_rol : asigna
+    usuarios ||--o{ direcciones : posee
+    usuarios ||--o| vendedores : administra
+    categorias ||--o{ categorias : contiene
+    categorias ||--o{ producto_referencias : clasifica
+    producto_referencias ||--o{ ofertas : habilita
+    vendedores ||--o{ ofertas : publica
+    ofertas ||--o{ oferta_precios_historial : historiza
+    usuarios |o--o{ oferta_precios_historial : cambia
+    ofertas ||--o{ inventario : abastece
+    inventario ||--o{ movimientos_inventario : registra
+    usuarios |o--o{ movimientos_inventario : ejecuta
+    usuarios ||--o{ pedidos : realiza
+    direcciones ||--o{ pedidos : selecciona
+    pedidos ||--o{ pedido_vendedores : divide
+    vendedores ||--o{ pedido_vendedores : atiende
+    pedidos ||--|| pedido_direcciones : congela
+    pedidos ||--o{ pedido_lineas : contiene
+    pedido_vendedores ||--o{ pedido_lineas : agrupa
+    ofertas ||--o{ pedido_lineas : vende
+    pedidos |o--o{ movimientos_inventario : origina
+    pedidos ||--o{ pagos : recibe
+    metodos_pago ||--o{ pagos : utiliza
+    usuarios ||--o{ carritos : posee
+    carritos ||--o{ carrito_items : contiene
+    ofertas ||--o{ carrito_items : agrega
+    usuarios ||--o{ resenas : escribe
+    producto_referencias ||--o{ resenas : recibe
+    usuarios ||--o{ notificaciones : recibe
+    pedidos |o--o{ notificaciones : contextualiza
 ```
 
-## Notas sobre el diagrama
+## Referencias lógicas hacia MongoDB
 
-**Relación `categorias` auto-referenciada:** La columna `padre_id` apunta a la misma tabla `categorias`. Esto permite modelar la jerarquía de dos niveles del catálogo — por ejemplo, `electrónica` es padre de `computadoras`, `celulares` y `audio`. Mermaid lo representa como un loop sobre la misma entidad.
+`producto_referencias.producto_ref` contiene el ObjectId hexadecimal del
+documento en MongoDB `productos`; esa es la única referencia intermotor de la
+cadena y no puede expresarse como FK. Dentro de MySQL,
+`ofertas.producto_ref` sí referencia `producto_referencias.producto_ref`.
+`pedido_lineas`, `carrito_items` y `outbox_eventos` conservan copias del mismo
+identificador con la semántica histórica o de integración descrita en el
+modelo.
 
-**`producto_ref` en `pedido_lineas` y `carrito_items`:** Esta columna de tipo `CHAR(24)` guarda el ObjectId de MongoDB del producto. No existe FK formal porque MySQL no puede referenciar MongoDB, pero la relación lógica es clara. La documentación del cruce entre bases de datos está en `07-referencia-sql-mongo.md`.
+`producto_referencias` no duplica el catálogo: registra una identidad estable
+y su categoría SQL. MongoDB conserva el nombre y slug de categoría como
+snapshot documental para lectura. La oferta es la identidad comprable y el
+inventario pertenece a la oferta, no al documento.
 
-**`mongo_id` en `productos`:** La tabla `productos` de MySQL guarda también el ObjectId de su contraparte en la colección `catalogo` de MongoDB. Esto permite joins a nivel de aplicación entre el registro MySQL (precio, stock, vendedor_id) y el documento MongoDB (atributos variables, imágenes, historial de eventos).
+## Restricciones principales
 
-**Cardinalidades destacadas:**
-- Un usuario tiene exactamente un carrito (`||--o|`), pero puede tener cero o muchos pedidos (`||--o{`).
-- Un producto tiene exactamente un registro de inventario (`||--||`), modelado como 1:1 estricto.
-- Un vendedor puede tener cero productos al inicio (`||--o{`), lo que permite onboarding sin publicar de inmediato.
+- `ofertas`: una oferta por `(vendedor_id, producto_ref)` y SKU único por
+  vendedor.
+- `inventario`: una fila por `(oferta_id, bodega)`.
+- `pedido_vendedores`: una parte por `(pedido_id, vendedor_id)`.
+- `carrito_items`: una oferta por carrito.
+- `resenas`: una reseña por `(usuario_id, producto_referencia_id)`.
+- `oferta_precios_historial`: una sola vigencia abierta por oferta.
+
+El diagrama representa el esquema posterior a
+`database/mysql/11_phase7_reference_integrity.sql`, no el DDL transicional
+previo.

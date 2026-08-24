@@ -1,23 +1,24 @@
-"""
-Servicio de checkout que ejecuta el flujo de compra como transacción atómica.
-Implementa lo mismo que sp_crear_pedido pero desde Python/SQLAlchemy,
-para poder hacer pruebas unitarias y de concurrencia directamente.
-"""
+"""Checkout transaccional cuya identidad comprable es la oferta MySQL."""
+
+from collections import defaultdict
 from decimal import Decimal
 
 from bson import ObjectId
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.carrito import Carrito, CarritoItem
-from app.models.inventario import Inventario, MovimientoInventario
-from app.models.pedido import Pedido, PedidoLinea
-from app.models.pago import Pago
-from app.models.producto import Producto
 from app.models.direccion import Direccion
+from app.models.inventario import Inventario, MovimientoInventario
+from app.models.oferta import Oferta
+from app.models.pago import Pago
+from app.models.pedido import Pedido, PedidoLinea
+from app.models.pedido_vendedor import PedidoDireccion, PedidoVendedor
 from app.models.usuario import Usuario
+from app.models.vendedor import Vendedor
 from app.schemas.checkout import CheckoutItem
-
+from app.services.offer_service import resolver_oferta_comprable
+from app.services.outbox_service import enqueue_outbox
 
 IVA = Decimal('0.12')
 
@@ -38,74 +39,87 @@ def procesar_checkout(
     metodo_pago_id: int,
     items: list[CheckoutItem],
 ) -> Pedido:
-    """
-    Ejecuta el checkout dentro de una transacción explícita con bloqueos pesimistas.
-    Lanza CheckoutError si hay stock insuficiente o datos inválidos.
-    """
+    """Bloquea oferta e inventario y crea el pedido completo atómicamente."""
     if not items:
         raise CheckoutError('El carrito está vacío.', 'EMPTY_CART')
 
-    # Validar usuario activo
     usuario = db.get(Usuario, usuario_id)
     if not usuario or usuario.estado != 'activo':
         raise CheckoutError('Usuario no válido.', 'INVALID_USER')
 
-    # Validar dirección pertenece al usuario
     direccion = db.get(Direccion, direccion_id)
     if not direccion or direccion.usuario_id != usuario_id or not direccion.activa:
         raise CheckoutError('Dirección no válida para este usuario.', 'INVALID_ADDRESS')
 
-    producto_ids = [item.producto_id for item in items]
-    cantidad_por_producto = {item.producto_id: item.cantidad for item in items}
+    quantities = defaultdict(int)
+    for item in items:
+        if item.cantidad < 1:
+            raise CheckoutError('La cantidad debe ser positiva.', 'INVALID_QUANTITY')
+        try:
+            offer = resolver_oferta_comprable(db, oferta_id=item.oferta_id)
+        except LookupError as exc:
+            raise CheckoutError(str(exc), 'OFFER_NOT_FOUND') from exc
+        quantities[offer.id] += item.cantidad
 
-    # SELECT FOR UPDATE: bloquea las filas de inventario para evitar sobreventa
-    # en compras concurrentes sobre el mismo stock.
-    inventarios = (
+    offer_ids = sorted(quantities)
+    locked_offers = (
         db.execute(
-            select(Inventario)
-            .where(Inventario.producto_id.in_(producto_ids))
-            .where(Inventario.bodega == 'principal')
+            select(Oferta)
+            .where(Oferta.id.in_(offer_ids))
+            .where(Oferta.estado == 'activa')
+            .order_by(Oferta.id)
             .with_for_update()
         )
         .scalars()
         .all()
     )
+    offers = {offer.id: offer for offer in locked_offers}
+    if len(offers) != len(offer_ids):
+        raise CheckoutError('Una oferta dejó de estar disponible.', 'OFFER_NOT_FOUND')
 
-    inventario_map: dict[int, Inventario] = {inv.producto_id: inv for inv in inventarios}
-
-    # Verificar stock para cada producto
-    for producto_id, cantidad in cantidad_por_producto.items():
-        inv = inventario_map.get(producto_id)
-        if inv is None:
+    inventories = (
+        db.execute(
+            select(Inventario)
+            .where(Inventario.oferta_id.in_(offer_ids))
+            .where(Inventario.bodega == 'principal')
+            .order_by(Inventario.oferta_id)
+            .with_for_update()
+        )
+        .scalars()
+        .all()
+    )
+    inventory_by_offer = {row.oferta_id: row for row in inventories}
+    for offer_id, quantity in quantities.items():
+        inventory = inventory_by_offer.get(offer_id)
+        if inventory is None:
             raise CheckoutError(
-                f'Producto id={producto_id} no tiene inventario registrado.',
-                'NO_INVENTORY'
+                f'Oferta id={offer_id} no tiene inventario registrado.',
+                'NO_INVENTORY',
             )
-        if inv.cantidad_disponible < cantidad:
+        available = inventory.cantidad_disponible - inventory.cantidad_reservada
+        if available < quantity:
             raise CheckoutError(
-                f'Stock insuficiente para producto id={producto_id}. '
-                f'Disponible: {inv.cantidad_disponible}, solicitado: {cantidad}',
-                'INSUFFICIENT_STOCK'
+                f'Stock insuficiente para oferta id={offer_id}. '
+                f'Disponible: {available}, solicitado: {quantity}',
+                'INSUFFICIENT_STOCK',
             )
 
-    # Cargar datos de productos para congelar precio y nombre
-    productos: dict[int, Producto] = {}
-    for prod_id in producto_ids:
-        prod = db.get(Producto, prod_id)
-        if not prod:
-            raise CheckoutError(f'Producto id={prod_id} no encontrado.', 'PRODUCT_NOT_FOUND')
-        productos[prod_id] = prod
-
-    # Calcular subtotal
+    vendors = {
+        vendor.id: vendor
+        for vendor in db.query(Vendedor).filter(
+            Vendedor.id.in_({offer.vendedor_id for offer in offers.values()})
+        )
+    }
+    subtotal_by_vendor = defaultdict(lambda: Decimal('0'))
     subtotal = Decimal('0')
-    for item in items:
-        prod = productos[item.producto_id]
-        subtotal += prod.precio * item.cantidad
+    for offer_id, quantity in quantities.items():
+        offer = offers[offer_id]
+        line_subtotal = offer.precio_actual * quantity
+        subtotal += line_subtotal
+        subtotal_by_vendor[offer.vendedor_id] += line_subtotal
 
     impuestos = (subtotal * IVA).quantize(Decimal('0.01'))
     total = subtotal + impuestos
-
-    # Crear pedido
     pedido = Pedido(
         usuario_id=usuario_id,
         direccion_id=direccion_id,
@@ -115,73 +129,109 @@ def procesar_checkout(
         total=total,
     )
     db.add(pedido)
-    db.flush()  # Obtener el id del pedido antes de commit
+    db.flush()
 
-    # Crear líneas, descontar inventario, registrar movimientos
-    mongo_updates = []
-    for item in items:
-        prod = productos[item.producto_id]
-        subtotal_linea = prod.precio * item.cantidad
-
-        linea = PedidoLinea(
+    vendor_orders = {}
+    for vendor_id, vendor_subtotal in subtotal_by_vendor.items():
+        part = PedidoVendedor(
             pedido_id=pedido.id,
-            producto_id=item.producto_id,
-            producto_ref=prod.producto_ref,
-            producto_nombre=prod.nombre,
-            precio_unitario=prod.precio,
-            cantidad=item.cantidad,
-            subtotal_linea=subtotal_linea,
+            vendedor_id=vendor_id,
+            estado='confirmado',
+            subtotal=vendor_subtotal,
+            costo_envio=Decimal('0'),
         )
-        db.add(linea)
+        db.add(part)
+        db.flush()
+        vendor_orders[vendor_id] = part
 
-        # Descontar inventario
-        inv = inventario_map[item.producto_id]
-        inv.cantidad_disponible -= item.cantidad
+    db.add(PedidoDireccion(
+        pedido_id=pedido.id,
+        receptor_nombre=f'{usuario.nombre} {usuario.apellido}'.strip(),
+        receptor_telefono=usuario.telefono,
+        pais=direccion.pais,
+        departamento=direccion.departamento,
+        municipio=direccion.municipio,
+        linea1=direccion.linea1,
+        linea2=direccion.linea2,
+        codigo_postal=direccion.codigo_postal,
+    ))
 
-        if prod.producto_ref:
-            mongo_updates.append({'ref': prod.producto_ref, 'stock': max(0, inv.cantidad_disponible)})
+    for offer_id, quantity in quantities.items():
+        offer = offers[offer_id]
+        inventory = inventory_by_offer[offer_id]
+        vendor = vendors[offer.vendedor_id]
+        line_subtotal = offer.precio_actual * quantity
+        product_name = offer.sku
+        if mongo_db is not None and offer.producto_ref:
+            try:
+                mongo_product = mongo_db.productos.find_one(
+                    {'_id': ObjectId(offer.producto_ref)}, {'nombre': 1}
+                )
+                if mongo_product and mongo_product.get('nombre'):
+                    product_name = mongo_product['nombre']
+            except Exception:
+                pass
 
-        # Movimiento de salida
-        mov = MovimientoInventario(
-            producto_id=item.producto_id,
+        db.add(PedidoLinea(
+            pedido_id=pedido.id,
+            pedido_vendedor_id=vendor_orders[offer.vendedor_id].id,
+            oferta_id=offer.id,
+            producto_ref=offer.producto_ref,
+            sku_snapshot=offer.sku,
+            producto_nombre=product_name,
+            vendedor_nombre_snapshot=vendor.nombre_comercial,
+            precio_unitario=offer.precio_actual,
+            cantidad=quantity,
+            subtotal_linea=line_subtotal,
+        ))
+
+        inventory.cantidad_disponible -= quantity
+        projected_stock = max(0, inventory.cantidad_disponible)
+        enqueue_outbox(
+            db,
+            tipo_evento='inventario.actualizado',
+            agregado_tipo='pedido',
+            agregado_id=pedido.id,
+            producto_ref=offer.producto_ref,
+            payload={
+                'oferta_id': offer.id,
+                'pedido_id': pedido.id,
+                'projection': {
+                    'stock': projected_stock,
+                    'disponible': projected_stock > 0,
+                },
+                'history': {
+                    'tipo_evento': 'DISPONIBILIDAD_CAMBIADA',
+                    'datos_anteriores': {},
+                    'datos_nuevos': {
+                        'stock': projected_stock,
+                        'disponible': projected_stock > 0,
+                    },
+                    'usuario_id': str(usuario_id),
+                },
+            },
+        )
+        db.add(MovimientoInventario(
+            inventario_id=inventory.id,
             tipo='salida',
-            cantidad=item.cantidad,
+            cantidad=quantity,
             motivo='venta',
             pedido_id=pedido.id,
             usuario_id=usuario_id,
-        )
-        db.add(mov)
+        ))
 
-    # Registrar pago
-    referencia = f"TXN-{pedido.id:08d}-{int(total * 100)}"
-    pago = Pago(
+    db.add(Pago(
         pedido_id=pedido.id,
         metodo_pago_id=metodo_pago_id,
         monto=total,
         estado='aprobado',
-        referencia_transaccion=referencia,
-    )
-    db.add(pago)
-
-    # Vaciar el carrito eliminando sus items (evita conflicto con índice único por estado)
-    carrito = db.query(Carrito).filter_by(usuario_id=usuario_id, estado='activo').first()
-    if carrito:
-        db.query(CarritoItem).filter_by(carrito_id=carrito.id).delete()
+        referencia_transaccion=f'TXN-{pedido.id:08d}-{int(total * 100)}',
+    ))
+    cart = db.query(Carrito).filter_by(usuario_id=usuario_id, estado='activo').first()
+    if cart:
+        db.query(CarritoItem).filter_by(carrito_id=cart.id).delete()
 
     db.commit()
-
-    if mongo_db is not None:
-        for upd in mongo_updates:
-            try:
-                set_data = {'stock': upd['stock']}
-                if upd['stock'] <= 0:
-                    set_data['disponible'] = False
-                mongo_db.productos.update_one(
-                    {'_id': ObjectId(upd['ref'])},
-                    {'$set': set_data}
-                )
-            except Exception:
-                pass
 
     db.refresh(pedido)
     return pedido

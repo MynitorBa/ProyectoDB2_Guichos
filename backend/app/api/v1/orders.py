@@ -11,7 +11,7 @@ from app.core.deps import get_current_user
 from app.models.direccion import Direccion
 from app.models.usuario import Usuario
 from app.models.pedido import Pedido
-from app.models.producto import Producto as ProductoSQL
+from app.models.pedido_vendedor import PedidoVendedor
 from app.models.vendedor import Vendedor
 from app.models.notificacion import Notificacion
 from app.schemas.checkout import CheckoutRequest, CheckoutResponse
@@ -66,13 +66,15 @@ def _crear_notificaciones_vendedores(db: Session, pedido: Pedido, comprador: Usu
     """Creates one notification per vendor with products in this order."""
     try:
         vendedor_lineas: dict[int, list] = {}
+        parts = {
+            part.id: part
+            for part in db.query(PedidoVendedor).filter_by(pedido_id=pedido.id).all()
+        }
         for linea in pedido.lineas:
-            if not linea.producto_id:
+            part = parts.get(linea.pedido_vendedor_id)
+            if not part:
                 continue
-            prod = db.get(ProductoSQL, linea.producto_id)
-            if not prod or not prod.vendedor_id:
-                continue
-            v = db.get(Vendedor, prod.vendedor_id)
+            v = db.get(Vendedor, part.vendedor_id)
             if not v or v.usuario_id == comprador.id:
                 continue
             vendedor_lineas.setdefault(v.usuario_id, []).append(linea)

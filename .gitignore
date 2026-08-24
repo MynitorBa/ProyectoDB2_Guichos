@@ -38,3 +38,4 @@ data/
 # Logs
 *.log
 logs/
+backups/

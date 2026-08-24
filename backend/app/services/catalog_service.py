@@ -7,8 +7,11 @@ from typing import Any
 
 from pymongo.database import Database
 from bson import ObjectId
+from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.services.product_history_service import registrar_evento
+from app.services.offer_service import listar_ofertas_por_referencias, oferta_principal
 
 
 def _serialize(doc: dict) -> dict:
@@ -19,6 +22,7 @@ def _serialize(doc: dict) -> dict:
 
 def listar_productos(
     db: Database,
+    mysql_db: Session | None = None,
     categoria_slug: str | None = None,
     precio_min: float | None = None,
     precio_max: float | None = None,
@@ -32,6 +36,80 @@ def listar_productos(
 
     if categoria_slug:
         filtro['categoria.slug'] = categoria_slug
+    if q:
+        filtro['$text'] = {'$search': q}
+
+    if mysql_db is not None:
+        docs = list(db.productos.find(filtro))
+        offers_by_ref = listar_ofertas_por_referencias(
+            mysql_db, [str(doc['_id']) for doc in docs]
+        )
+        mismatches = 0
+        enriched = []
+        for doc in docs:
+            item = _serialize(doc)
+            legacy = {
+                'precio': item.get('precio'),
+                'stock': item.get('stock'),
+                'vendedor_nombre': item.get('vendedor_nombre'),
+            }
+            offers = offers_by_ref.get(item['_id'], [])
+            primary = oferta_principal(offers)
+            if primary:
+                item.update({
+                    'oferta_id': primary['oferta_id'],
+                    'precio': primary['precio'],
+                    'moneda': primary['moneda'],
+                    'stock': primary['stock'],
+                    'disponible': primary['disponible'],
+                    'vendedor_id': primary['vendedor_id'],
+                    'vendedor_nombre': primary['vendedor_nombre'],
+                    'ofertas_count': len(offers),
+                })
+                if (
+                    float(legacy['precio'] or 0) != primary['precio']
+                    or int(legacy['stock'] or 0) != primary['stock']
+                    or legacy['vendedor_nombre'] != primary['vendedor_nombre']
+                ):
+                    mismatches += 1
+            else:
+                item.update({
+                    'oferta_id': None,
+                    'disponible': False,
+                    'stock': 0,
+                    'ofertas_count': 0,
+                })
+
+            if disponible is not None and item['disponible'] != disponible:
+                continue
+            if precio_min is not None and item.get('precio', 0) < precio_min:
+                continue
+            if precio_max is not None and item.get('precio', 0) > precio_max:
+                continue
+            enriched.append(item)
+
+        sort_key = {
+            'precio_asc': lambda item: (item.get('precio', 0), item.get('nombre', '')),
+            'precio_desc': lambda item: (-item.get('precio', 0), item.get('nombre', '')),
+            'nombre_asc': lambda item: item.get('nombre', ''),
+            'reciente': lambda item: item.get('fecha_creacion', datetime.min),
+        }.get(orden)
+        enriched.sort(key=sort_key, reverse=orden == 'reciente')
+        total = len(enriched)
+        skip = (page - 1) * page_size
+        return {
+            'items': enriched[skip:skip + page_size],
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': max(1, -(-total // page_size)),
+            'dual_read': {
+                'source': 'mongodb+mysql',
+                'checked': len(docs),
+                'legacy_mismatches': mismatches,
+            },
+        }
+
     if disponible is not None:
         filtro['disponible'] = disponible
     if precio_min is not None or precio_max is not None:
@@ -40,8 +118,6 @@ def listar_productos(
             filtro['precio']['$gte'] = precio_min
         if precio_max is not None:
             filtro['precio']['$lte'] = precio_max
-    if q:
-        filtro['$text'] = {'$search': q}
 
     sort_map = {
         'precio_asc':  [('precio', 1)],
@@ -64,12 +140,39 @@ def listar_productos(
     }
 
 
-def obtener_producto(db: Database, producto_id: str) -> dict | None:
+def obtener_producto(
+    db: Database,
+    producto_id: str,
+    mysql_db: Session | None = None,
+) -> dict | None:
     try:
         doc = db.productos.find_one({'_id': ObjectId(producto_id)})
     except Exception:
         doc = db.productos.find_one({'sku': producto_id})
-    return _serialize(doc) if doc else None
+    if not doc:
+        return None
+    item = _serialize(doc)
+    if mysql_db is not None:
+        offers = listar_ofertas_por_referencias(mysql_db, [item['_id']]).get(
+            item['_id'], []
+        )
+        primary = oferta_principal(offers)
+        item['ofertas'] = offers
+        item['ofertas_count'] = len(offers)
+        if primary:
+            item.update({
+                'oferta_id': primary['oferta_id'],
+                'precio': primary['precio'],
+                'moneda': primary['moneda'],
+                'stock': primary['stock'],
+                'disponible': primary['disponible'],
+                'vendedor_id': primary['vendedor_id'],
+                'vendedor_nombre': primary['vendedor_nombre'],
+            })
+        else:
+            item.update({'oferta_id': None, 'stock': 0, 'disponible': False})
+        item['dual_read'] = {'source': 'mongodb+mysql'}
+    return item
 
 
 def crear_producto(
@@ -77,7 +180,7 @@ def crear_producto(
     datos: dict,
     usuario_id: str | None = None,
 ) -> dict:
-    ahora = datetime.utcnow()
+    ahora = utc_now()
     datos.setdefault('fecha_creacion', ahora)
     datos.setdefault('fecha_actualizacion', ahora)
     datos.setdefault('disponible', True)
@@ -117,7 +220,7 @@ def actualizar_producto(
     if not doc_anterior:
         return None
 
-    cambios['fecha_actualizacion'] = datetime.utcnow()
+    cambios['fecha_actualizacion'] = utc_now()
 
     # Determinar qué tipo de eventos generar
     if 'precio' in cambios and cambios['precio'] != doc_anterior.get('precio'):

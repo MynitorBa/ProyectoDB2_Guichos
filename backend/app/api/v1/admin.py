@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel
 from pymongo.database import Database
-from sqlalchemy import func, distinct
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 GT_TZ = timezone(timedelta(hours=-6))
@@ -26,13 +27,17 @@ from app.core.deps import get_admin_user
 from app.models.categoria import Categoria
 from app.models.inventario import Inventario
 from app.models.pago import Pago
-from app.models.pedido import Pedido, PedidoLinea
-from app.models.producto import Producto as ProductoSQL
+from app.models.pedido import Pedido
+from app.models.pedido_vendedor import PedidoVendedor
+from app.models.producto_referencia import ProductoReferencia
 from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.models.vendedor import Vendedor
+from app.models.oferta import Oferta, OfertaPrecioHistorial
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
+from app.services.outbox_service import enqueue_outbox
+from app.services.offer_service import actualizar_precio_oferta
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
 
@@ -180,8 +185,13 @@ def crear_producto(
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
 ):
+    categoria = mysql_db.query(Categoria).filter_by(
+        slug=payload.categoria_slug, activa=True
+    ).first()
+    if not categoria:
+        raise HTTPException(400, 'La categoría no existe o está inactiva.')
     esquema = db.categoria_esquemas.find_one({'categoria_slug': payload.categoria_slug})
-    categoria_nombre = esquema['categoria_nombre'] if esquema else payload.categoria_slug
+    categoria_nombre = esquema['categoria_nombre'] if esquema else categoria.nombre
 
     if payload.vendedor_usuario_id:
         v_user = mysql_db.get(Usuario, payload.vendedor_usuario_id)
@@ -210,38 +220,40 @@ def crear_producto(
     }
     producto_mongo = catalog_service.crear_producto(db, doc, usuario_id=str(current_user.id))
 
-    # Persist to MySQL (productos + inventario) and back-link mysql_id into MongoDB
-    cat = mysql_db.query(Categoria).filter_by(slug=payload.categoria_slug).first()
-    categoria_id = cat.id if cat else 1
-
+    # MySQL conserva solo identidad relacional, oferta, precio e inventario.
     vendedor_id = v_rec.id if v_rec else 1
-
-    prod_sql = ProductoSQL(
-        sku=payload.sku,
-        nombre=payload.nombre,
-        descripcion=payload.descripcion,
-        precio=payload.precio,
-        categoria_id=categoria_id,
-        vendedor_id=vendedor_id,
-        producto_ref=producto_mongo['_id'],
-        estado='activo',
-    )
-    mysql_db.add(prod_sql)
+    mysql_db.add(ProductoReferencia(
+        producto_ref=producto_mongo['_id'], categoria_id=categoria.id
+    ))
     mysql_db.flush()
 
+    oferta = Oferta(
+        producto_ref=producto_mongo['_id'],
+        vendedor_id=vendedor_id,
+        sku=payload.sku,
+        precio_actual=payload.precio,
+        moneda='GTQ',
+        estado='activa',
+        version=1,
+    )
+    mysql_db.add(oferta)
+    mysql_db.flush()
+    mysql_db.add(OfertaPrecioHistorial(
+        oferta_id=oferta.id,
+        precio=payload.precio,
+        moneda='GTQ',
+        vigente_desde=datetime.now(),
+        cambiado_por=current_user.id,
+        motivo='Precio inicial al crear la oferta',
+    ))
+
     inv = Inventario(
-        producto_id=prod_sql.id,
+        oferta_id=oferta.id,
         cantidad_disponible=payload.stock,
         bodega='principal',
     )
     mysql_db.add(inv)
     mysql_db.commit()
-
-    db.productos.update_one(
-        {'_id': ObjectId(producto_mongo['_id'])},
-        {'$set': {'mysql_id': prod_sql.id}},
-    )
-    producto_mongo['mysql_id'] = prod_sql.id
 
     return producto_mongo
 
@@ -291,29 +303,117 @@ def actualizar_producto(
             v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=v_uid).first()
             nuevo_vendedor_id_sql = v_rec.id if v_rec else None
 
+    # Mongo recibe solo datos documentales. Precio, stock y vendedor se
+    # proyectan después desde el outbox transaccional MySQL.
+    campos_transaccionales = {
+        'precio', 'stock', 'disponible', 'vendedor_id', 'vendedor_nombre'
+    }
+    cambios_documentales = {
+        key: value for key, value in cambios.items()
+        if key not in campos_transaccionales
+    }
     producto = catalog_service.actualizar_producto(
-        db, producto_id, cambios, usuario_id=str(current_user.id)
+        db, producto_id, cambios_documentales, usuario_id=str(current_user.id)
     )
     if not producto:
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
 
-    if producto.get('mysql_id'):
-        needs_commit = False
-        prod_sql = mysql_db.get(ProductoSQL, producto['mysql_id'])
-        if nuevo_stock is not None:
-            inv = mysql_db.query(Inventario).filter_by(
-                producto_id=producto['mysql_id'], bodega='principal'
-            ).first()
-            if inv:
-                inv.cantidad_disponible = nuevo_stock
-                needs_commit = True
-        if nuevo_vendedor_id_sql is not None and prod_sql:
-            prod_sql.vendedor_id = nuevo_vendedor_id_sql
-            needs_commit = True
-        if needs_commit:
-            mysql_db.commit()
+    needs_commit = False
+    oferta = mysql_db.query(Oferta).filter_by(producto_ref=producto_id).order_by(Oferta.id).first()
+    cambios_operativos = {
+        'precio', 'stock', 'estado', 'disponible', 'vendedor_usuario_id'
+    }
+    if any(key in payload.model_fields_set for key in cambios_operativos) and not oferta:
+        raise HTTPException(
+            status_code=409,
+            detail='El producto documental no tiene una oferta MySQL asociada.',
+        )
 
-    return producto
+    if oferta and 'precio' in cambios:
+        if actualizar_precio_oferta(
+            mysql_db,
+            oferta=oferta,
+            nuevo_precio=Decimal(str(cambios['precio'])),
+            usuario_id=current_user.id,
+            motivo='Actualización desde panel administrativo',
+        ):
+            needs_commit = True
+
+    inv = (
+        mysql_db.query(Inventario).filter_by(
+            oferta_id=oferta.id, bodega='principal'
+        ).first()
+        if oferta else None
+    )
+    if nuevo_stock is not None and inv:
+        stock_anterior = inv.cantidad_disponible
+        inv.cantidad_disponible = nuevo_stock
+        enqueue_outbox(
+            mysql_db,
+            tipo_evento='inventario.actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=producto_id,
+            payload={
+                'projection': {'stock': nuevo_stock, 'disponible': nuevo_stock > 0},
+                'history': {
+                    'tipo_evento': 'DISPONIBILIDAD_CAMBIADA',
+                    'datos_anteriores': {'stock': stock_anterior},
+                    'datos_nuevos': {'stock': nuevo_stock, 'disponible': nuevo_stock > 0},
+                    'usuario_id': str(current_user.id),
+                },
+            },
+        )
+        needs_commit = True
+
+    if oferta and nuevo_vendedor_id_sql is not None:
+        oferta.vendedor_id = nuevo_vendedor_id_sql
+        vendedor = mysql_db.get(Vendedor, nuevo_vendedor_id_sql)
+        enqueue_outbox(
+            mysql_db,
+            tipo_evento='oferta.vendedor_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={'projection': {
+                'vendedor_id': str(vendedor.usuario_id),
+                'vendedor_nombre': vendedor.nombre_comercial,
+            }},
+        )
+        needs_commit = True
+
+    if oferta and ('estado' in cambios or 'disponible' in cambios):
+        if 'estado' in cambios:
+            oferta.estado = {
+                'activo': 'activa',
+                'inactivo': 'pausada',
+                'borrador': 'borrador',
+                'descontinuado': 'descontinuada',
+            }.get(cambios['estado'], oferta.estado)
+        elif cambios.get('disponible') is False:
+            oferta.estado = 'pausada'
+        elif cambios.get('disponible') is True and oferta.estado == 'pausada':
+            oferta.estado = 'activa'
+        available = max(
+            0,
+            (inv.cantidad_disponible - inv.cantidad_reservada) if inv else 0,
+        )
+        enqueue_outbox(
+            mysql_db,
+            tipo_evento='oferta.estado_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={'projection': {
+                'disponible': oferta.estado == 'activa' and available > 0
+            }},
+        )
+        needs_commit = True
+
+    if needs_commit:
+        mysql_db.commit()
+
+    return catalog_service.obtener_producto(db, producto_id, mysql_db)
 
 
 @router.delete('/products/{producto_id}', status_code=204)
@@ -321,10 +421,23 @@ def eliminar_producto(
     producto_id: str,
     current_user: Usuario = Depends(get_admin_user),
     db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
 ):
     eliminado = catalog_service.eliminar_producto(db, producto_id, usuario_id=str(current_user.id))
     if not eliminado:
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
+    oferta = mysql_db.query(Oferta).filter_by(producto_ref=producto_id).first()
+    if oferta:
+        oferta.estado = 'descontinuada'
+        enqueue_outbox(
+            mysql_db,
+            tipo_evento='oferta.estado_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={'projection': {'disponible': False}},
+        )
+    mysql_db.commit()
 
 
 # ── Historial de eventos ───────────────────────────────────────────────────────
@@ -381,21 +494,36 @@ def migrar_stock(
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
 ):
-    """Sincroniza stock de MySQL inventario → MongoDB para productos existentes."""
+    """Encola una reconciliación de stock MySQL → MongoDB."""
     actualizados = 0
-    productos = list(db.productos.find({'mysql_id': {'$exists': True}}, {'_id': 1, 'mysql_id': 1, 'disponible': 1}))
-    for prod in productos:
-        mysql_id = prod.get('mysql_id')
-        if not mysql_id:
-            continue
-        inv = mysql_db.query(Inventario).filter_by(producto_id=mysql_id, bodega='principal').first()
-        if inv:
-            set_data = {'stock': inv.cantidad_disponible}
-            if inv.cantidad_disponible <= 0:
-                set_data['disponible'] = False
-            db.productos.update_one({'_id': prod['_id']}, {'$set': set_data})
+    rows = (
+        mysql_db.query(Oferta, Inventario)
+        .join(
+            Inventario,
+            (Inventario.oferta_id == Oferta.id)
+            & (Inventario.bodega == 'principal'),
+        )
+        .all()
+    )
+    for oferta, inv in rows:
+        if db.productos.find_one({'_id': ObjectId(oferta.producto_ref)}, {'_id': 1}):
+            enqueue_outbox(
+                mysql_db,
+                tipo_evento='inventario.reconciliado',
+                agregado_tipo='oferta',
+                agregado_id=oferta.id,
+                producto_ref=oferta.producto_ref,
+                payload={'projection': {
+                    'stock': inv.cantidad_disponible,
+                    'disponible': (
+                        oferta.estado == 'activa'
+                        and inv.cantidad_disponible - inv.cantidad_reservada > 0
+                    ),
+                }},
+            )
             actualizados += 1
-    return {'actualizados': actualizados}
+    mysql_db.commit()
+    return {'encolados': actualizados}
 
 
 # ── Gestión de categorías ─────────────────────────────────────────────────────
@@ -498,10 +626,18 @@ def eliminar_categoria(
     db: Session = Depends(get_db),
     mongo: Database = Depends(get_mongo_db),
 ):
-    """Elimina la categoría de MySQL y su esquema de MongoDB."""
+    """Elimina una categoría sin uso o desactiva una categoría referenciada."""
     cat = db.query(Categoria).filter_by(slug=slug).first()
     if not cat:
         raise HTTPException(404, 'Categoría no encontrada.')
+
+    referencias = db.query(ProductoReferencia).filter_by(
+        categoria_id=cat.id
+    ).count()
+    if referencias or cat.hijos:
+        cat.activa = False
+        db.commit()
+        return
 
     db.delete(cat)
     db.commit()
@@ -555,15 +691,17 @@ def sales_stats(
     top_rows = (
         db.query(
             Vendedor.nombre_comercial,
-            func.sum(PedidoLinea.subtotal_linea).label('ingresos'),
-            func.count(distinct(PedidoLinea.pedido_id)).label('pedidos'),
+            func.sum(PedidoVendedor.subtotal).label('ingresos'),
+            func.count(PedidoVendedor.id).label('pedidos'),
         )
-        .join(ProductoSQL, ProductoSQL.vendedor_id == Vendedor.id)
-        .join(PedidoLinea, PedidoLinea.producto_id == ProductoSQL.id)
-        .join(Pedido, Pedido.id == PedidoLinea.pedido_id)
-        .filter(Pedido.estado.notin_(['cancelado', 'reembolsado']))
+        .join(PedidoVendedor, PedidoVendedor.vendedor_id == Vendedor.id)
+        .join(Pedido, Pedido.id == PedidoVendedor.pedido_id)
+        .filter(
+            Pedido.estado.notin_(['cancelado', 'reembolsado']),
+            PedidoVendedor.estado.notin_(['cancelado', 'reembolsado']),
+        )
         .group_by(Vendedor.id, Vendedor.nombre_comercial)
-        .order_by(func.sum(PedidoLinea.subtotal_linea).desc())
+        .order_by(func.sum(PedidoVendedor.subtotal).desc())
         .limit(5)
         .all()
     )
@@ -599,17 +737,6 @@ def list_sales(
         .all()
     )
 
-    all_ids = [l.producto_id for p in pedidos for l in p.lineas if l.producto_id]
-    vendedor_map = {}
-    if all_ids:
-        rows = (
-            db.query(ProductoSQL.id, Vendedor.nombre_comercial)
-            .join(Vendedor, Vendedor.id == ProductoSQL.vendedor_id)
-            .filter(ProductoSQL.id.in_(all_ids))
-            .all()
-        )
-        vendedor_map = {r[0]: r[1] for r in rows}
-
     items = []
     for p in pedidos:
         u = p.usuario
@@ -638,7 +765,7 @@ def list_sales(
                     'precio_unitario': float(l.precio_unitario),
                     'cantidad': l.cantidad,
                     'subtotal_linea': float(l.subtotal_linea),
-                    'vendedor': vendedor_map.get(l.producto_id) if l.producto_id else None,
+                    'vendedor': l.vendedor_nombre_snapshot,
                 }
                 for l in p.lineas
             ],
@@ -659,17 +786,6 @@ def export_sales_excel(
     db: Session = Depends(get_db),
 ):
     pedidos = db.query(Pedido).order_by(Pedido.fecha_creacion.desc()).all()
-
-    all_ids = [l.producto_id for p in pedidos for l in p.lineas if l.producto_id]
-    vendedor_map = {}
-    if all_ids:
-        rows = (
-            db.query(ProductoSQL.id, Vendedor.nombre_comercial)
-            .join(Vendedor, Vendedor.id == ProductoSQL.vendedor_id)
-            .filter(ProductoSQL.id.in_(all_ids))
-            .all()
-        )
-        vendedor_map = {r[0]: r[1] for r in rows}
 
     wb = Workbook()
     ws = wb.active
@@ -703,7 +819,7 @@ def export_sales_excel(
                 f'{u.nombre} {u.apellido}' if u else '—',
                 u.email if u else '—',
                 l.producto_nombre,
-                vendedor_map.get(l.producto_id, '—') if l.producto_id else '—',
+                l.vendedor_nombre_snapshot or '—',
                 float(l.precio_unitario),
                 l.cantidad,
                 float(l.subtotal_linea),

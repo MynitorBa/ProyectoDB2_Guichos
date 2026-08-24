@@ -11,11 +11,11 @@ import { Skeleton } from '../components/ui/skeleton'
 import { formatQ, formatDate, cn } from '../lib/utils'
 
 const ESTADO_BADGE = {
-  pendiente: 'warning', confirmado: 'action', en_preparacion: 'action',
+  pendiente: 'warning', confirmado: 'action', preparando: 'action',
   enviado: 'jade', entregado: 'success', cancelado: 'error', reembolsado: 'default',
 }
 const ESTADO_LABEL = {
-  pendiente: 'Pendiente', confirmado: 'Confirmado', en_preparacion: 'En preparación',
+  pendiente: 'Pendiente', confirmado: 'Confirmado', preparando: 'En preparación',
   enviado: 'Enviado', entregado: 'Entregado', cancelado: 'Cancelado', reembolsado: 'Reembolsado',
 }
 

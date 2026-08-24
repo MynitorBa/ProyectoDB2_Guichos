@@ -1,13 +1,13 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, distinct
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db_mysql import get_db
 from app.core.deps import require_role
-from app.models.pedido import Pedido, PedidoLinea
-from app.models.producto import Producto as ProductoSQL
+from app.models.pedido import Pedido
+from app.models.pedido_vendedor import PedidoVendedor
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
 
@@ -20,8 +20,10 @@ get_vendor_user = require_role('vendedor', 'administrador')
 _ESTADOS_ADMIN_ONLY = {'pendiente', 'cancelado', 'reembolsado'}
 
 def _estados_vendedor() -> list[str]:
-    """Returns all valid pedido states except admin-only ones, derived from the DB enum."""
-    all_estados: list[str] = list(Pedido.__table__.c['estado'].type.enums)
+    """Devuelve los estados válidos del subpedido que controla el vendedor."""
+    all_estados: list[str] = list(
+        PedidoVendedor.__table__.c['estado'].type.enums
+    )
     return [e for e in all_estados if e not in _ESTADOS_ADMIN_ONLY]
 
 
@@ -49,29 +51,28 @@ def vendor_stats(
     v = _get_vendedor(db, current_user)
 
     total_pedidos = (
-        db.query(func.count(distinct(Pedido.id)))
-        .join(PedidoLinea, PedidoLinea.pedido_id == Pedido.id)
-        .join(ProductoSQL, ProductoSQL.id == PedidoLinea.producto_id)
-        .filter(ProductoSQL.vendedor_id == v.id)
+        db.query(func.count(PedidoVendedor.id))
+        .filter(PedidoVendedor.vendedor_id == v.id)
         .scalar() or 0
     )
 
     ingresos = (
-        db.query(func.sum(PedidoLinea.subtotal_linea))
-        .join(ProductoSQL, ProductoSQL.id == PedidoLinea.producto_id)
-        .join(Pedido, Pedido.id == PedidoLinea.pedido_id)
+        db.query(func.sum(PedidoVendedor.subtotal))
+        .join(Pedido, Pedido.id == PedidoVendedor.pedido_id)
         .filter(
-            ProductoSQL.vendedor_id == v.id,
+            PedidoVendedor.vendedor_id == v.id,
             Pedido.estado.notin_(['cancelado', 'reembolsado']),
+            PedidoVendedor.estado.notin_(['cancelado', 'reembolsado']),
         )
         .scalar() or 0
     )
 
     pendientes = (
-        db.query(func.count(distinct(Pedido.id)))
-        .join(PedidoLinea, PedidoLinea.pedido_id == Pedido.id)
-        .join(ProductoSQL, ProductoSQL.id == PedidoLinea.producto_id)
-        .filter(ProductoSQL.vendedor_id == v.id, Pedido.estado == 'pendiente')
+        db.query(func.count(PedidoVendedor.id))
+        .filter(
+            PedidoVendedor.vendedor_id == v.id,
+            PedidoVendedor.estado == 'pendiente',
+        )
         .scalar() or 0
     )
 
@@ -92,38 +93,31 @@ def vendor_orders(
 ):
     v = _get_vendedor(db, current_user)
 
-    pedido_ids_sq = (
-        db.query(PedidoLinea.pedido_id.distinct())
-        .join(ProductoSQL, ProductoSQL.id == PedidoLinea.producto_id)
-        .filter(ProductoSQL.vendedor_id == v.id)
-        .subquery()
-    )
+    total = db.query(func.count(PedidoVendedor.id)).filter(
+        PedidoVendedor.vendedor_id == v.id
+    ).scalar() or 0
 
-    total = db.query(func.count(Pedido.id)).filter(Pedido.id.in_(pedido_ids_sq)).scalar() or 0
-
-    pedidos = (
-        db.query(Pedido)
-        .filter(Pedido.id.in_(pedido_ids_sq))
+    rows = (
+        db.query(PedidoVendedor, Pedido)
+        .join(Pedido, Pedido.id == PedidoVendedor.pedido_id)
+        .filter(PedidoVendedor.vendedor_id == v.id)
         .order_by(Pedido.fecha_creacion.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
 
-    # Build a map of producto_id -> True for this vendor's products (batch lookup)
-    my_product_ids = set(
-        r[0] for r in db.query(ProductoSQL.id).filter(ProductoSQL.vendedor_id == v.id).all()
-    )
-
     items = []
-    for p in pedidos:
+    for part, p in rows:
         u = p.usuario
-        mis_lineas = [l for l in p.lineas if l.producto_id in my_product_ids]
+        mis_lineas = [l for l in p.lineas if l.pedido_vendedor_id == part.id]
         items.append({
             'id': p.id,
+            'pedido_vendedor_id': part.id,
             'fecha': p.fecha_creacion.replace(tzinfo=timezone.utc).astimezone(GT_TZ).isoformat(),
-            'estado': p.estado,
-            'total': float(p.total),
+            'estado': part.estado,
+            'estado_pedido': p.estado,
+            'total': float(part.subtotal + part.costo_envio),
             'comprador': {
                 'nombre': f'{u.nombre} {u.apellido}' if u else '—',
                 'email': u.email if u else '—',
@@ -162,19 +156,25 @@ def update_vendor_order_status(
 
     v = _get_vendedor(db, current_user)
 
-    tiene = (
-        db.query(PedidoLinea)
-        .join(ProductoSQL, ProductoSQL.id == PedidoLinea.producto_id)
-        .filter(PedidoLinea.pedido_id == pedido_id, ProductoSQL.vendedor_id == v.id)
+    part = (
+        db.query(PedidoVendedor)
+        .filter(
+            PedidoVendedor.pedido_id == pedido_id,
+            PedidoVendedor.vendedor_id == v.id,
+        )
         .first()
     )
-    if not tiene:
+    if not part:
         raise HTTPException(403, 'No tienes permiso para modificar este pedido.')
 
     pedido = db.get(Pedido, pedido_id)
     if not pedido:
         raise HTTPException(404, 'Pedido no encontrado.')
 
-    pedido.estado = payload.estado
+    part.estado = payload.estado
     db.commit()
-    return {'id': pedido_id, 'estado': payload.estado}
+    return {
+        'id': pedido_id,
+        'pedido_vendedor_id': part.id,
+        'estado': payload.estado,
+    }

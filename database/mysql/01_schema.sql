@@ -139,6 +139,45 @@ CREATE TABLE IF NOT EXISTS producto_imagenes (
   CONSTRAINT fk_pi_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Oferta transaccional: quién vende el producto documental, a qué precio y
+-- bajo qué estado comercial. producto_ref apunta lógicamente a MongoDB.
+CREATE TABLE IF NOT EXISTS ofertas (
+  id                  INT UNSIGNED    NOT NULL AUTO_INCREMENT,
+  producto_ref        CHAR(24)        NOT NULL,
+  vendedor_id         INT UNSIGNED    NOT NULL,
+  sku                 VARCHAR(50)     NOT NULL,
+  precio_actual       DECIMAL(12,2)   NOT NULL CHECK (precio_actual >= 0),
+  moneda              CHAR(3)         NOT NULL DEFAULT 'GTQ',
+  estado              ENUM('borrador','activa','pausada','descontinuada') NOT NULL DEFAULT 'activa',
+  version             INT UNSIGNED    NOT NULL DEFAULT 1 CHECK (version > 0),
+  fecha_creacion      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  fecha_actualizacion DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_oferta_vendedor_sku (vendedor_id, sku),
+  UNIQUE KEY uq_oferta_vendedor_producto (vendedor_id, producto_ref),
+  KEY idx_oferta_producto_ref (producto_ref),
+  CONSTRAINT fk_oferta_vendedor FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS oferta_precios_historial (
+  id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  oferta_id      INT UNSIGNED    NOT NULL,
+  precio         DECIMAL(12,2)   NOT NULL CHECK (precio >= 0),
+  moneda         CHAR(3)         NOT NULL DEFAULT 'GTQ',
+  vigente_desde  DATETIME(6)     NOT NULL,
+  vigente_hasta  DATETIME(6)     NULL,
+  cambiado_por   INT UNSIGNED    NULL,
+  motivo         VARCHAR(200)    NULL,
+  fecha_registro DATETIME(6)     NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  es_vigente     TINYINT GENERATED ALWAYS AS (IF(vigente_hasta IS NULL, 1, NULL)) STORED,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_precio_vigente_oferta (oferta_id, es_vigente),
+  KEY idx_precio_oferta_desde (oferta_id, vigente_desde),
+  CONSTRAINT fk_oph_oferta FOREIGN KEY (oferta_id) REFERENCES ofertas(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_oph_usuario FOREIGN KEY (cambiado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+  CONSTRAINT ck_oph_intervalo CHECK (vigente_hasta IS NULL OR vigente_hasta > vigente_desde)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =============================================================================
 -- 5. INVENTARIO
 -- =============================================================================
@@ -146,6 +185,7 @@ CREATE TABLE IF NOT EXISTS producto_imagenes (
 CREATE TABLE IF NOT EXISTS inventario (
   id                  INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   producto_id         INT UNSIGNED    NOT NULL,
+  oferta_id           INT UNSIGNED    NULL COMMENT 'FK de transición hacia ofertas',
   cantidad_disponible INT             NOT NULL DEFAULT 0 CHECK (cantidad_disponible >= 0),
   cantidad_reservada  INT             NOT NULL DEFAULT 0 CHECK (cantidad_reservada >= 0),
   punto_reorden       INT             NOT NULL DEFAULT 5,
@@ -153,7 +193,9 @@ CREATE TABLE IF NOT EXISTS inventario (
   fecha_actualizacion DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_inv_producto_bodega (producto_id, bodega),
-  CONSTRAINT fk_inv_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
+  KEY idx_inv_oferta_id (oferta_id),
+  CONSTRAINT fk_inv_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+  CONSTRAINT fk_inv_oferta FOREIGN KEY (oferta_id) REFERENCES ofertas(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS movimientos_inventario (
@@ -166,7 +208,8 @@ CREATE TABLE IF NOT EXISTS movimientos_inventario (
   usuario_id  INT UNSIGNED    NULL,
   fecha       DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  CONSTRAINT fk_mi_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE RESTRICT
+  CONSTRAINT fk_mi_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_mi_usuario  FOREIGN KEY (usuario_id)  REFERENCES usuarios(id)  ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
@@ -202,21 +245,62 @@ CREATE TABLE IF NOT EXISTS pedidos (
   CONSTRAINT fk_ped_direccion FOREIGN KEY (direccion_id) REFERENCES direcciones(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS pedido_vendedores (
+  id                  INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  pedido_id           INT UNSIGNED  NOT NULL,
+  vendedor_id         INT UNSIGNED  NOT NULL,
+  estado              ENUM('pendiente','confirmado','preparando','enviado','entregado','cancelado','reembolsado') NOT NULL DEFAULT 'pendiente',
+  subtotal            DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (subtotal >= 0),
+  costo_envio         DECIMAL(12,2) NOT NULL DEFAULT 0.00 CHECK (costo_envio >= 0),
+  fecha_creacion      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  fecha_actualizacion DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_pv_pedido_vendedor (pedido_id, vendedor_id),
+  KEY idx_pv_vendedor_estado (vendedor_id, estado),
+  CONSTRAINT fk_pv_pedido FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pv_vendedor FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS pedido_direcciones (
+  pedido_id          INT UNSIGNED NOT NULL,
+  receptor_nombre    VARCHAR(200) NOT NULL,
+  receptor_telefono  VARCHAR(20)  NULL,
+  pais               VARCHAR(60)  NOT NULL DEFAULT 'Guatemala',
+  departamento       VARCHAR(60)  NOT NULL,
+  municipio          VARCHAR(60)  NOT NULL,
+  linea1             VARCHAR(200) NOT NULL,
+  linea2             VARCHAR(200) NULL,
+  codigo_postal      VARCHAR(10)  NULL,
+  PRIMARY KEY (pedido_id),
+  CONSTRAINT fk_pd_pedido FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Se agrega después de crear pedidos porque movimientos_inventario se define
+-- antes para mantener agrupadas las tablas de inventario.
+ALTER TABLE movimientos_inventario
+  ADD CONSTRAINT fk_mi_pedido FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE SET NULL;
+
 -- precio_unitario se congela al momento de la compra: denormalización deliberada
 -- para preservar el historial aunque el producto cambie de precio mañana.
 CREATE TABLE IF NOT EXISTS pedido_lineas (
   id              INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   pedido_id       INT UNSIGNED    NOT NULL,
   producto_id     INT UNSIGNED    NULL COMMENT 'FK a productos MySQL; puede quedar NULL si el producto se elimina',
+  pedido_vendedor_id INT UNSIGNED NULL,
+  oferta_id       INT UNSIGNED    NULL,
   producto_ref    CHAR(24)        NULL COMMENT 'ObjectId en MongoDB del producto al momento de la compra',
+  sku_snapshot    VARCHAR(50)     NULL,
   -- Snapshot del producto al momento de la compra
   producto_nombre VARCHAR(200)    NOT NULL COMMENT 'Nombre congelado al comprar',
+  vendedor_nombre_snapshot VARCHAR(150) NULL,
   precio_unitario DECIMAL(10,2)   NOT NULL COMMENT 'Precio congelado al comprar; no viola 3FN porque es dato histórico',
   cantidad        SMALLINT UNSIGNED NOT NULL CHECK (cantidad > 0),
   subtotal_linea  DECIMAL(10,2)   NOT NULL,
   PRIMARY KEY (id),
   CONSTRAINT fk_pl_pedido  FOREIGN KEY (pedido_id)  REFERENCES pedidos(id)   ON DELETE CASCADE,
-  CONSTRAINT fk_pl_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE SET NULL
+  CONSTRAINT fk_pl_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE SET NULL,
+  CONSTRAINT fk_pl_pedido_vendedor FOREIGN KEY (pedido_vendedor_id) REFERENCES pedido_vendedores(id) ON DELETE SET NULL,
+  CONSTRAINT fk_pl_oferta FOREIGN KEY (oferta_id) REFERENCES ofertas(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
@@ -237,7 +321,42 @@ CREATE TABLE IF NOT EXISTS pagos (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- 9. RESEÑAS (se activan en Entrega 2; el modelo existe desde ya)
+-- 9. NOTIFICACIONES
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS notificaciones (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  usuario_id     INT UNSIGNED NOT NULL,
+  tipo           VARCHAR(50)  NOT NULL,
+  titulo         VARCHAR(200) NOT NULL,
+  mensaje        TEXT         NOT NULL,
+  leida          TINYINT(1)   NOT NULL DEFAULT 0,
+  pedido_id      INT UNSIGNED NULL,
+  fecha_creacion DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  CONSTRAINT fk_notif_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+  CONSTRAINT fk_notif_pedido  FOREIGN KEY (pedido_id)  REFERENCES pedidos(id)  ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS outbox_eventos (
+  id            CHAR(36)       NOT NULL,
+  tipo_evento   VARCHAR(100)   NOT NULL,
+  agregado_tipo VARCHAR(60)    NOT NULL,
+  agregado_id   VARCHAR(64)    NOT NULL,
+  producto_ref  CHAR(24)       NULL,
+  payload       JSON           NOT NULL,
+  estado        ENUM('pendiente','procesando','procesado','error') NOT NULL DEFAULT 'pendiente',
+  intentos      SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  ultimo_error  TEXT           NULL,
+  creado_en     DATETIME(6)    NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  procesado_en  DATETIME(6)    NULL,
+  PRIMARY KEY (id),
+  KEY idx_outbox_estado_creado (estado, creado_en),
+  KEY idx_outbox_agregado (agregado_tipo, agregado_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================================================
+-- 10. RESEÑAS
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS resenas (
@@ -255,7 +374,7 @@ CREATE TABLE IF NOT EXISTS resenas (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- 10. CARRITO TEMPORAL EN SQL (migra a Redis en Entrega 2)
+-- 11. CARRITO TEMPORAL EN SQL (migra a Redis en Entrega 2)
 -- Nota: este carrito persiste en la sesión del usuario. En la Entrega 2 se
 -- reemplazará por Redis para obtener expiración automática y menor latencia.
 -- =============================================================================
@@ -275,14 +394,17 @@ CREATE TABLE IF NOT EXISTS carrito_items (
   id          INT UNSIGNED    NOT NULL AUTO_INCREMENT,
   carrito_id  INT UNSIGNED    NOT NULL,
   producto_id INT UNSIGNED    NOT NULL,
+  oferta_id   INT UNSIGNED    NULL COMMENT 'Identidad comprable; producto_id queda para compatibilidad',
   producto_ref CHAR(24)       NULL COMMENT 'ObjectId Mongo del producto',
   cantidad    SMALLINT UNSIGNED NOT NULL DEFAULT 1 CHECK (cantidad > 0),
   precio_al_agregar DECIMAL(10,2) NOT NULL COMMENT 'Precio cuando se agregó al carrito',
   fecha_agregado DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_ci_carrito_producto (carrito_id, producto_id),
+  UNIQUE KEY uq_ci_carrito_oferta (carrito_id, oferta_id),
+  KEY idx_ci_producto (producto_id),
   CONSTRAINT fk_ci_carrito  FOREIGN KEY (carrito_id)  REFERENCES carritos(id)  ON DELETE CASCADE,
-  CONSTRAINT fk_ci_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
+  CONSTRAINT fk_ci_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ci_oferta FOREIGN KEY (oferta_id) REFERENCES ofertas(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET foreign_key_checks = 1;

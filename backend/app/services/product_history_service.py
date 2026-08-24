@@ -18,6 +18,8 @@ from typing import Any
 from bson import ObjectId
 from pymongo.database import Database
 
+from app.core.time import utc_now
+
 GT_TZ = timezone(timedelta(hours=-6))  # America/Guatemala — UTC-6, sin horario de verano
 
 
@@ -66,7 +68,7 @@ def registrar_evento(
         'datos_anteriores': datos_anteriores,
         'datos_nuevos': datos_nuevos,
         'usuario_id': usuario_id,
-        'timestamp': datetime.utcnow(),
+        'timestamp': utc_now(),
         'version': siguiente_version,
     }
     resultado = db.producto_eventos.insert_one(evento)

@@ -151,7 +151,7 @@ export default function CheckoutPage() {
     setSubmitting(true)
     try {
       const orderItems = items.map((i) => ({
-        producto_id: i.producto_id,
+        oferta_id: i.oferta_id,
         cantidad: i.cantidad,
       }))
       const res = await checkout({

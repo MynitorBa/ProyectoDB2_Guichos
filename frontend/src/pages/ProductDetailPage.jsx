@@ -47,6 +47,7 @@ export default function ProductDetailPage() {
   const { user } = useAuth()
   const [selectedImg, setSelectedImg] = useState(0)
   const [cantidad, setCantidad] = useState(1)
+  const [selectedOfferId, setSelectedOfferId] = useState(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['product', id],
@@ -61,12 +62,14 @@ export default function ProductDetailPage() {
       navigate('/login')
       return
     }
-    if (!product.mysql_id) {
+    const offer = (product.ofertas || []).find((item) => item.oferta_id === selectedOfferId)
+      || product.ofertas?.[0]
+    if (!offer?.oferta_id && !product.oferta_id) {
       toast.error('Producto no disponible para compra')
       return
     }
     try {
-      await add(product.mysql_id, cantidad)
+      await add(offer?.oferta_id || product.oferta_id, cantidad)
       toast.success(`${product.nombre} agregado al carrito`)
     } catch {
       toast.error('No se pudo agregar al carrito')
@@ -96,6 +99,13 @@ export default function ProductDetailPage() {
   const imgSrc = imagenes[selectedImg]?.url || null
   const resenas = product.resumen_resenas || {}
   const atributos = product.atributos || {}
+  const ofertas = product.ofertas || []
+  const selectedOffer = ofertas.find((item) => item.oferta_id === selectedOfferId)
+    || ofertas[0]
+  const displayPrice = selectedOffer?.precio ?? product.precio
+  const displayStock = selectedOffer?.stock ?? product.stock ?? 0
+  const displayAvailable = selectedOffer?.disponible ?? product.disponible
+  const displayVendor = selectedOffer?.vendedor_nombre ?? product.vendedor_nombre
 
   const starCounts = [5, 4, 3, 2, 1].map((n) => ({
     stars: n,
@@ -155,12 +165,12 @@ export default function ProductDetailPage() {
               {product.categoria?.nombre && (
                 <Badge variant="jade">{product.categoria.nombre}</Badge>
               )}
-              {product.disponible ? (
-                <Badge variant="success">{product.stock > 0 ? `${product.stock} en stock` : 'En stock'}</Badge>
+              {displayAvailable ? (
+                <Badge variant="success">{displayStock > 0 ? `${displayStock} en stock` : 'En stock'}</Badge>
               ) : (
                 <Badge variant="error">Sin stock</Badge>
               )}
-              {product.disponible && product.stock > 0 && product.stock <= 5 && (
+              {displayAvailable && displayStock > 0 && displayStock <= 5 && (
                 <span className="font-sans text-xs text-[var(--color-error)]">¡Últimas unidades!</span>
               )}
             </div>
@@ -177,7 +187,7 @@ export default function ProductDetailPage() {
 
             <div className="flex items-end gap-3">
               <span className="font-mono font-bold text-4xl text-[var(--color-text-primary)]">
-                {formatQ(product.precio)}
+                {formatQ(displayPrice)}
               </span>
               {product.moneda && (
                 <span className="font-sans text-sm text-[var(--color-text-muted)] mb-1">
@@ -186,15 +196,38 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {product.vendedor_nombre && (
+            {displayVendor && (
               <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 w-fit">
                 <Store size={15} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
                 <div>
                   <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] leading-none mb-0.5">Vendedor</p>
                   <p className="font-display font-semibold text-sm text-[var(--color-text-primary)]">
-                    {product.vendedor_nombre}
+                    {displayVendor}
                   </p>
                 </div>
+              </div>
+            )}
+
+            {ofertas.length > 1 && (
+              <div className="space-y-2">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                  Otras ofertas
+                </p>
+                {ofertas.map((offer) => (
+                  <button
+                    key={offer.oferta_id}
+                    type="button"
+                    onClick={() => { setSelectedOfferId(offer.oferta_id); setCantidad(1) }}
+                    className={`w-full flex items-center justify-between rounded-[var(--radius-md)] border px-3 py-2 text-left ${
+                      selectedOffer?.oferta_id === offer.oferta_id
+                        ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
+                        : 'border-[var(--color-border)] bg-[var(--color-surface)]'
+                    }`}
+                  >
+                    <span className="font-sans text-sm">{offer.vendedor_nombre}</span>
+                    <span className="font-mono text-sm font-bold">{formatQ(offer.precio)} · {offer.stock} disponibles</span>
+                  </button>
+                ))}
               </div>
             )}
 
@@ -215,7 +248,7 @@ export default function ProductDetailPage() {
                   {cantidad}
                 </span>
                 <button
-                  onClick={() => setCantidad((c) => c + 1)}
+                  onClick={() => setCantidad((c) => Math.min(displayStock || 1, c + 1))}
                   className="h-full px-3 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors rounded-r-[var(--radius-md)]"
                 >
                   <Plus size={14} />
@@ -225,12 +258,12 @@ export default function ProductDetailPage() {
               <Button
                 size="lg"
                 className="flex-1"
-                disabled={!product.disponible}
+                disabled={!displayAvailable}
                 loading={cartLoading}
                 onClick={handleAdd}
               >
                 <ShoppingCart size={18} />
-                {product.disponible ? 'Agregar al carrito' : 'Sin stock'}
+                {displayAvailable ? 'Agregar al carrito' : 'Sin stock'}
               </Button>
             </div>
 
@@ -337,11 +370,11 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {product.disponible && (
+      {displayAvailable && (
         <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-[var(--color-surface)] border-t border-[var(--color-border)] shadow-[var(--shadow-xl)] px-4 py-3 flex items-center gap-3">
           <div className="flex-1">
             <p className="font-display font-bold text-lg text-[var(--color-text-primary)]">
-              {formatQ(product.precio)}
+              {formatQ(displayPrice)}
             </p>
             <p className="font-sans text-xs text-[var(--color-text-muted)] line-clamp-1">
               {product.nombre}
