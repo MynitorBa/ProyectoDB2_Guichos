@@ -63,7 +63,7 @@ Esta rama propone la revisión del modelo relacional y la separación definitiva
 - Se agregaron migraciones incrementales desde la corrección inicial de integridad hasta la Fase 7.
 - Las migraciones incluyen validaciones previas y abortan si detectan referencias inválidas.
 - Se agregaron scripts PowerShell para aplicar y completar las fases.
-- `scripts/setup.ps1` instala desde cero y aplica el modelo vigente.
+- `scripts/setup.ps1` instala desde cero o actualiza una base existente, detectando automáticamente el estado del esquema.
 - `scripts/start-dev.ps1` inicia la aplicación.
 - Se actualizaron el modelo relacional, diagrama ER, arquitectura, ADRs, referencias SQL–MongoDB e informe de entrega.
 
@@ -146,7 +146,7 @@ npm run build
 Resultado de referencia:
 
 ```text
-31 passed
+34 passed
 Frontend built successfully
 ```
 

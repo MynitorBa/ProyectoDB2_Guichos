@@ -5,7 +5,7 @@ Entorno: aplicación local, MySQL y MongoDB de desarrollo.
 
 ## Resultado general
 
-- Backend: **31 pruebas automatizadas aprobadas**.
+- Backend: **34 pruebas automatizadas aprobadas**.
 - Frontend: **compilación de producción aprobada** (2,634 módulos).
 - API: salud, autenticación, catálogo, pedidos, paneles, historial y exportación operativos.
 - Integración MongoDB + MySQL: 65 productos comprobados y 0 discrepancias de lectura dual.
@@ -43,7 +43,7 @@ La fixture eliminaba todos los pedidos con ID mayor que 30. Esto podía borrar p
 Comprobación posterior:
 
 - Antes: 31 pedidos, máximo ID 96, stock oferta 8 = 44.
-- Después de las 31 pruebas: los mismos 31 pedidos, ID 96 presente y stock = 44.
+- Después de las 34 pruebas: los mismos 31 pedidos, ID 96 presente y stock = 44.
 
 ### 2. Estado “En preparación” ausente
 

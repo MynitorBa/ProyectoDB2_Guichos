@@ -6,6 +6,7 @@ import pymysql
 from pymongo import MongoClient
 from bson import ObjectId
 from dotenv import load_dotenv
+from app.core.security import verify_password
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
@@ -31,6 +32,31 @@ def main():
         with conn.cursor() as cur:
             cur.execute('SELECT COUNT(*) AS n FROM usuarios')
             print(f'MySQL usuarios: {cur.fetchone()["n"]}')
+            cur.execute("""
+                SELECT u.id, u.password_hash, u.estado,
+                       GROUP_CONCAT(r.nombre ORDER BY r.nombre) AS roles
+                FROM usuarios u
+                LEFT JOIN usuario_rol ur ON ur.usuario_id = u.id
+                LEFT JOIN roles r ON r.id = ur.rol_id
+                WHERE u.email = 'admin@tiendaya.gt'
+                GROUP BY u.id, u.password_hash, u.estado
+            """)
+            admin = cur.fetchone()
+            admin_roles = set((admin.get('roles') or '').split(',')) if admin else set()
+            if not admin:
+                print('MySQL credenciales: falta admin@tiendaya.gt')
+                ok = False
+            elif admin['estado'] != 'activo':
+                print(f"MySQL credenciales: administrador en estado {admin['estado']}")
+                ok = False
+            elif 'administrador' not in admin_roles:
+                print('MySQL credenciales: el usuario de prueba no tiene rol administrador')
+                ok = False
+            elif not verify_password('password123', admin['password_hash']):
+                print('MySQL credenciales: la contraseña documentada no coincide con el seed')
+                ok = False
+            else:
+                print('MySQL credenciales: administrador de prueba verificado')
             cur.execute('SELECT COUNT(*) AS n FROM producto_referencias')
             n_productos_mysql = cur.fetchone()['n']
             print(f'MySQL referencias de producto: {n_productos_mysql}')

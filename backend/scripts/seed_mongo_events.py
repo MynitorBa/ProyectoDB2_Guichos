@@ -10,7 +10,8 @@ de modo que se puede demostrar la reconstrucción de estado en cualquier fecha.
 import sys
 import os
 import random
-from datetime import timedelta
+import argparse
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -171,7 +172,7 @@ def generar_eventos_producto(producto: dict) -> list[dict]:
     return eventos
 
 
-def main():
+def main(*, reset: bool = False):
     client = MongoClient(MONGO_URI)
     mongo  = client[MONGO_DB]
 
@@ -180,28 +181,46 @@ def main():
         print('No hay productos en MongoDB. Ejecuta primero migrate_products_to_mongo.py')
         sys.exit(1)
 
-    # Limpiar eventos existentes para que el script sea idempotente
-    mongo.producto_eventos.delete_many({})
-    print(f'Colección producto_eventos limpiada.')
+    if reset:
+        mongo.producto_eventos.delete_many({})
+        print('Colección producto_eventos limpiada.')
+
+    ids_productos = {str(producto['_id']) for producto in productos}
+    productos_con_historial = set(
+        mongo.producto_eventos.distinct('producto_id')
+    ) & ids_productos
 
     todos_eventos = []
     for producto in productos:
+        if str(producto['_id']) in productos_con_historial:
+            continue
         todos_eventos.extend(generar_eventos_producto(producto))
 
     if todos_eventos:
         mongo.producto_eventos.insert_many(todos_eventos)
 
-    print(f'Productos procesados: {len(productos)}')
+    print(f'Productos encontrados: {len(productos)}')
+    print(f'Productos ya historiados: {len(productos_con_historial)}')
+    print(f'Productos procesados: {len(productos) - len(productos_con_historial)}')
     print(f'Eventos generados:    {len(todos_eventos)}')
-    print(f'Promedio eventos/producto: {len(todos_eventos)/len(productos):.1f}')
-    print('\nEjemplo — primeros 3 eventos del primer producto:')
-    pid = str(productos[0]['_id'])
-    for e in mongo.producto_eventos.find({'producto_id': pid}).sort('version', 1).limit(3):
-        print(f"  v{e['version']} | {e['tipo_evento']} | {e['timestamp'].strftime('%Y-%m-%d')}")
+    nuevos = len(productos) - len(productos_con_historial)
+    if nuevos:
+        print(f'Promedio eventos/producto nuevo: {len(todos_eventos)/nuevos:.1f}')
+        print('\nEjemplo — primeros 3 eventos del primer producto:')
+        pid = str(productos[0]['_id'])
+        for e in mongo.producto_eventos.find({'producto_id': pid}).sort('version', 1).limit(3):
+            print(f"  v{e['version']} | {e['tipo_evento']} | {e['timestamp'].strftime('%Y-%m-%d')}")
 
     client.close()
     print('\nHistorial generado correctamente.')
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Genera historial sintético faltante.')
+    parser.add_argument(
+        '--reset',
+        action='store_true',
+        help='Elimina todo el historial antes de regenerarlo (operación destructiva).',
+    )
+    args = parser.parse_args()
+    main(reset=args.reset)

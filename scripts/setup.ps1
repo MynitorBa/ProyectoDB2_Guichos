@@ -16,17 +16,26 @@ Write-Host " TiendaYa - Setup inicial" -ForegroundColor Cyan
 Write-Host "==========================================`n" -ForegroundColor Cyan
 
 # ── 1. Verificar Python ───────────────────────────────────────────────────────
-$PythonExe = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
-if (-not (Test-Path $PythonExe)) {
-    # Intentar encontrar Python en PATH
+$ExistingVenvPython = "$Root\backend\venv\Scripts\python.exe"
+$LocalPython = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+if (Test-Path $ExistingVenvPython) {
+    $PythonExe = $ExistingVenvPython
+} elseif (Test-Path $LocalPython) {
+    $PythonExe = $LocalPython
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
     $PythonExe = "python"
+} else {
+    $PythonExe = $null
 }
 Write-Host "[1/8] Python: " -NoNewline
-try {
+if ($PythonExe) {
     $pyver = & $PythonExe --version 2>&1
     Write-Host $pyver -ForegroundColor Green
-} catch {
+} else {
     Write-Host "No encontrado. Instalando..." -ForegroundColor Yellow
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw 'Python 3.12 no está instalado y winget no está disponible. Instala Python manualmente y repite el setup.'
+    }
     winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
     $PythonExe = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
 }
@@ -89,67 +98,69 @@ if (-not (Test-Path "$Root\backend\.env")) {
 
 Write-Host "  Python listo." -ForegroundColor Green
 
-# ── 4. Migrar productos a MongoDB ─────────────────────────────────────────────
-Write-Host "`n[4/8] Migrando productos MySQL → MongoDB..." -ForegroundColor Cyan
+# ── 4. Migrar o reconocer el esquema instalado ───────────────────────────────
+Write-Host "`n[4/8] Preparando modelo relacional y catálogo..." -ForegroundColor Cyan
 Set-Location "$Root\backend"
-try {
-    & $python scripts\migrate_products_to_mongo.py --reset
-    Write-Host "  Migración completada." -ForegroundColor Green
-} catch {
-    Write-Host "  ADVERTENCIA: Error en migración. Verifica las bases de datos." -ForegroundColor Yellow
-    Write-Host "  $_"
-}
-
-# ── 5. Sembrar eventos de historial ───────────────────────────────────────────
-Write-Host "`n[5/8] Completando ofertas, inventario y pedidos históricos..." -ForegroundColor Cyan
-& $python scripts\apply_phase3_backfill.py
+$schemaState = (& $python scripts\detect_schema_state.py).Trim()
 if ($LASTEXITCODE -ne 0) {
-    throw 'No se pudo completar la Fase 3; se aborta la instalación.'
+    throw 'No se pudo determinar el estado actual de MySQL.'
 }
-Write-Host "  Backfill completado." -ForegroundColor Green
 
-& $python scripts\apply_phase4_dual_read.py
+if ($schemaState -eq 'legacy') {
+    Write-Host "  Esquema heredado detectado; aplicando migración incremental." -ForegroundColor Yellow
+
+    & $python scripts\apply_phase1_integrity.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la corrección inicial de integridad.' }
+
+    & $python scripts\apply_phase2_additive.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la creación de estructuras aditivas.' }
+
+    & $python scripts\migrate_products_to_mongo.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la migración del catálogo hacia MongoDB.' }
+
+    & $python scripts\apply_phase3_backfill.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló el backfill de ofertas e inventario.' }
+
+    & $python scripts\apply_phase4_dual_read.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación del carrito por oferta.' }
+
+    & $python scripts\apply_phase6b_additive.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación del corte de productos SQL.' }
+
+    & $python scripts\apply_phase6b_cutover.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló el retiro del esquema heredado.' }
+
+    & $python scripts\apply_phase7_reference_integrity.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la integridad entre categorías, referencias y ofertas.' }
+} elseif ($schemaState -eq 'final') {
+    Write-Host "  Esquema final detectado; no se repetirán migraciones destructivas." -ForegroundColor Green
+} else {
+    throw "Estado de esquema desconocido: $schemaState"
+}
+
+# ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
+Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
+& $python scripts\sync_mongo_projections.py
 if ($LASTEXITCODE -ne 0) {
-    throw 'No se pudo preparar el carrito para la lectura dual.'
+    throw 'No se pudieron sincronizar las proyecciones comerciales de MongoDB.'
 }
-Write-Host "  Contrato de ofertas del carrito instalado." -ForegroundColor Green
+Write-Host "  Proyecciones e índices sincronizados." -ForegroundColor Green
 
-& $python scripts\apply_phase6b_additive.py
+Write-Host "`n[6/8] Completando historial faltante en MongoDB..." -ForegroundColor Cyan
+& $python scripts\seed_mongo_events.py
 if ($LASTEXITCODE -ne 0) {
-    throw 'No se pudo preparar la identidad mínima de productos de la Fase 6B.'
+    throw 'No se pudo completar el historial de productos.'
 }
-Write-Host "  Referencias mínimas y FKs nuevas instaladas." -ForegroundColor Green
-
-& $python scripts\apply_phase6b_cutover.py
-if ($LASTEXITCODE -ne 0) {
-    throw 'No se pudo completar el corte físico de la Fase 6B.'
-}
-Write-Host "  Esquema heredado de productos retirado." -ForegroundColor Green
-
-& $python scripts\apply_phase7_reference_integrity.py
-if ($LASTEXITCODE -ne 0) {
-    throw 'No se pudo relacionar categorías, productos y ofertas.'
-}
-Write-Host "  Categorías, referencias y ofertas enlazadas con FKs." -ForegroundColor Green
-
-Write-Host "`n[6/8] Sembrando historial de eventos en MongoDB..." -ForegroundColor Cyan
-try {
-    & $python scripts\seed_mongo_events.py
-    Write-Host "  Eventos generados." -ForegroundColor Green
-} catch {
-    Write-Host "  ADVERTENCIA: Error al sembrar eventos." -ForegroundColor Yellow
-    Write-Host "  $_"
-}
+Write-Host "  Historial verificado." -ForegroundColor Green
 
 Set-Location $Root
 
 # ── 6. Verificar integridad ───────────────────────────────────────────────────
 Write-Host "`n[7/8] Verificando integridad del sistema..." -ForegroundColor Cyan
 Set-Location "$Root\backend"
-try {
-    & $python scripts\verify_setup.py
-} catch {
-    Write-Host "  Verificación con advertencias. Revisa la salida anterior." -ForegroundColor Yellow
+& $python scripts\verify_setup.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'La verificación final detectó errores; la instalación no está completa.'
 }
 Set-Location $Root
 

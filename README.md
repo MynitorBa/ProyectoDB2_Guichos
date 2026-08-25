@@ -124,6 +124,7 @@ con `scripts\complete-phase7-reference-integrity.ps1`. La evidencia está en
 - [Evidencia de integridad de referencias](docs/16-fase7-integridad-referencias.md)
 - [Pruebas funcionales integrales](docs/17-pruebas-funcionales.md)
 - [Guía de revisión para el equipo](docs/18-guia-revision-companeros.md)
+- [Correcciones del flujo de instalación](docs/19-correcciones-instalacion.md)
 
 ## Entregas del proyecto
 

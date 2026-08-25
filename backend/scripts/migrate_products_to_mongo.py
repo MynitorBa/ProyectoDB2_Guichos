@@ -345,6 +345,7 @@ def main(dry_run: bool = False, reset: bool = False):
             cat_slug = p['cat_slug']
             extractor = ATRIBUTOS_EXTRACTORES.get(cat_slug, lambda x: {})
             atributos = extractor(p)
+            stock = int(inventario_raw.get(p['id'], 0))
 
             doc = {
                 'sku': p['sku'],
@@ -354,10 +355,11 @@ def main(dry_run: bool = False, reset: bool = False):
                 'moneda': 'GTQ',
                 'categoria': {'slug': cat_slug, 'nombre': p['cat_nombre']},
                 'estado': p['estado'],
-                'disponible': inventario_raw.get(p['id'], 0) > 0,
+                'stock': stock,
+                'disponible': stock > 0,
                 'atributos': atributos,
                 'imagenes': imagenes_por_producto.get(p['id'], []),
-                'vendedor_id': str(p['vendedor_id']),
+                'vendedor_id': int(p['vendedor_id']),
                 'vendedor_nombre': p['vendedor_nombre'],
                 'resumen_resenas': {'promedio': 0.0, 'total': 0},
                 'fecha_creacion': p['fecha_creacion'],
