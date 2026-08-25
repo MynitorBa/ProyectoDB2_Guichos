@@ -11,11 +11,12 @@ contenido descriptivo del producto vive en MongoDB; MySQL conserva
 `producto_referencias` como identidad relacional, clasificación controlada y
 los binarios de imagen solicitados para la entrega.
 
-El esquema final contiene 24 tablas. Se reproduce aplicando el DDL base y las
-migraciones `05` a `12`; `10_phase6b_cutover.sql` retira las estructuras de
+El esquema final contiene 27 tablas. Se reproduce aplicando el DDL base y las
+migraciones `05` a `13`; `10_phase6b_cutover.sql` retira las estructuras de
 transición y `11_phase7_reference_integrity.sql` cierra las relaciones entre
 categorías, referencias y ofertas. `12_catalog_images_categories.sql` agrega
-imágenes BLOB y la clasificación N:M.
+imágenes BLOB y la clasificación N:M. `13_catalog_requests.sql` agrega el flujo
+de aprobación previa para productos y ofertas propuestos por vendedores.
 
 ## Decisiones de normalización
 
@@ -40,6 +41,20 @@ precio y con cuánto inventario**:
 - `oferta_precios_historial`: intervalos de vigencia del precio.
 - `inventario`: existencias por oferta y bodega.
 - `movimientos_inventario`: entradas, salidas, ajustes, reservas y liberaciones.
+
+### Solicitudes de catálogo
+
+`solicitudes_catalogo` registra si un vendedor propone un producto nuevo o una
+oferta sobre un producto existente, junto con precio, stock, SKU y el estado de
+revisión. Las categorías e imágenes de una propuesta de producto se normalizan
+en `solicitud_catalogo_categorias` y `solicitud_catalogo_imagenes`. Una solicitud
+de oferta no acepta imágenes porque estas pertenecen al producto documental.
+
+Mientras la solicitud está pendiente no existe oferta activa ni documento
+publicado. Al aprobar, la aplicación crea todas las entidades dentro del flujo
+administrativo y conserva las referencias resultantes; al rechazar conserva el
+motivo y notifica al vendedor. `producto_imagenes.subida_por` demuestra la
+propiedad de una carga temporal antes de asociarla a un producto aprobado.
 
 La unicidad operativa del inventario es `(oferta_id, bodega)`. Un movimiento
 referencia `inventario.id`, porque una misma oferta puede existir en varias
@@ -86,7 +101,7 @@ entrega confiable entre MySQL y MongoDB.
 | Área | Tablas | Responsabilidad |
 |---|---|---|
 | Identidad | `usuarios`, `roles`, `usuario_rol`, `direcciones` | Cuentas, permisos y libreta de direcciones |
-| Comercio | `vendedores`, `categorias`, `producto_referencias`, `producto_referencia_categorias`, `producto_imagenes`, `ofertas`, `oferta_precios_historial` | Perfil comercial, navegación, identidad mínima, imágenes y precio |
+| Comercio | `vendedores`, `categorias`, `producto_referencias`, `producto_referencia_categorias`, `producto_imagenes`, `ofertas`, `oferta_precios_historial`, `solicitudes_catalogo`, `solicitud_catalogo_categorias`, `solicitud_catalogo_imagenes` | Perfil comercial, navegación, identidad mínima, imágenes, precio y aprobación previa |
 | Inventario | `inventario`, `movimientos_inventario` | Stock actual y trazabilidad de cambios |
 | Pedidos | `pedidos`, `pedido_vendedores`, `pedido_direcciones`, `pedido_lineas` | Compra global, partes por vendedor y snapshots |
 | Pagos | `metodos_pago`, `pagos` | Medio, monto y resultado del pago |

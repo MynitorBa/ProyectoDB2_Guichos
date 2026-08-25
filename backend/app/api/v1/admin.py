@@ -2,7 +2,6 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from io import BytesIO
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
@@ -14,14 +13,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 GT_TZ = timezone(timedelta(hours=-6))
-
-ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
-_EXT_MIME = {
-    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-    '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
-}
-
 
 def _generar_sku(mongo_db, prefix: str) -> str:
     prefix = (prefix or 'GEN')[:3].upper()
@@ -53,9 +44,9 @@ from app.services.product_history_service import reconstruir_estado, obtener_his
 from app.services.outbox_service import enqueue_outbox
 from app.services.offer_service import (
     actualizar_precio_oferta,
-    listar_ofertas_por_referencias,
-    oferta_principal,
+    enqueue_primary_offer_projection,
 )
+from app.services.image_service import read_valid_image
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
 
@@ -337,29 +328,13 @@ def crear_producto(
 @router.post('/upload')
 async def upload_image(
     file: UploadFile = File(...),
-    _: Usuario = Depends(get_admin_user),
+    current_user: Usuario = Depends(get_admin_user),
     mysql_db: Session = Depends(get_db),
 ):
-    ext = Path(file.filename or '').suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(400, f'Tipo de archivo no permitido. Usa: {", ".join(ALLOWED_EXTENSIONS)}')
-    mime = _EXT_MIME[ext]
-    content = await file.read(MAX_IMAGE_BYTES + 1)
-    if not content:
-        raise HTTPException(400, 'La imagen está vacía.')
-    if len(content) > MAX_IMAGE_BYTES:
-        raise HTTPException(413, 'La imagen supera el límite de 5 MB.')
-    signatures = {
-        '.jpg': (b'\xff\xd8\xff',), '.jpeg': (b'\xff\xd8\xff',),
-        '.png': (b'\x89PNG\r\n\x1a\n',),
-        '.gif': (b'GIF87a', b'GIF89a'),
-        '.webp': (b'RIFF',),
-    }
-    if not any(content.startswith(signature) for signature in signatures[ext]):
-        raise HTTPException(400, 'El contenido no coincide con el tipo de imagen.')
-    if ext == '.webp' and content[8:12] != b'WEBP':
-        raise HTTPException(400, 'El archivo WEBP no es válido.')
-    img = ProductoImagen(datos=content, mime_type=mime)
+    content, mime = await read_valid_image(file)
+    img = ProductoImagen(
+        datos=content, mime_type=mime, subida_por=current_user.id
+    )
     mysql_db.add(img)
     mysql_db.commit()
     mysql_db.refresh(img)
@@ -1090,36 +1065,6 @@ def update_admin_order_status(
 
 # ── Gestión de ofertas por producto ──────────────────────────────────────────
 
-def _enqueue_primary_offer_projection(
-    db: Session, producto_ref: str, agregado_id: int
-) -> None:
-    """Proyecta en Mongo únicamente la oferta que gana la lectura comercial."""
-    offers = listar_ofertas_por_referencias(db, [producto_ref]).get(
-        producto_ref, []
-    )
-    primary = oferta_principal(offers)
-    projection = {
-        'ofertas_count': len(offers),
-        'disponible': bool(primary and primary['disponible']),
-        'stock': primary['stock'] if primary else 0,
-    }
-    if primary:
-        projection.update({
-            'precio': primary['precio'],
-            'moneda': primary['moneda'],
-            'vendedor_id': primary['vendedor_id'],
-            'vendedor_usuario_id': primary['vendedor_usuario_id'],
-            'vendedor_nombre': primary['vendedor_nombre'],
-        })
-    enqueue_outbox(
-        db,
-        tipo_evento='producto.oferta_principal_actualizada',
-        agregado_tipo='oferta',
-        agregado_id=agregado_id,
-        producto_ref=producto_ref,
-        payload={'projection': projection},
-    )
-
 @router.get('/products/{producto_ref}/offers')
 def list_product_offers(
     producto_ref: str,
@@ -1210,7 +1155,7 @@ def add_product_offer(
         bodega='principal',
     ))
     db.flush()
-    _enqueue_primary_offer_projection(db, producto_ref, oferta.id)
+    enqueue_primary_offer_projection(db, producto_ref, oferta.id)
     db.commit()
 
     return {
@@ -1259,7 +1204,7 @@ def update_offer(
         oferta.estado = payload.estado
 
     db.flush()
-    _enqueue_primary_offer_projection(db, oferta.producto_ref, oferta.id)
+    enqueue_primary_offer_projection(db, oferta.producto_ref, oferta.id)
     db.commit()
     return {'oferta_id': oferta_id, 'updated': True}
 

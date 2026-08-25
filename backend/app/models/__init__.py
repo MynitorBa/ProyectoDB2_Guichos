@@ -14,6 +14,9 @@ from app.models.notificacion import Notificacion
 from app.models.oferta import Oferta, OfertaPrecioHistorial
 from app.models.pedido_vendedor import PedidoVendedor, PedidoDireccion
 from app.models.outbox import OutboxEvento
+from app.models.solicitud_catalogo import (
+    SolicitudCatalogo, SolicitudCatalogoCategoria, SolicitudCatalogoImagen,
+)
 
 __all__ = [
     'Usuario', 'Rol', 'UsuarioRol',
@@ -29,4 +32,6 @@ __all__ = [
     'Oferta', 'OfertaPrecioHistorial',
     'PedidoVendedor', 'PedidoDireccion',
     'OutboxEvento',
+    'SolicitudCatalogo', 'SolicitudCatalogoCategoria',
+    'SolicitudCatalogoImagen',
 ]

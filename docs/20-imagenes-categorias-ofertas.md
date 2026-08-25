@@ -56,6 +56,5 @@ sin imagen.
 5. Editar categorías e imágenes y comprobar que no haya errores de consola.
 6. Ejecutar `backend/scripts/verify_setup.py`, las pruebas y el build.
 
-El flujo de solicitudes de vendedores para proponer productos u ofertas no se
-incluye todavía; será el siguiente módulo funcional una vez que el equipo
-apruebe esta base.
+El flujo posterior de solicitudes de vendedores se documenta en
+[`21-solicitudes-catalogo-vendedores.md`](21-solicitudes-catalogo-vendedores.md).

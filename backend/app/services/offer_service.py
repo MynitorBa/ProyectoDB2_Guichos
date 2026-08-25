@@ -153,6 +153,37 @@ def oferta_principal(offers: list[dict]) -> dict | None:
     return offers[0] if offers else None
 
 
+def enqueue_primary_offer_projection(
+    db: Session, producto_ref: str, agregado_id: int
+) -> None:
+    """Proyecta en Mongo únicamente la oferta activa que gana la lectura."""
+    offers = listar_ofertas_por_referencias(db, [producto_ref]).get(
+        producto_ref, []
+    )
+    primary = oferta_principal(offers)
+    projection = {
+        'ofertas_count': len(offers),
+        'disponible': bool(primary and primary['disponible']),
+        'stock': primary['stock'] if primary else 0,
+    }
+    if primary:
+        projection.update({
+            'precio': primary['precio'],
+            'moneda': primary['moneda'],
+            'vendedor_id': primary['vendedor_id'],
+            'vendedor_usuario_id': primary['vendedor_usuario_id'],
+            'vendedor_nombre': primary['vendedor_nombre'],
+        })
+    enqueue_outbox(
+        db,
+        tipo_evento='producto.oferta_principal_actualizada',
+        agregado_tipo='oferta',
+        agregado_id=agregado_id,
+        producto_ref=producto_ref,
+        payload={'projection': projection},
+    )
+
+
 def resolver_oferta_comprable(
     db: Session,
     *,

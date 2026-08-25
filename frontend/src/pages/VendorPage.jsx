@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { Package, Bell, ChevronDown, ChevronRight, Store } from 'lucide-react'
+import { Package, Bell, ChevronDown, ChevronRight, Store, FilePlus2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getVendorStats, getVendorOrders, updateVendorOrderStatus, getVendorEstados } from '../api/vendor'
 import { getNotifications, markAllAsRead } from '../api/notifications'
@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Skeleton } from '../components/ui/skeleton'
 import { formatQ, formatDate, cn } from '../lib/utils'
+import { CatalogRequestsSection } from '../components/vendor/CatalogRequestsSection'
 
 const ESTADO_BADGE = {
   pendiente: 'warning', confirmado: 'action', preparando: 'action',
@@ -144,6 +145,12 @@ export default function VendorPage() {
             <Package size={14} className="inline mr-1.5" />Mis pedidos
           </button>
           <button
+            onClick={() => setTab('solicitudes')}
+            className={cn('px-4 py-2.5 font-display font-semibold text-sm transition-colors border-b-2 -mb-px', tab === 'solicitudes' ? 'border-[var(--color-action)] text-[var(--color-action)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]')}
+          >
+            <FilePlus2 size={14} className="inline mr-1.5" />Solicitudes de catálogo
+          </button>
+          <button
             onClick={() => setTab('notificaciones')}
             className={cn('px-4 py-2.5 font-display font-semibold text-sm transition-colors border-b-2 -mb-px relative', tab === 'notificaciones' ? 'border-[var(--color-action)] text-[var(--color-action)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]')}
           >
@@ -253,6 +260,8 @@ export default function VendorPage() {
             )}
           </div>
         )}
+
+        {tab === 'solicitudes' && <CatalogRequestsSection />}
 
         {/* Notifications tab */}
         {tab === 'notificaciones' && (

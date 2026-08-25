@@ -145,6 +145,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Falló la instalación de imágenes SQL y categorías múltiples.'
 }
 
+& $python scripts\apply_catalog_requests.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'Falló la instalación del flujo de solicitudes de vendedores.'
+}
+
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
 & $python scripts\sync_mongo_projections.py

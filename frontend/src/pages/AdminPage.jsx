@@ -9,6 +9,7 @@ import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
   TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
+  Inbox,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getProducts, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
@@ -22,6 +23,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } fr
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
 import { formatQ, formatDate, cn } from '../lib/utils'
+import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequestsSection'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
@@ -30,6 +32,7 @@ const NAV_ITEMS = [
   { id: 'users',      label: 'Usuarios',     icon: Users          },
   { id: 'orders',     label: 'Pedidos',      icon: ClipboardList  },
   { id: 'sales',      label: 'Ventas',       icon: TrendingUp     },
+  { id: 'requests',   label: 'Solicitudes',  icon: Inbox          },
 ]
 
 const ESTADO_BADGE = {
@@ -1725,6 +1728,7 @@ export default function AdminPage() {
           {activeSection === 'users'      && <UsersSection />}
           {activeSection === 'orders'     && <OrdersSection />}
           {activeSection === 'sales'      && <SalesSection />}
+          {activeSection === 'requests'   && <AdminCatalogRequestsSection />}
         </main>
       </div>
     </div>

@@ -14,6 +14,9 @@ class ProductoImagen(Base):
         ForeignKey('producto_referencias.id', ondelete='CASCADE'),
         nullable=True,
     )
+    subida_por: Mapped[int | None] = mapped_column(
+        ForeignKey('usuarios.id', ondelete='SET NULL'), nullable=True
+    )
     datos: Mapped[bytes] = mapped_column(LONGBLOB, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(50), default='image/jpeg')
     orden: Mapped[int] = mapped_column(SmallInteger, default=0)

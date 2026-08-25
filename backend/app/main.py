@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
-from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor
+from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests
 
 app = FastAPI(
     title='TiendaYa API',
@@ -51,6 +51,8 @@ app.include_router(cart.router,       prefix='/api/v1')
 app.include_router(admin.router,         prefix='/api/v1')
 app.include_router(notifications.router, prefix='/api/v1')
 app.include_router(vendor.router,        prefix='/api/v1')
+app.include_router(catalog_requests.vendor_router, prefix='/api/v1')
+app.include_router(catalog_requests.admin_router, prefix='/api/v1')
 
 
 @app.on_event('startup')

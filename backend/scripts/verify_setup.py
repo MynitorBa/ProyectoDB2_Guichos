@@ -366,6 +366,32 @@ def main():
             else:
                 print('MySQL catálogo extendido: imágenes y categorías múltiples listas')
 
+            request_tables = {
+                'solicitudes_catalogo', 'solicitud_catalogo_categorias',
+                'solicitud_catalogo_imagenes',
+            }
+            request_fks = {
+                'fk_sc_vendedor', 'fk_sc_producto_solicitado',
+                'fk_sc_revisada_por', 'fk_sc_producto_resultado',
+                'fk_sc_oferta_resultado', 'fk_scc_solicitud',
+                'fk_scc_categoria', 'fk_sci_solicitud', 'fk_sci_imagen',
+                'fk_pi_subida_por',
+            }
+            request_errors = []
+            missing_request_tables = sorted(request_tables - installed_tables)
+            missing_request_fks = sorted(request_fks - installed_fks)
+            if ('producto_imagenes', 'subida_por') not in installed_columns:
+                request_errors.append('falta producto_imagenes.subida_por')
+            if missing_request_tables:
+                request_errors.append(f'tablas faltantes: {missing_request_tables}')
+            if missing_request_fks:
+                request_errors.append(f'FKs faltantes: {missing_request_fks}')
+            if request_errors:
+                print(f'MySQL solicitudes de catálogo: {"; ".join(request_errors)}')
+                ok = False
+            else:
+                print('MySQL solicitudes de catálogo: estructura y propiedad de imágenes listas')
+
             legacy_tables = {'productos'} & installed_tables
             legacy_columns = {
                 ('carrito_items', 'producto_id'),

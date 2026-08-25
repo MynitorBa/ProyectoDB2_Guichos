@@ -120,6 +120,12 @@ migración `12_catalog_images_categories.sql` de forma automática e idempotente
 Los detalles y casos de prueba están en
 [`docs/20-imagenes-categorias-ofertas.md`](docs/20-imagenes-categorias-ofertas.md).
 
+La migración `13_catalog_requests.sql` incorpora el flujo controlado para que
+los vendedores propongan productos u ofertas sin publicarlos directamente. El
+administrador aprueba o rechaza cada solicitud y el vendedor conserva historial
+y notificaciones. Consulte
+[`docs/21-solicitudes-catalogo-vendedores.md`](docs/21-solicitudes-catalogo-vendedores.md).
+
 ## Documentación vigente
 
 - [Modelo relacional definitivo](docs/01-modelo-relacional.md)
@@ -133,6 +139,7 @@ Los detalles y casos de prueba están en
 - [Guía de revisión para el equipo](docs/18-guia-revision-companeros.md)
 - [Correcciones del flujo de instalación](docs/19-correcciones-instalacion.md)
 - [Imágenes SQL, categorías múltiples y revisión de ofertas](docs/20-imagenes-categorias-ofertas.md)
+- [Solicitudes de catálogo de vendedores](docs/21-solicitudes-catalogo-vendedores.md)
 
 ## Entregas del proyecto
 
