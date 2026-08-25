@@ -3,6 +3,8 @@ from app.models.direccion import Direccion
 from app.models.vendedor import Vendedor
 from app.models.categoria import Categoria
 from app.models.producto_referencia import ProductoReferencia
+from app.models.producto_imagen import ProductoImagen
+from app.models.producto_referencia_categoria import ProductoReferenciaCategoria
 from app.models.inventario import Inventario, MovimientoInventario
 from app.models.pedido import Pedido, PedidoLinea
 from app.models.pago import MetodoPago, Pago
@@ -16,7 +18,8 @@ from app.models.outbox import OutboxEvento
 __all__ = [
     'Usuario', 'Rol', 'UsuarioRol',
     'Direccion', 'Vendedor',
-    'Categoria', 'ProductoReferencia',
+    'Categoria', 'ProductoReferencia', 'ProductoImagen',
+    'ProductoReferenciaCategoria',
     'Inventario', 'MovimientoInventario',
     'Pedido', 'PedidoLinea',
     'MetodoPago', 'Pago',

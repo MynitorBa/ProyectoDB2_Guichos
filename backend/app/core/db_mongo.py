@@ -53,6 +53,11 @@ def ensure_indexes(db: Database) -> None:
         name='idx_producto_timestamp',
         background=True,
     )
+    db.productos.create_index(
+        [('categorias.slug', ASCENDING), ('estado', ASCENDING)],
+        name='idx_categorias_estado',
+        background=True,
+    )
     db.producto_eventos.create_index(
         [('outbox_id', ASCENDING)],
         name='uidx_evento_outbox',

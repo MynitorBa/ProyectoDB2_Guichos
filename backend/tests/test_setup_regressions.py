@@ -32,6 +32,7 @@ def test_projection_contains_the_commercial_fields_verified_by_setup():
         'moneda': 'GTQ',
         'stock': 44,
         'vendedor_id': 1,
+        'vendedor_usuario_id': 2,
         'nombre_comercial': 'TechZone Guatemala',
         'ofertas_count': 2,
     })
@@ -42,6 +43,7 @@ def test_projection_contains_the_commercial_fields_verified_by_setup():
         'stock': 44,
         'disponible': True,
         'vendedor_id': 1,
+        'vendedor_usuario_id': 2,
         'vendedor_nombre': 'TechZone Guatemala',
         'ofertas_count': 2,
     }

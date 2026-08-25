@@ -1,6 +1,6 @@
 # ADR-002: Embeber y referenciar en el catálogo
 
-**Estado:** aceptado y actualizado tras la Fase 6B
+**Estado:** reemplazado parcialmente por la decisión del 25 de agosto de 2026
 **Fecha original:** 21 de agosto de 2026
 **Actualización:** 24 de agosto de 2026
 
@@ -11,24 +11,25 @@ en cada documento se consideraron frecuencia de lectura conjunta, crecimiento
 potencial y ciclo de actualización. El modelo final también distingue el
 producto general de cada oferta comercial.
 
-## Imágenes: embebidas
+## Imágenes: BLOB relacional con URL de lectura proyectada
 
-Las imágenes se leen junto con nombre y descripción, su cantidad por producto
-es acotada y cambian como parte de la publicación. Por eso se almacenan como un
-array dentro del documento:
+Por requisito académico, el binario vuelve a almacenarse en MySQL
+`producto_imagenes`. Cada fila referencia `producto_referencias.id`; MongoDB
+solo conserva las URL de lectura ordenadas para no duplicar el BLOB:
 
 ```json
 {
   "nombre": "Laptop ThinkPad X1",
   "imagenes": [
-    { "url": "/static/products/x1-1.jpg", "orden": 0 },
-    { "url": "/static/products/x1-2.jpg", "orden": 1 }
+    "/api/v1/products/images/41",
+    "/api/v1/products/images/42"
   ]
 }
 ```
 
-La Fase 6B verificó las 16 imágenes heredadas y retiró
-`producto_imagenes` de MySQL.
+La Fase 6B retiró la tabla heredada ligada a `productos`. La migración 12 crea
+otra tabla con el mismo nombre pero con el contrato final, ligada a
+`producto_referencias` y con `LONGBLOB`, MIME y orden.
 
 ## Reseñas: autoridad relacional y resumen documental
 
@@ -76,7 +77,8 @@ precio cobrado.
 | Dato | Autoridad | Estrategia |
 |---|---|---|
 | Nombre, descripción, categoría y atributos | MongoDB `productos` | Documento flexible |
-| Imágenes | MongoDB `productos.imagenes` | Array embebido |
+| Binario de imágenes | MySQL `producto_imagenes` | BLOB relacionado por FK |
+| URL y orden de imágenes | MongoDB `productos.imagenes` | Proyección para lectura |
 | Reseñas completas | MySQL `resenas` | Relacionadas por FK |
 | Resumen de reseñas | MongoDB `resumen_resenas` | Proyección compacta |
 | Vendedor, precio y estado comercial | MySQL `ofertas` | Relacional/transaccional |

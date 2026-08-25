@@ -43,7 +43,13 @@ def listar_productos(
     filtro: dict[str, Any] = {'estado': 'activo'}
 
     if categoria_slug:
-        filtro['categoria.slug'] = categoria_slug
+        # Los documentos nuevos pueden pertenecer a varias categorías. La
+        # condición también funciona para el arreglo de subdocumentos y el
+        # fallback conserva compatibilidad con documentos heredados.
+        filtro['$or'] = [
+            {'categorias.slug': categoria_slug},
+            {'categoria.slug': categoria_slug},
+        ]
     if q:
         filtro['$text'] = {'$search': q}
 
@@ -73,6 +79,7 @@ def listar_productos(
                     'stock': primary['stock'],
                     'disponible': primary['disponible'],
                     'vendedor_id': primary['vendedor_id'],
+                    'vendedor_usuario_id': primary['vendedor_usuario_id'],
                     'vendedor_nombre': primary['vendedor_nombre'],
                     'ofertas_count': len(offers),
                 })
@@ -185,6 +192,7 @@ def obtener_producto(
                 'stock': primary['stock'],
                 'disponible': primary['disponible'],
                 'vendedor_id': primary['vendedor_id'],
+                'vendedor_usuario_id': primary['vendedor_usuario_id'],
                 'vendedor_nombre': primary['vendedor_nombre'],
             })
         else:

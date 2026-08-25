@@ -42,7 +42,7 @@ def test_legacy_product_storage_is_physically_retired():
         legacy_tables = conn.execute(text("""
             SELECT COUNT(*) FROM information_schema.TABLES
             WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME IN ('productos', 'producto_imagenes')
+              AND TABLE_NAME = 'productos'
         """)).scalar_one()
         legacy_columns = conn.execute(text("""
             SELECT COUNT(*) FROM information_schema.COLUMNS

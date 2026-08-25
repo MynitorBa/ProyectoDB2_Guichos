@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Any
 
 
@@ -8,25 +8,32 @@ class ProductoCreate(BaseModel):
     sku: str | None = None
     nombre: str
     descripcion: str | None = None
-    precio: Decimal
-    categoria_slugs: list[str]
+    precio: Decimal = Field(ge=0)
+    categoria_slugs: list[str] = Field(min_length=1)
     atributos: dict[str, Any] = {}
     imagenes: list[str] = []
-    stock: int = 0
+    stock: int = Field(default=0, ge=0)
     vendedor_usuario_id: int | None = None
 
 
 class ProductoUpdate(BaseModel):
     nombre: str | None = None
     descripcion: str | None = None
-    precio: Decimal | None = None
+    precio: Decimal | None = Field(default=None, ge=0)
     atributos: dict[str, Any] | None = None
     disponible: bool | None = None
     estado: str | None = None
-    stock: int | None = None
+    stock: int | None = Field(default=None, ge=0)
     imagenes: list[str] | None = None
     vendedor_usuario_id: int | None = None
     categoria_slugs: list[str] | None = None
+
+    @field_validator('categoria_slugs')
+    @classmethod
+    def categorias_no_vacias(cls, value):
+        if value is not None and not value:
+            raise ValueError('Debes indicar al menos una categoría.')
+        return value
 
 
 class ProductoResponse(BaseModel):

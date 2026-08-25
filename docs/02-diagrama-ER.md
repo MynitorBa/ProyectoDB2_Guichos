@@ -1,6 +1,6 @@
 # Diagrama ER definitivo — MySQL
 
-**Estado:** vigente después de la extensión de integridad de la Fase 7.
+**Estado:** vigente después de la extensión de catálogo del 25 de agosto de 2026.
 
 ```mermaid
 erDiagram
@@ -54,6 +54,7 @@ erDiagram
         INT categoria_padre_id FK
         VARCHAR nombre
         VARCHAR slug UK
+        VARCHAR sku_prefix UK
         TEXT descripcion
         VARCHAR imagen_url
         BOOLEAN activa
@@ -63,6 +64,20 @@ erDiagram
         INT id PK
         CHAR producto_ref UK
         INT categoria_id FK
+        DATETIME fecha_creacion
+    }
+    producto_referencia_categorias {
+        INT id PK
+        INT producto_referencia_id FK
+        INT categoria_id FK
+        BOOLEAN es_principal
+    }
+    producto_imagenes {
+        INT id PK
+        INT producto_referencia_id FK
+        LONGBLOB datos
+        VARCHAR mime_type
+        SMALLINT orden
         DATETIME fecha_creacion
     }
     ofertas {
@@ -222,6 +237,9 @@ erDiagram
     usuarios ||--o| vendedores : administra
     categorias ||--o{ categorias : contiene
     categorias ||--o{ producto_referencias : clasifica
+    categorias ||--o{ producto_referencia_categorias : agrupa
+    producto_referencias ||--o{ producto_referencia_categorias : categoriza
+    producto_referencias ||--o{ producto_imagenes : almacena
     producto_referencias ||--o{ ofertas : habilita
     vendedores ||--o{ ofertas : publica
     ofertas ||--o{ oferta_precios_historial : historiza
@@ -273,7 +291,8 @@ inventario pertenece a la oferta, no al documento.
 - `carrito_items`: una oferta por carrito.
 - `resenas`: una reseña por `(usuario_id, producto_referencia_id)`.
 - `oferta_precios_historial`: una sola vigencia abierta por oferta.
+- `producto_referencia_categorias`: una relación única por producto/categoría
+  y exactamente una categoría principal, verificada por instalación y pruebas.
 
 El diagrama representa el esquema posterior a
-`database/mysql/11_phase7_reference_integrity.sql`, no el DDL transicional
-previo.
+`database/mysql/12_catalog_images_categories.sql`, no el DDL transicional previo.

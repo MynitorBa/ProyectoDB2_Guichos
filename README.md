@@ -60,7 +60,7 @@ proyecto/
 ## Comandos útiles
 
 ```powershell
-# Instalación completa desde cero, incluidas las migraciones hasta Fase 7
+# Instalación completa desde cero, incluidas todas las extensiones vigentes
 .\scripts\setup.ps1
 
 # Iniciar TiendaYa
@@ -113,6 +113,13 @@ producto y ofertas mediante FKs. En una base ya existente se aplica y valida
 con `scripts\complete-phase7-reference-integrity.ps1`. La evidencia está en
 [`docs/16-fase7-integridad-referencias.md`](docs/16-fase7-integridad-referencias.md).
 
+La extensión posterior vuelve a incorporar las imágenes binarias bajo la
+identidad mínima `producto_referencias` (ya no bajo la tabla eliminada
+`productos`) y permite varias categorías por producto. `setup.ps1` aplica la
+migración `12_catalog_images_categories.sql` de forma automática e idempotente.
+Los detalles y casos de prueba están en
+[`docs/20-imagenes-categorias-ofertas.md`](docs/20-imagenes-categorias-ofertas.md).
+
 ## Documentación vigente
 
 - [Modelo relacional definitivo](docs/01-modelo-relacional.md)
@@ -125,6 +132,7 @@ con `scripts\complete-phase7-reference-integrity.ps1`. La evidencia está en
 - [Pruebas funcionales integrales](docs/17-pruebas-funcionales.md)
 - [Guía de revisión para el equipo](docs/18-guia-revision-companeros.md)
 - [Correcciones del flujo de instalación](docs/19-correcciones-instalacion.md)
+- [Imágenes SQL, categorías múltiples y revisión de ofertas](docs/20-imagenes-categorias-ofertas.md)
 
 ## Entregas del proyecto
 

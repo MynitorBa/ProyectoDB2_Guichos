@@ -344,7 +344,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
           atributos: { ...(product.atributos || {}) },
           stock: product.stock ?? '',
           imagenes: imgs,
-          vendedor_usuario_id: product.vendedor_id || '',
+          vendedor_usuario_id: product.vendedor_usuario_id || '',
         })
       } else {
         setForm(EMPTY)
@@ -404,6 +404,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
     e.preventDefault()
     if (!form.nombre || !form.precio) return toast.error('Nombre y precio son obligatorios.')
     if (form.categoria_slugs.length === 0) return toast.error('Selecciona al menos una categoría.')
+    if (!isEdit && form.vendedor_usuario_id === '') return toast.error('Selecciona el vendedor de la oferta inicial.')
 
     const atributos = {}
     allAttrSections.forEach(({ fields }) => {
@@ -626,7 +627,9 @@ function OffersModal({ product, open, onOpenChange }) {
   })
 
   const existingVendorIds = new Set(offers.filter(o => o.estado !== 'descontinuada').map(o => o.vendedor_id))
-  const availableVendors = vendorsData.filter(v => !existingVendorIds.has(v.usuario_id))
+  const availableVendors = vendorsData.filter(
+    v => v.vendedor_id && !existingVendorIds.has(v.vendedor_id)
+  )
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['product-offers', product?._id] })
@@ -758,7 +761,7 @@ function OffersModal({ product, open, onOpenChange }) {
                   </SelectTrigger>
                   <SelectContent>
                     {availableVendors.map(v => (
-                      <SelectItem key={v.usuario_id} value={String(v.usuario_id)}>
+                      <SelectItem key={v.vendedor_id} value={String(v.vendedor_id)}>
                         {v.nombre_comercial || v.nombre_completo}
                       </SelectItem>
                     ))}

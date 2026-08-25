@@ -20,6 +20,7 @@ def actualizar_precio_oferta(
     nuevo_precio: Decimal,
     usuario_id: int | None,
     motivo: str,
+    enqueue_projection: bool = True,
 ) -> bool:
     """Actualiza precio, historial y outbox sin hacer commit."""
     nuevo_precio = Decimal(nuevo_precio).quantize(Decimal('0.01'))
@@ -45,25 +46,43 @@ def actualizar_precio_oferta(
         cambiado_por=usuario_id,
         motivo=motivo,
     ))
-    enqueue_outbox(
-        db,
-        tipo_evento='oferta.precio_actualizado',
-        agregado_tipo='oferta',
-        agregado_id=oferta.id,
-        producto_ref=oferta.producto_ref,
-        payload={
-            'projection': {
-                'precio': float(nuevo_precio),
-                'moneda': oferta.moneda,
+    if enqueue_projection:
+        enqueue_outbox(
+            db,
+            tipo_evento='oferta.precio_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={
+                'projection': {
+                    'precio': float(nuevo_precio),
+                    'moneda': oferta.moneda,
+                },
+                'history': {
+                    'tipo_evento': 'PRECIO_ACTUALIZADO',
+                    'datos_anteriores': {'precio': float(precio_anterior)},
+                    'datos_nuevos': {'precio': float(nuevo_precio)},
+                    'usuario_id': str(usuario_id) if usuario_id is not None else None,
+                },
             },
-            'history': {
-                'tipo_evento': 'PRECIO_ACTUALIZADO',
-                'datos_anteriores': {'precio': float(precio_anterior)},
-                'datos_nuevos': {'precio': float(nuevo_precio)},
-                'usuario_id': str(usuario_id) if usuario_id is not None else None,
+        )
+    else:
+        enqueue_outbox(
+            db,
+            tipo_evento='oferta.precio_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={
+                'projection': {},
+                'history': {
+                    'tipo_evento': 'PRECIO_ACTUALIZADO',
+                    'datos_anteriores': {'precio': float(precio_anterior)},
+                    'datos_nuevos': {'precio': float(nuevo_precio)},
+                    'usuario_id': str(usuario_id) if usuario_id is not None else None,
+                },
             },
-        },
-    )
+        )
     return True
 
 
@@ -117,6 +136,7 @@ def listar_ofertas_por_referencias(
             'estado': offer.estado,
             'version': offer.version,
             'vendedor_id': offer.vendedor_id,
+            'vendedor_usuario_id': vendor.usuario_id,
             'vendedor_nombre': vendor.nombre_comercial,
             'stock': available,
             'disponible': offer.estado == 'activa' and available > 0,

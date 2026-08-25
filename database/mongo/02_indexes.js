@@ -65,6 +65,12 @@ db.producto_eventos.createIndex(
   { name: 'idx_eventos_tipo_timestamp' }
 );
 
+// Soporta documentos con varias categorías y filtros por cualquiera de ellas.
+db.productos.createIndex(
+  { "categorias.slug": 1, estado: 1 },
+  { name: 'idx_categorias_estado' }
+);
+
 // Garantiza que reintentar un mensaje del outbox no duplique el historial.
 db.producto_eventos.createIndex(
   { outbox_id: 1 },
