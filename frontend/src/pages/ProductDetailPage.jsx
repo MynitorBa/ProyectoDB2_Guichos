@@ -96,7 +96,7 @@ export default function ProductDetailPage() {
   }
 
   const imagenes = product.imagenes || []
-  const imgSrc = imagenes[selectedImg]?.url || null
+  const imgSrc = (typeof imagenes[selectedImg] === 'string' ? imagenes[selectedImg] : imagenes[selectedImg]?.url) || null
   const resenas = product.resumen_resenas || {}
   const atributos = product.atributos || {}
   const ofertas = product.ofertas || []
@@ -147,7 +147,7 @@ export default function ProductDetailPage() {
                     }`}
                   >
                     <ProductImage
-                      src={img.url}
+                      src={typeof img === 'string' ? img : img?.url}
                       alt={`${product.nombre} - imagen ${idx + 1}`}
                       categoria={product.categoria}
                       nombre={product.nombre}
@@ -162,9 +162,9 @@ export default function ProductDetailPage() {
 
           <div className="space-y-5">
             <div className="flex items-center gap-2 flex-wrap">
-              {product.categoria?.nombre && (
-                <Badge variant="jade">{product.categoria.nombre}</Badge>
-              )}
+              {(product.categorias || (product.categoria ? [product.categoria] : [])).map(cat => (
+                <Badge key={cat.slug} variant="jade">{cat.nombre}</Badge>
+              ))}
               {displayAvailable ? (
                 <Badge variant="success">{displayStock > 0 ? `${displayStock} en stock` : 'En stock'}</Badge>
               ) : (

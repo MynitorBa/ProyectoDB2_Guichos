@@ -1,4 +1,4 @@
-import uuid
+import secrets
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -15,9 +15,20 @@ from sqlalchemy.orm import Session
 
 GT_TZ = timezone(timedelta(hours=-6))
 
-UPLOAD_DIR = Path("static/products")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+_EXT_MIME = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
+}
+
+
+def _generar_sku(mongo_db, prefix: str) -> str:
+    prefix = (prefix or 'GEN')[:3].upper()
+    for _ in range(10):
+        candidate = f"{prefix}-{secrets.token_hex(4).upper()}"
+        if not mongo_db.productos.find_one({'sku': candidate}, {'_id': 1}):
+            return candidate
+    raise ValueError('No se pudo generar un SKU único')
 
 from bson import ObjectId
 
@@ -30,9 +41,11 @@ from app.models.pago import Pago
 from app.models.pedido import Pedido
 from app.models.pedido_vendedor import PedidoVendedor
 from app.models.producto_referencia import ProductoReferencia
+from app.models.producto_referencia_categoria import ProductoReferenciaCategoria
 from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.models.vendedor import Vendedor
 from app.models.oferta import Oferta, OfertaPrecioHistorial
+from app.models.producto_imagen import ProductoImagen
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
@@ -54,6 +67,19 @@ class VendorProfilePayload(BaseModel):
     nit: str
 
 
+class OfferCreate(BaseModel):
+    vendedor_id: int
+    precio: Decimal
+    stock: int
+    sku: str | None = None
+
+
+class OfferUpdate(BaseModel):
+    precio: Decimal | None = None
+    stock: int | None = None
+    estado: str | None = None
+
+
 class AtributoEsquema(BaseModel):
     nombre: str
     etiqueta: str
@@ -67,12 +93,14 @@ class CategoriaCreate(BaseModel):
     slug: str
     descripcion: str | None = None
     padre_id: int | None = None
+    sku_prefix: str | None = None
     atributos: list[AtributoEsquema] = []
 
 
 class EsquemaUpdate(BaseModel):
     atributos: list[AtributoEsquema]
     categoria_nombre: str | None = None
+    sku_prefix: str | None = None
 
 
 # ── Gestión de usuarios ───────────────────────────────────────────────────────
@@ -131,6 +159,8 @@ def list_vendors(
             'nombre_completo': f'{u.nombre} {u.apellido}',
             'email': u.email,
             'nombre_comercial': vendedores[u.id].nombre_comercial if u.id in vendedores else None,
+            'nit': vendedores[u.id].nit if u.id in vendedores else None,
+            'estado_verificacion': vendedores[u.id].estado_verificacion if u.id in vendedores else None,
         }
         for u in usuarios
     ]
@@ -185,13 +215,23 @@ def crear_producto(
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
 ):
-    categoria = mysql_db.query(Categoria).filter_by(
-        slug=payload.categoria_slug, activa=True
-    ).first()
+    if not payload.categoria_slugs:
+        raise HTTPException(400, 'Debes indicar al menos una categoría.')
+    primary_slug = payload.categoria_slugs[0]
+    categoria = mysql_db.query(Categoria).filter_by(slug=primary_slug, activa=True).first()
     if not categoria:
-        raise HTTPException(400, 'La categoría no existe o está inactiva.')
-    esquema = db.categoria_esquemas.find_one({'categoria_slug': payload.categoria_slug})
+        raise HTTPException(400, 'La categoría principal no existe o está inactiva.')
+    sku_prefix = categoria.sku_prefix or primary_slug[:3].upper()
+    sku = payload.sku or _generar_sku(db, sku_prefix)
+    todas_categorias = mysql_db.query(Categoria).filter(
+        Categoria.slug.in_(payload.categoria_slugs), Categoria.activa == True
+    ).all()
+    esquema = db.categoria_esquemas.find_one({'categoria_slug': primary_slug})
     categoria_nombre = esquema['categoria_nombre'] if esquema else categoria.nombre
+    cats_mongo = [
+        {'slug': c.slug, 'nombre': c.nombre}
+        for c in sorted(todas_categorias, key=lambda c: payload.categoria_slugs.index(c.slug))
+    ]
 
     if payload.vendedor_usuario_id:
         v_user = mysql_db.get(Usuario, payload.vendedor_usuario_id)
@@ -204,14 +244,15 @@ def crear_producto(
         v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=current_user.id).first()
 
     doc = {
-        'sku': payload.sku,
+        'sku': sku,
         'nombre': payload.nombre,
         'descripcion': payload.descripcion,
         'precio': float(payload.precio),
         'moneda': 'GTQ',
-        'categoria': {'slug': payload.categoria_slug, 'nombre': categoria_nombre},
+        'categoria': cats_mongo[0],
+        'categorias': cats_mongo,
         'atributos': payload.atributos,
-        'imagenes': [{'url': u, 'orden': i} for i, u in enumerate(payload.imagenes)],
+        'imagenes': list(payload.imagenes),
         'vendedor_id': v_mongo_id,
         'vendedor_nombre': v_nombre,
         'resumen_resenas': {'promedio': 0.0, 'total': 0},
@@ -222,15 +263,30 @@ def crear_producto(
 
     # MySQL conserva solo identidad relacional, oferta, precio e inventario.
     vendedor_id = v_rec.id if v_rec else 1
-    mysql_db.add(ProductoReferencia(
-        producto_ref=producto_mongo['_id'], categoria_id=categoria.id
-    ))
+    ref = ProductoReferencia(producto_ref=producto_mongo['_id'], categoria_id=categoria.id)
+    mysql_db.add(ref)
     mysql_db.flush()
+    for cat in todas_categorias:
+        mysql_db.add(ProductoReferenciaCategoria(
+            producto_referencia_id=ref.id,
+            categoria_id=cat.id,
+            es_principal=(cat.slug == primary_slug),
+        ))
+
+    for orden, url in enumerate(payload.imagenes):
+        try:
+            img_id = int(url.rsplit('/', 1)[-1])
+            img_row = mysql_db.get(ProductoImagen, img_id)
+            if img_row:
+                img_row.producto_referencia_id = ref.id
+                img_row.orden = orden
+        except (ValueError, AttributeError):
+            pass
 
     oferta = Oferta(
         producto_ref=producto_mongo['_id'],
         vendedor_id=vendedor_id,
-        sku=payload.sku,
+        sku=sku,
         precio_actual=payload.precio,
         moneda='GTQ',
         estado='activa',
@@ -262,15 +318,18 @@ def crear_producto(
 async def upload_image(
     file: UploadFile = File(...),
     _: Usuario = Depends(get_admin_user),
+    mysql_db: Session = Depends(get_db),
 ):
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(400, f'Tipo de archivo no permitido. Usa: {", ".join(ALLOWED_EXTENSIONS)}')
-    filename = f"{uuid.uuid4()}{ext}"
-    dest = UPLOAD_DIR / filename
+    mime = file.content_type or _EXT_MIME.get(ext, 'image/jpeg')
     content = await file.read()
-    dest.write_bytes(content)
-    return {'url': f'/static/products/{filename}'}
+    img = ProductoImagen(datos=content, mime_type=mime)
+    mysql_db.add(img)
+    mysql_db.commit()
+    mysql_db.refresh(img)
+    return {'url': f'/api/v1/products/images/{img.id}'}
 
 
 @router.put('/products/{producto_id}')
@@ -284,8 +343,10 @@ def actualizar_producto(
     cambios = payload.model_dump(exclude_none=True)
     if 'precio' in cambios:
         cambios['precio'] = float(cambios['precio'])
+
+    nuevas_imagenes = None
     if 'imagenes' in cambios:
-        cambios['imagenes'] = [{'url': u, 'orden': i} for i, u in enumerate(cambios['imagenes'])]
+        nuevas_imagenes = cambios['imagenes']  # lista de URL strings
 
     nuevo_stock = None
     if 'stock' in cambios:
@@ -303,6 +364,8 @@ def actualizar_producto(
             v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=v_uid).first()
             nuevo_vendedor_id_sql = v_rec.id if v_rec else None
 
+    nuevos_slugs = cambios.pop('categoria_slugs', None)
+
     # Mongo recibe solo datos documentales. Precio, stock y vendedor se
     # proyectan después desde el outbox transaccional MySQL.
     campos_transaccionales = {
@@ -319,6 +382,65 @@ def actualizar_producto(
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
 
     needs_commit = False
+
+    if nuevas_imagenes is not None:
+        ref_img = mysql_db.query(ProductoReferencia).filter_by(producto_ref=producto_id).first()
+        if ref_img:
+            current_imgs = mysql_db.query(ProductoImagen).filter_by(
+                producto_referencia_id=ref_img.id
+            ).all()
+            new_ids = set()
+            for url in nuevas_imagenes:
+                try:
+                    new_ids.add(int(url.rsplit('/', 1)[-1]))
+                except ValueError:
+                    pass
+            for img in current_imgs:
+                if img.id not in new_ids:
+                    img.producto_referencia_id = None
+            for orden, url in enumerate(nuevas_imagenes):
+                try:
+                    img_id = int(url.rsplit('/', 1)[-1])
+                    img_row = mysql_db.get(ProductoImagen, img_id)
+                    if img_row:
+                        img_row.producto_referencia_id = ref_img.id
+                        img_row.orden = orden
+                except (ValueError, AttributeError):
+                    pass
+        from bson import ObjectId as BsonObjectId2
+        db.productos.update_one(
+            {'_id': BsonObjectId2(producto_id)},
+            {'$set': {'imagenes': nuevas_imagenes}}
+        )
+        needs_commit = True
+
+    if nuevos_slugs:
+        todas_cats = mysql_db.query(Categoria).filter(
+            Categoria.slug.in_(nuevos_slugs), Categoria.activa == True
+        ).all()
+        if todas_cats:
+            cats_mongo = [
+                {'slug': c.slug, 'nombre': c.nombre}
+                for c in sorted(todas_cats, key=lambda c: nuevos_slugs.index(c.slug))
+            ]
+            from bson import ObjectId as BsonObjectId
+            db.productos.update_one(
+                {'_id': BsonObjectId(producto_id)},
+                {'$set': {'categorias': cats_mongo, 'categoria': cats_mongo[0]}}
+            )
+            ref = mysql_db.query(ProductoReferencia).filter_by(producto_ref=producto_id).first()
+            if ref:
+                ref.categoria_id = todas_cats[0].id
+                mysql_db.query(ProductoReferenciaCategoria).filter_by(
+                    producto_referencia_id=ref.id
+                ).delete()
+                for cat in todas_cats:
+                    mysql_db.add(ProductoReferenciaCategoria(
+                        producto_referencia_id=ref.id,
+                        categoria_id=cat.id,
+                        es_principal=(cat.slug == nuevos_slugs[0]),
+                    ))
+            needs_commit = True
     oferta = mysql_db.query(Oferta).filter_by(producto_ref=producto_id).order_by(Oferta.id).first()
     cambios_operativos = {
         'precio', 'stock', 'estado', 'disponible', 'vendedor_usuario_id'
@@ -545,6 +667,7 @@ def listar_categorias_admin(
             'id': c.id,
             'nombre': c.nombre,
             'slug': c.slug,
+            'sku_prefix': c.sku_prefix,
             'descripcion': c.descripcion,
             'padre_id': c.categoria_padre_id,
             'activa': c.activa,
@@ -568,11 +691,17 @@ def crear_categoria(
     """
     if db.query(Categoria).filter_by(slug=payload.slug).first():
         raise HTTPException(400, f'Ya existe una categoría con slug "{payload.slug}".')
+    if payload.sku_prefix:
+        prefix = payload.sku_prefix[:3].upper()
+        conflict = db.query(Categoria).filter_by(sku_prefix=prefix).first()
+        if conflict:
+            raise HTTPException(400, f'El prefijo "{prefix}" ya está en uso por la categoría "{conflict.nombre}".')
 
     # 1. Guardar estructura relacional en MySQL
     cat = Categoria(
         nombre=payload.nombre,
         slug=payload.slug,
+        sku_prefix=payload.sku_prefix[:3].upper() if payload.sku_prefix else None,
         descripcion=payload.descripcion,
         categoria_padre_id=payload.padre_id,
         activa=True,
@@ -608,6 +737,18 @@ def actualizar_esquema(
     if not cat:
         raise HTTPException(404, 'Categoría no encontrada.')
 
+    if payload.sku_prefix is not None:
+        new_prefix = payload.sku_prefix[:3].upper() if payload.sku_prefix else None
+        if new_prefix:
+            conflict = db.query(Categoria).filter(
+                Categoria.sku_prefix == new_prefix,
+                Categoria.id != cat.id,
+            ).first()
+            if conflict:
+                raise HTTPException(400, f'El prefijo "{new_prefix}" ya está en uso por la categoría "{conflict.nombre}".')
+        cat.sku_prefix = new_prefix
+        db.commit()
+
     mongo.categoria_esquemas.update_one(
         {'categoria_slug': slug},
         {'$set': {
@@ -616,7 +757,7 @@ def actualizar_esquema(
         }},
         upsert=True,
     )
-    return {'slug': slug, 'atributos': len(payload.atributos)}
+    return {'slug': slug, 'atributos': len(payload.atributos), 'sku_prefix': cat.sku_prefix}
 
 
 @router.delete('/categories/{slug}', status_code=204)
@@ -902,6 +1043,146 @@ def update_admin_order_status(
     pedido.estado = payload.estado
     db.commit()
     return {'id': pedido_id, 'estado': payload.estado}
+
+
+# ── Gestión de ofertas por producto ──────────────────────────────────────────
+
+@router.get('/products/{producto_ref}/offers')
+def list_product_offers(
+    producto_ref: str,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(Oferta, Vendedor)
+        .join(Vendedor, Vendedor.id == Oferta.vendedor_id)
+        .filter(Oferta.producto_ref == producto_ref)
+        .order_by(Oferta.id)
+        .all()
+    )
+    result = []
+    for oferta, vendedor in rows:
+        inv = db.query(Inventario).filter_by(oferta_id=oferta.id, bodega='principal').first()
+        stock_disp = inv.cantidad_disponible if inv else 0
+        stock_res = inv.cantidad_reservada if inv else 0
+        result.append({
+            'oferta_id': oferta.id,
+            'vendedor_id': oferta.vendedor_id,
+            'vendedor_nombre': vendedor.nombre_comercial,
+            'sku': oferta.sku,
+            'precio': float(oferta.precio_actual),
+            'moneda': oferta.moneda,
+            'estado': oferta.estado,
+            'stock': max(0, stock_disp - stock_res),
+            'stock_disponible': stock_disp,
+            'version': oferta.version,
+        })
+    return result
+
+
+@router.post('/products/{producto_ref}/offers', status_code=201)
+def add_product_offer(
+    producto_ref: str,
+    payload: OfferCreate,
+    current_user: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    try:
+        doc = mongo.productos.find_one({'_id': ObjectId(producto_ref)})
+    except Exception:
+        doc = None
+    if not doc:
+        raise HTTPException(404, 'Producto no encontrado.')
+
+    vendedor = db.query(Vendedor).filter_by(id=payload.vendedor_id).first()
+    if not vendedor:
+        raise HTTPException(404, 'Vendedor no encontrado.')
+
+    existing = (
+        db.query(Oferta)
+        .filter_by(producto_ref=producto_ref, vendedor_id=payload.vendedor_id)
+        .filter(Oferta.estado != 'descontinuada')
+        .first()
+    )
+    if existing:
+        raise HTTPException(400, 'Este vendedor ya tiene una oferta activa para este producto.')
+
+    sku = payload.sku or f"{doc.get('sku', producto_ref[:8])}-{vendedor.nit}"
+
+    oferta = Oferta(
+        producto_ref=producto_ref,
+        vendedor_id=payload.vendedor_id,
+        sku=sku,
+        precio_actual=payload.precio,
+        moneda='GTQ',
+        estado='activa',
+        version=1,
+    )
+    db.add(oferta)
+    db.flush()
+
+    db.add(OfertaPrecioHistorial(
+        oferta_id=oferta.id,
+        precio=payload.precio,
+        moneda='GTQ',
+        vigente_desde=datetime.now(),
+        cambiado_por=current_user.id,
+        motivo='Precio inicial de oferta adicional',
+    ))
+    db.add(Inventario(
+        oferta_id=oferta.id,
+        cantidad_disponible=payload.stock,
+        bodega='principal',
+    ))
+    db.commit()
+
+    return {
+        'oferta_id': oferta.id,
+        'vendedor_id': oferta.vendedor_id,
+        'vendedor_nombre': vendedor.nombre_comercial,
+        'sku': oferta.sku,
+        'precio': float(oferta.precio_actual),
+        'estado': oferta.estado,
+        'stock': payload.stock,
+    }
+
+
+@router.patch('/offers/{oferta_id}')
+def update_offer(
+    oferta_id: int,
+    payload: OfferUpdate,
+    current_user: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    oferta = db.get(Oferta, oferta_id)
+    if not oferta:
+        raise HTTPException(404, 'Oferta no encontrada.')
+
+    if payload.precio is not None:
+        actualizar_precio_oferta(
+            db,
+            oferta=oferta,
+            nuevo_precio=payload.precio,
+            usuario_id=current_user.id,
+            motivo='Actualización desde panel admin',
+        )
+
+    if payload.stock is not None:
+        inv = db.query(Inventario).filter_by(oferta_id=oferta_id, bodega='principal').first()
+        if inv:
+            inv.cantidad_disponible = payload.stock
+        else:
+            db.add(Inventario(oferta_id=oferta_id, cantidad_disponible=payload.stock, bodega='principal'))
+
+    if payload.estado is not None:
+        estados_validos = {'activa', 'pausada', 'descontinuada', 'borrador'}
+        if payload.estado not in estados_validos:
+            raise HTTPException(400, f'Estado no válido. Opciones: {", ".join(estados_validos)}')
+        oferta.estado = payload.estado
+
+    db.commit()
+    return {'oferta_id': oferta_id, 'updated': True}
 
 
 # ── Perfil de vendedor ────────────────────────────────────────────────────────

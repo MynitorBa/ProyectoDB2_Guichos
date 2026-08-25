@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend,
@@ -8,11 +8,11 @@ import {
 import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
-  TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store,
+  TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getProducts, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
-import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile } from '../api/admin'
+import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -324,7 +324,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
   const isEdit = !!product
   const queryClient = useQueryClient()
 
-  const EMPTY = { sku: '', nombre: '', descripcion: '', precio: '', categoria_slug: '', disponible: true, estado: 'activo', atributos: {}, stock: '', imagenes: [], vendedor_usuario_id: '' }
+  const EMPTY = { nombre: '', descripcion: '', precio: '', categoria_slugs: [], disponible: true, estado: 'activo', atributos: {}, stock: '', imagenes: [], vendedor_usuario_id: '' }
   const [form, setForm] = useState(EMPTY)
 
   useEffect(() => {
@@ -335,11 +335,10 @@ function ProductFormModal({ open, onOpenChange, product }) {
           typeof img === 'string' ? img : img?.url
         ).filter(Boolean)
         setForm({
-          sku: product.sku || '',
           nombre: product.nombre || '',
           descripcion: product.descripcion || '',
           precio: String(product.precio || ''),
-          categoria_slug: product.categoria?.slug || '',
+          categoria_slugs: product.categorias?.map(c => c.slug) || (product.categoria?.slug ? [product.categoria.slug] : []),
           disponible: product.disponible ?? true,
           estado: product.estado || 'activo',
           atributos: { ...(product.atributos || {}) },
@@ -383,25 +382,36 @@ function ProductFormModal({ open, onOpenChange, product }) {
   function set(key, value) { setForm((p) => ({ ...p, [key]: value })) }
   function setAttr(key, value) { setForm((p) => ({ ...p, atributos: { ...p.atributos, [key]: value } })) }
 
-  const { data: schemaData } = useQuery({
-    queryKey: ['category-schema', form.categoria_slug],
-    queryFn: () => getCategorySchema(form.categoria_slug).then((r) => r.data),
-    enabled: !!form.categoria_slug,
-    staleTime: 5 * 60 * 1000,
+  const schemasQueries = useQueries({
+    queries: form.categoria_slugs.map((slug) => ({
+      queryKey: ['category-schema', slug],
+      queryFn: () => getCategorySchema(slug).then((r) => r.data),
+      enabled: !!slug,
+      staleTime: 5 * 60 * 1000,
+    })),
   })
-  const attrFields = schemaData?.atributos || []
+
+  const allAttrSections = form.categoria_slugs.map((slug, idx) => {
+    const cat = categories.find((c) => c.slug === slug)
+    return {
+      slug,
+      catNombre: cat?.nombre || slug,
+      fields: schemasQueries[idx]?.data?.atributos || [],
+    }
+  }).filter((s) => s.fields.length > 0)
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!form.nombre || !form.precio) return toast.error('Nombre y precio son obligatorios.')
-    if (!isEdit && !form.sku) return toast.error('El SKU es obligatorio.')
-    if (!isEdit && !form.categoria_slug) return toast.error('Selecciona una categoría.')
+    if (form.categoria_slugs.length === 0) return toast.error('Selecciona al menos una categoría.')
 
     const atributos = {}
-    attrFields.forEach(({ nombre, tipo }) => {
-      const v = form.atributos[nombre]
-      if (v === '' || v === undefined || v === null) return
-      atributos[nombre] = tipo === 'number' ? Number(v) : v
+    allAttrSections.forEach(({ fields }) => {
+      fields.forEach(({ nombre, tipo }) => {
+        const v = form.atributos[nombre]
+        if (v === '' || v === undefined || v === null) return
+        atributos[nombre] = tipo === 'number' ? Number(v) : v
+      })
     })
 
     const payload = isEdit
@@ -413,15 +423,15 @@ function ProductFormModal({ open, onOpenChange, product }) {
           estado: form.estado,
           atributos,
           imagenes: form.imagenes,
+          categoria_slugs: form.categoria_slugs,
           ...(form.stock !== '' && { stock: Number(form.stock) }),
           ...(form.vendedor_usuario_id !== '' && { vendedor_usuario_id: Number(form.vendedor_usuario_id) }),
         }
       : {
-          sku: form.sku,
           nombre: form.nombre,
           descripcion: form.descripcion,
           precio: Number(form.precio),
-          categoria_slug: form.categoria_slug,
+          categoria_slugs: form.categoria_slugs,
           atributos,
           imagenes: form.imagenes,
           stock: Number(form.stock) || 0,
@@ -438,17 +448,45 @@ function ProductFormModal({ open, onOpenChange, product }) {
         <DialogDescription>{isEdit ? `SKU: ${product?.sku}` : 'Los campos con * son obligatorios.'}</DialogDescription>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="grid grid-cols-2 gap-3">
-            {!isEdit && (
-              <div>
-                <Label>SKU *</Label>
-                <Input value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="LAP-001" />
-              </div>
-            )}
-            <div className={isEdit ? 'col-span-2' : ''}>
-              <Label>Nombre *</Label>
-              <Input value={form.nombre} onChange={(e) => set('nombre', e.target.value)} placeholder="Laptop ASUS..." />
+          <div>
+            <Label>Nombre *</Label>
+            <Input value={form.nombre} onChange={(e) => set('nombre', e.target.value)} placeholder="Laptop ASUS..." />
+          </div>
+
+          {/* Categorías — visible en crear y editar */}
+          <div>
+            <Label>Categorías * <span className="text-[var(--color-text-muted)] font-normal text-xs">(la primera es la principal)</span></Label>
+            <div className="flex flex-wrap gap-1.5 mt-1.5 mb-2 min-h-[26px]">
+              {form.categoria_slugs.map((slug, idx) => {
+                const cat = categories.find(c => c.slug === slug)
+                return (
+                  <span key={slug} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-sans font-semibold bg-[var(--color-action)]/10 text-[var(--color-action)] border border-[var(--color-action)]/30">
+                    {idx === 0 && <span className="text-[9px] uppercase opacity-50 mr-0.5">Principal ·</span>}
+                    {cat?.nombre || slug}
+                    <button type="button" onClick={() => set('categoria_slugs', form.categoria_slugs.filter(s => s !== slug))} className="ml-0.5 rounded-full hover:bg-[var(--color-action)]/20 p-0.5">
+                      <XIcon size={10} />
+                    </button>
+                  </span>
+                )
+              })}
             </div>
+            <Select
+              value=""
+              onValueChange={(v) => {
+                if (!form.categoria_slugs.includes(v)) {
+                  const isFirst = form.categoria_slugs.length === 0
+                  set('categoria_slugs', [...form.categoria_slugs, v])
+                  if (isFirst) set('atributos', {})
+                }
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Añadir categoría..." /></SelectTrigger>
+              <SelectContent>
+                {categories.filter(c => !form.categoria_slugs.includes(c.slug)).map(c => (
+                  <SelectItem key={c.slug} value={c.slug}>{c.nombre}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -456,19 +494,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
               <Label>Precio (GTQ) *</Label>
               <Input type="number" step="0.01" min="0" value={form.precio} onChange={(e) => set('precio', e.target.value)} placeholder="999.99" />
             </div>
-            {!isEdit ? (
-              <div>
-                <Label>Categoría *</Label>
-                <Select value={form.categoria_slug} onValueChange={(v) => { set('categoria_slug', v); set('atributos', {}) }}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (
-                      <SelectItem key={c.slug} value={c.slug}>{c.nombre}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
+            {isEdit && (
               <div>
                 <Label>Estado</Label>
                 <Select value={form.estado} onValueChange={(v) => set('estado', v)}>
@@ -530,14 +556,14 @@ function ProductFormModal({ open, onOpenChange, product }) {
             onChange={(imgs) => set('imagenes', imgs)}
           />
 
-          {attrFields.length > 0 && (
-            <>
+          {allAttrSections.map(({ slug, catNombre, fields }) => (
+            <React.Fragment key={slug}>
               <Separator />
               <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                Atributos de {categories.find(c => c.slug === form.categoria_slug)?.nombre || 'categoría'}
+                Atributos de {catNombre}
               </p>
               <div className="grid grid-cols-2 gap-3">
-                {attrFields.map((field) => (
+                {fields.map((field) => (
                   <div key={field.nombre} className={field.tipo === 'boolean' ? 'flex items-center gap-2 col-span-1' : ''}>
                     {field.tipo === 'boolean' ? (
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -559,8 +585,8 @@ function ProductFormModal({ open, onOpenChange, product }) {
                   </div>
                 ))}
               </div>
-            </>
-          )}
+            </React.Fragment>
+          ))}
 
           <div className="flex justify-end gap-2 pt-2">
             <DialogClose asChild>
@@ -577,12 +603,203 @@ function ProductFormModal({ open, onOpenChange, product }) {
 }
 
 // ── ProductsSection ──
+// ── OffersModal ──
+function OffersModal({ product, open, onOpenChange }) {
+  const queryClient = useQueryClient()
+  const [newVendorId, setNewVendorId] = useState('')
+  const [newPrecio, setNewPrecio] = useState('')
+  const [newStock, setNewStock] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editPrecio, setEditPrecio] = useState('')
+  const [editStock, setEditStock] = useState('')
+
+  const { data: offers = [], isLoading } = useQuery({
+    queryKey: ['product-offers', product?._id],
+    queryFn: () => getProductOffers(product._id).then((r) => r.data),
+    enabled: open && !!product,
+  })
+
+  const { data: vendorsData = [] } = useQuery({
+    queryKey: ['admin-vendors'],
+    queryFn: () => getAdminVendors().then((r) => r.data),
+    enabled: open,
+  })
+
+  const existingVendorIds = new Set(offers.filter(o => o.estado !== 'descontinuada').map(o => o.vendedor_id))
+  const availableVendors = vendorsData.filter(v => !existingVendorIds.has(v.usuario_id))
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ['product-offers', product?._id] })
+    queryClient.invalidateQueries({ queryKey: ['admin-products'] })
+    queryClient.invalidateQueries({ queryKey: ['products'] })
+  }
+
+  const addMutation = useMutation({
+    mutationFn: (data) => addProductOffer(product._id, data),
+    onSuccess: () => {
+      toast.success('Oferta añadida.')
+      setNewVendorId(''); setNewPrecio(''); setNewStock('')
+      invalidate()
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al añadir oferta.'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ ofertaId, data }) => updateProductOffer(ofertaId, data),
+    onSuccess: () => {
+      toast.success('Oferta actualizada.')
+      setEditingId(null)
+      invalidate()
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al actualizar.'),
+  })
+
+  function handleAdd(e) {
+    e.preventDefault()
+    if (!newVendorId) return
+    addMutation.mutate({ vendedor_id: Number(newVendorId), precio: Number(newPrecio), stock: Number(newStock) })
+  }
+
+  function startEdit(offer) {
+    setEditingId(offer.oferta_id)
+    setEditPrecio(String(offer.precio))
+    setEditStock(String(offer.stock_disponible ?? offer.stock))
+  }
+
+  function handleSaveEdit(offer) {
+    updateMutation.mutate({ ofertaId: offer.oferta_id, data: { precio: Number(editPrecio), stock: Number(editStock) } })
+  }
+
+  function toggleEstado(offer) {
+    const nuevoEstado = offer.estado === 'activa' ? 'pausada' : 'activa'
+    updateMutation.mutate({ ofertaId: offer.oferta_id, data: { estado: nuevoEstado } })
+  }
+
+  const estadoBadge = { activa: 'success', pausada: 'secondary', descontinuada: 'error', borrador: 'secondary' }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogTitle className="flex items-center gap-2">
+          <Layers size={16} /> Ofertas — {product?.nombre}
+        </DialogTitle>
+        <DialogDescription>
+          Cada oferta pertenece a un vendedor distinto con su propio precio e inventario.
+        </DialogDescription>
+
+        {isLoading ? (
+          <div className="space-y-2">{[1,2].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+        ) : (
+          <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)]">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[var(--color-background)]">
+                  {['Vendedor', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {offers.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin ofertas registradas</td></tr>
+                )}
+                {offers.map((offer) => (
+                  <tr key={offer.oferta_id} className="border-b border-[var(--color-border)] last:border-0">
+                    <td className="px-3 py-2 font-sans font-semibold text-[var(--color-text-primary)]">{offer.vendedor_nombre}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{offer.sku}</td>
+                    <td className="px-3 py-2">
+                      {editingId === offer.oferta_id ? (
+                        <Input type="number" value={editPrecio} onChange={e => setEditPrecio(e.target.value)} className="w-24 h-7 text-xs font-mono" step="0.01" min="0" />
+                      ) : (
+                        <span className="font-mono font-semibold">{formatQ(offer.precio)}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {editingId === offer.oferta_id ? (
+                        <Input type="number" value={editStock} onChange={e => setEditStock(e.target.value)} className="w-20 h-7 text-xs font-mono" min="0" />
+                      ) : (
+                        <span className={`font-mono ${offer.stock === 0 ? 'text-[var(--color-error)]' : offer.stock <= 5 ? 'text-amber-500' : 'text-[var(--color-text-primary)]'}`}>{offer.stock}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2"><Badge variant={estadoBadge[offer.estado] || 'secondary'}>{offer.estado}</Badge></td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1">
+                        {editingId === offer.oferta_id ? (
+                          <>
+                            <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(offer)} disabled={updateMutation.isPending}>Guardar</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button size="sm" variant="ghost" onClick={() => startEdit(offer)}><Edit size={12} /></Button>
+                            <Button size="sm" variant="ghost" onClick={() => toggleEstado(offer)} disabled={updateMutation.isPending}>
+                              {offer.estado === 'activa' ? 'Pausar' : 'Activar'}
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {availableVendors.length > 0 && (
+          <form onSubmit={handleAdd} className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3 bg-[var(--color-background)]">
+            <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)]">Añadir oferta de otro vendedor</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs">Vendedor *</Label>
+                <Select value={newVendorId} onValueChange={setNewVendorId}>
+                  <SelectTrigger className="h-8 text-xs mt-1">
+                    <SelectValue placeholder="Seleccionar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableVendors.map(v => (
+                      <SelectItem key={v.usuario_id} value={String(v.usuario_id)}>
+                        {v.nombre_comercial || v.nombre_completo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Precio (GTQ) *</Label>
+                <Input required type="number" step="0.01" min="0.01" value={newPrecio} onChange={e => setNewPrecio(e.target.value)} className="h-8 text-xs mt-1 font-mono" placeholder="0.00" />
+              </div>
+              <div>
+                <Label className="text-xs">Stock inicial *</Label>
+                <Input required type="number" min="0" value={newStock} onChange={e => setNewStock(e.target.value)} className="h-8 text-xs mt-1 font-mono" placeholder="0" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" loading={addMutation.isPending} disabled={!newVendorId}><Plus size={13} /> Añadir oferta</Button>
+            </div>
+          </form>
+        )}
+
+        {availableVendors.length === 0 && offers.length > 0 && (
+          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-2">Todos los vendedores registrados ya tienen una oferta para este producto.</p>
+        )}
+
+        <div className="flex justify-end pt-1">
+          <DialogClose asChild><Button variant="secondary" size="sm">Cerrar</Button></DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ProductsSection() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editProduct, setEditProduct] = useState(null)
+  const [offersOpen, setOffersOpen] = useState(false)
+  const [offersProduct, setOffersProduct] = useState(null)
   const PAGE_SIZE = 15
   const queryClient = useQueryClient()
 
@@ -702,6 +919,9 @@ function ProductsSection() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openEdit(prod)}><Edit size={13} /> Editar</Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setOffersProduct(prod); setOffersOpen(true) }}>
+                          <Layers size={13} /> Ofertas{prod.ofertas_count > 1 ? ` (${prod.ofertas_count})` : ''}
+                        </Button>
                         <Button variant="ghost" size="sm" asChild>
                           <Link to={`/admin/products/${prod._id}/history`}><History size={13} /> Historial</Link>
                         </Button>
@@ -727,6 +947,7 @@ function ProductsSection() {
       )}
 
       <ProductFormModal open={modalOpen} onOpenChange={setModalOpen} product={editProduct} />
+      <OffersModal open={offersOpen} onOpenChange={setOffersOpen} product={offersProduct} />
     </div>
   )
 }
@@ -743,8 +964,10 @@ function CategoriesSection() {
   const [newSlug, setNewSlug] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [newPadreId, setNewPadreId] = useState('')
+  const [newSkuPrefix, setNewSkuPrefix] = useState('')
   const [newAttrs, setNewAttrs] = useState([])
   const [editAttrs, setEditAttrs] = useState([])
+  const [editSkuPrefix, setEditSkuPrefix] = useState('')
 
   const { data: cats = [], isLoading } = useQuery({
     queryKey: ['admin-categories'],
@@ -758,7 +981,7 @@ function CategoriesSection() {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
       queryClient.invalidateQueries({ queryKey: ['categories'] })
       setCreateOpen(false)
-      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewAttrs([])
+      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewSkuPrefix(''); setNewAttrs([])
     },
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al crear categoría.'),
   })
@@ -796,6 +1019,7 @@ function CategoriesSection() {
   function openEdit(cat) {
     setEditTarget(cat)
     setEditAttrs(cat.atributos.length ? cat.atributos.map((a) => ({ ...a })) : [])
+    setEditSkuPrefix(cat.sku_prefix || '')
     setEditOpen(true)
   }
 
@@ -818,7 +1042,7 @@ function CategoriesSection() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-[var(--color-background)]">
-              {['Nombre', 'Slug', 'Padre', 'Campos (MongoDB)', 'Acciones'].map((h) => (
+              {['Nombre', 'Slug', 'Prefijo SKU', 'Padre', 'Campos (MongoDB)', 'Acciones'].map((h) => (
                 <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">{h}</th>
               ))}
             </tr>
@@ -831,6 +1055,12 @@ function CategoriesSection() {
                   {!cat.activa && <Badge variant="error" className="ml-2 text-[10px]">inactiva</Badge>}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-secondary)]">{cat.slug}</td>
+                <td className="px-4 py-3">
+                  {cat.sku_prefix
+                    ? <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[var(--color-action)]/10 text-[var(--color-action)] border border-[var(--color-action)]/20">{cat.sku_prefix}</span>
+                    : <span className="text-[var(--color-text-muted)] text-xs italic">—</span>
+                  }
+                </td>
                 <td className="px-4 py-3 font-sans text-xs text-[var(--color-text-secondary)]">
                   {cat.padre_id ? cats.find((c) => c.id === cat.padre_id)?.nombre || `#${cat.padre_id}` : <span className="text-[var(--color-text-muted)]">—</span>}
                 </td>
@@ -848,7 +1078,7 @@ function CategoriesSection() {
               </tr>
             ))}
             {cats.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">No hay categorías todavía.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">No hay categorías todavía.</td></tr>
             )}
           </tbody>
         </table>
@@ -861,7 +1091,7 @@ function CategoriesSection() {
           <DialogDescription>Los datos básicos se guardan en MySQL. Los campos personalizados se guardan en MongoDB.</DialogDescription>
           <form className="space-y-4 mt-2" onSubmit={(e) => {
             e.preventDefault()
-            createMut.mutate({ nombre: newNombre, slug: newSlug || slugify(newNombre), descripcion: newDesc || undefined, padre_id: newPadreId ? Number(newPadreId) : undefined, atributos: newAttrs.filter((a) => a.nombre && a.etiqueta) })
+            createMut.mutate({ nombre: newNombre, slug: newSlug || slugify(newNombre), descripcion: newDesc || undefined, padre_id: newPadreId ? Number(newPadreId) : undefined, sku_prefix: newSkuPrefix.trim().toUpperCase() || undefined, atributos: newAttrs.filter((a) => a.nombre && a.etiqueta) })
           }}>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -875,19 +1105,29 @@ function CategoriesSection() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
+                <Label>Prefijo SKU <span className="text-[var(--color-text-muted)] font-normal">(3 letras)</span></Label>
+                <Input
+                  value={newSkuPrefix}
+                  onChange={(e) => setNewSkuPrefix(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3))}
+                  placeholder="ej. LAP"
+                  maxLength={3}
+                  className="font-mono text-sm tracking-widest uppercase"
+                />
+              </div>
+              <div className="space-y-1">
                 <Label>Descripción (opcional)</Label>
                 <Input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Breve descripción..." />
               </div>
-              <div className="space-y-1">
-                <Label>Categoría padre (opcional)</Label>
-                <Select value={newPadreId} onValueChange={setNewPadreId}>
-                  <SelectTrigger><SelectValue placeholder="Ninguna (categoría raíz)" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Ninguna (categoría raíz)</SelectItem>
-                    {cats.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Categoría padre (opcional)</Label>
+              <Select value={newPadreId} onValueChange={setNewPadreId}>
+                <SelectTrigger><SelectValue placeholder="Ninguna (categoría raíz)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Ninguna (categoría raíz)</SelectItem>
+                  {cats.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <Separator />
             <div className="space-y-2">
@@ -918,8 +1158,19 @@ function CategoriesSection() {
           <DialogDescription>Modifica los campos personalizados de esta categoría (solo MongoDB).</DialogDescription>
           <form className="space-y-4 mt-2" onSubmit={(e) => {
             e.preventDefault()
-            schemaMut.mutate({ slug: editTarget.slug, data: { atributos: editAttrs.filter((a) => a.nombre && a.etiqueta) } })
+            schemaMut.mutate({ slug: editTarget.slug, data: { atributos: editAttrs.filter((a) => a.nombre && a.etiqueta), sku_prefix: editSkuPrefix.trim().toUpperCase() || null } })
           }}>
+            <div className="space-y-1">
+              <Label>Prefijo SKU <span className="text-[var(--color-text-muted)] font-normal">(3 letras)</span></Label>
+              <Input
+                value={editSkuPrefix}
+                onChange={(e) => setEditSkuPrefix(e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3))}
+                placeholder="ej. LAP"
+                maxLength={3}
+                className="font-mono text-sm tracking-widest uppercase w-28"
+              />
+            </div>
+            <Separator />
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Campos personalizados</p>
@@ -1082,6 +1333,12 @@ function UsersSection() {
     placeholderData: keepPreviousData,
   })
 
+  const { data: vendorsData } = useQuery({
+    queryKey: ['admin-vendors'],
+    queryFn: () => getAdminVendors().then((r) => r.data),
+  })
+  const vendorByUserId = Object.fromEntries((vendorsData || []).map((v) => [v.usuario_id, v]))
+
   const mutation = useMutation({
     mutationFn: ({ userId, roles }) => updateUserRoles(userId, roles),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
@@ -1093,6 +1350,7 @@ function UsersSection() {
     onSuccess: () => {
       toast.success('Perfil de vendedor guardado.')
       setVpOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['admin-vendors'] })
     },
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al guardar perfil.'),
   })
@@ -1129,6 +1387,12 @@ function UsersSection() {
                   <td className="px-4 py-3">
                     <p className="font-display font-semibold text-[var(--color-text-primary)]">{user.nombre} {user.apellido}</p>
                     <p className="font-mono text-[10px] text-[var(--color-text-muted)]">#{user.id}</p>
+                    {user.roles.includes('vendedor') && vendorByUserId[user.id]?.nombre_comercial && (
+                      <p className="font-sans text-[10px] text-[var(--color-text-secondary)] mt-0.5">
+                        {vendorByUserId[user.id].nombre_comercial}
+                        {vendorByUserId[user.id].nit && <span className="font-mono ml-1 text-[var(--color-text-muted)]">· {vendorByUserId[user.id].nit}</span>}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)] text-xs">{user.email}</td>
                   <td className="px-4 py-3"><Badge variant={user.estado === 'activo' ? 'success' : 'error'}>{user.estado}</Badge></td>
@@ -1150,7 +1414,13 @@ function UsersSection() {
                   </td>
                   <td className="px-4 py-3">
                     {user.roles.includes('vendedor') && (
-                      <Button variant="ghost" size="sm" onClick={() => { setVpUser(user); setVpNombre(''); setVpNit(''); setVpOpen(true) }}>
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        const vp = vendorByUserId[user.id]
+                        setVpUser(user)
+                        setVpNombre(vp?.nombre_comercial || '')
+                        setVpNit(vp?.nit || '')
+                        setVpOpen(true)
+                      }}>
                         <Store size={13} /> Perfil vendedor
                       </Button>
                     )}

@@ -5,11 +5,11 @@ from typing import Any
 
 
 class ProductoCreate(BaseModel):
-    sku: str
+    sku: str | None = None
     nombre: str
     descripcion: str | None = None
     precio: Decimal
-    categoria_slug: str
+    categoria_slugs: list[str]
     atributos: dict[str, Any] = {}
     imagenes: list[str] = []
     stock: int = 0
@@ -26,6 +26,7 @@ class ProductoUpdate(BaseModel):
     stock: int | None = None
     imagenes: list[str] | None = None
     vendedor_usuario_id: int | None = None
+    categoria_slugs: list[str] | None = None
 
 
 class ProductoResponse(BaseModel):

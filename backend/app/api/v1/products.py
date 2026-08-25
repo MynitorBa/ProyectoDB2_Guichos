@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pymongo.database import Database
 from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
+from app.models.producto_imagen import ProductoImagen
 from app.services import catalog_service
 
 router = APIRouter(prefix='/products', tags=['Productos'])
@@ -34,6 +36,17 @@ def listar_productos(
         page_size=page_size,
         orden=orden,
     )
+
+
+@router.get('/images/{image_id}')
+def servir_imagen(
+    image_id: int,
+    mysql_db: Session = Depends(get_db),
+):
+    img = mysql_db.get(ProductoImagen, image_id)
+    if not img or not img.datos:
+        raise HTTPException(status_code=404, detail='Imagen no encontrada.')
+    return Response(content=img.datos, media_type=img.mime_type)
 
 
 @router.get('/{producto_id}')

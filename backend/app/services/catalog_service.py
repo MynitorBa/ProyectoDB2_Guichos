@@ -17,6 +17,14 @@ from app.services.offer_service import listar_ofertas_por_referencias, oferta_pr
 def _serialize(doc: dict) -> dict:
     """Convierte ObjectId a string para serialización JSON."""
     doc['_id'] = str(doc['_id'])
+    if 'imagenes' in doc:
+        doc['imagenes'] = [
+            img['url'] if isinstance(img, dict) else img
+            for img in doc['imagenes']
+            if img
+        ]
+    if 'categorias' not in doc and 'categoria' in doc:
+        doc['categorias'] = [doc['categoria']]
     return doc
 
 
@@ -48,6 +56,8 @@ def listar_productos(
         enriched = []
         for doc in docs:
             item = _serialize(doc)
+            if 'categorias' not in item and 'categoria' in item:
+                item['categorias'] = [item['categoria']]
             legacy = {
                 'precio': item.get('precio'),
                 'stock': item.get('stock'),
@@ -131,8 +141,14 @@ def listar_productos(
     skip = (page - 1) * page_size
     docs = list(db.productos.find(filtro).sort(sort_order).skip(skip).limit(page_size))
 
+    def _serialize_with_cats(d):
+        item = _serialize(d)
+        if 'categorias' not in item and 'categoria' in item:
+            item['categorias'] = [item['categoria']]
+        return item
+
     return {
-        'items': [_serialize(d) for d in docs],
+        'items': [_serialize_with_cats(d) for d in docs],
         'total': total,
         'page': page,
         'page_size': page_size,
@@ -152,6 +168,8 @@ def obtener_producto(
     if not doc:
         return None
     item = _serialize(doc)
+    if 'categorias' not in item and 'categoria' in item:
+        item['categorias'] = [item['categoria']]
     if mysql_db is not None:
         offers = listar_ofertas_por_referencias(mysql_db, [item['_id']]).get(
             item['_id'], []

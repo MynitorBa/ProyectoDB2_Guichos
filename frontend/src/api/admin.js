@@ -46,3 +46,12 @@ export const updateAdminOrderStatus = (pedidoId, estado) =>
 
 export const setVendorProfile = (userId, data) =>
   api.post(`/admin/users/${userId}/vendor-profile`, data)
+
+export const getProductOffers = (productoRef) =>
+  api.get(`/admin/products/${productoRef}/offers`)
+
+export const addProductOffer = (productoRef, data) =>
+  api.post(`/admin/products/${productoRef}/offers`, data)
+
+export const updateProductOffer = (ofertaId, data) =>
+  api.patch(`/admin/offers/${ofertaId}`, data)
