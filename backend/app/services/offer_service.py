@@ -20,6 +20,7 @@ def actualizar_precio_oferta(
     nuevo_precio: Decimal,
     usuario_id: int | None,
     motivo: str,
+    enqueue_projection: bool = True,
 ) -> bool:
     """Actualiza precio, historial y outbox sin hacer commit."""
     nuevo_precio = Decimal(nuevo_precio).quantize(Decimal('0.01'))
@@ -45,25 +46,43 @@ def actualizar_precio_oferta(
         cambiado_por=usuario_id,
         motivo=motivo,
     ))
-    enqueue_outbox(
-        db,
-        tipo_evento='oferta.precio_actualizado',
-        agregado_tipo='oferta',
-        agregado_id=oferta.id,
-        producto_ref=oferta.producto_ref,
-        payload={
-            'projection': {
-                'precio': float(nuevo_precio),
-                'moneda': oferta.moneda,
+    if enqueue_projection:
+        enqueue_outbox(
+            db,
+            tipo_evento='oferta.precio_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={
+                'projection': {
+                    'precio': float(nuevo_precio),
+                    'moneda': oferta.moneda,
+                },
+                'history': {
+                    'tipo_evento': 'PRECIO_ACTUALIZADO',
+                    'datos_anteriores': {'precio': float(precio_anterior)},
+                    'datos_nuevos': {'precio': float(nuevo_precio)},
+                    'usuario_id': str(usuario_id) if usuario_id is not None else None,
+                },
             },
-            'history': {
-                'tipo_evento': 'PRECIO_ACTUALIZADO',
-                'datos_anteriores': {'precio': float(precio_anterior)},
-                'datos_nuevos': {'precio': float(nuevo_precio)},
-                'usuario_id': str(usuario_id) if usuario_id is not None else None,
+        )
+    else:
+        enqueue_outbox(
+            db,
+            tipo_evento='oferta.precio_actualizado',
+            agregado_tipo='oferta',
+            agregado_id=oferta.id,
+            producto_ref=oferta.producto_ref,
+            payload={
+                'projection': {},
+                'history': {
+                    'tipo_evento': 'PRECIO_ACTUALIZADO',
+                    'datos_anteriores': {'precio': float(precio_anterior)},
+                    'datos_nuevos': {'precio': float(nuevo_precio)},
+                    'usuario_id': str(usuario_id) if usuario_id is not None else None,
+                },
             },
-        },
-    )
+        )
     return True
 
 
@@ -117,6 +136,7 @@ def listar_ofertas_por_referencias(
             'estado': offer.estado,
             'version': offer.version,
             'vendedor_id': offer.vendedor_id,
+            'vendedor_usuario_id': vendor.usuario_id,
             'vendedor_nombre': vendor.nombre_comercial,
             'stock': available,
             'disponible': offer.estado == 'activa' and available > 0,
@@ -131,6 +151,37 @@ def listar_ofertas_por_referencias(
 
 def oferta_principal(offers: list[dict]) -> dict | None:
     return offers[0] if offers else None
+
+
+def enqueue_primary_offer_projection(
+    db: Session, producto_ref: str, agregado_id: int
+) -> None:
+    """Proyecta en Mongo únicamente la oferta activa que gana la lectura."""
+    offers = listar_ofertas_por_referencias(db, [producto_ref]).get(
+        producto_ref, []
+    )
+    primary = oferta_principal(offers)
+    projection = {
+        'ofertas_count': len(offers),
+        'disponible': bool(primary and primary['disponible']),
+        'stock': primary['stock'] if primary else 0,
+    }
+    if primary:
+        projection.update({
+            'precio': primary['precio'],
+            'moneda': primary['moneda'],
+            'vendedor_id': primary['vendedor_id'],
+            'vendedor_usuario_id': primary['vendedor_usuario_id'],
+            'vendedor_nombre': primary['vendedor_nombre'],
+        })
+    enqueue_outbox(
+        db,
+        tipo_evento='producto.oferta_principal_actualizada',
+        agregado_tipo='oferta',
+        agregado_id=agregado_id,
+        producto_ref=producto_ref,
+        payload={'projection': projection},
+    )
 
 
 def resolver_oferta_comprable(

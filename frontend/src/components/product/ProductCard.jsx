@@ -16,8 +16,8 @@ export function ProductCard({ product }) {
   const [added, setAdded] = useState(false)
   const [adding, setAdding] = useState(false)
 
-  const raw = product.imagenes?.[0]
-  const imgSrc = (typeof raw === 'string' ? raw : raw?.url) || null
+  const firstImage = product.imagenes?.[0]
+  const imgSrc = typeof firstImage === 'string' ? firstImage : firstImage?.url || null
   const resenas = product.resumen_resenas || {}
   const categoria = product.categoria
 

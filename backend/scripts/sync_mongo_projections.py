@@ -27,7 +27,8 @@ load_dotenv(BACKEND_DIR / '.env')
 PRIMARY_OFFERS_SQL = """
     WITH oferta_stock AS (
       SELECT o.id AS oferta_id, o.producto_ref, o.precio_actual, o.moneda,
-             o.vendedor_id, v.nombre_comercial,
+             o.vendedor_id, v.usuario_id AS vendedor_usuario_id,
+             v.nombre_comercial,
              GREATEST(0, COALESCE(SUM(
                i.cantidad_disponible - i.cantidad_reservada
              ), 0)) AS stock
@@ -36,7 +37,7 @@ PRIMARY_OFFERS_SQL = """
       LEFT JOIN inventario i ON i.oferta_id = o.id
       WHERE o.estado = 'activa'
       GROUP BY o.id, o.producto_ref, o.precio_actual, o.moneda,
-               o.vendedor_id, v.nombre_comercial
+               o.vendedor_id, v.usuario_id, v.nombre_comercial
     ), ranked AS (
       SELECT oferta_stock.*,
              COUNT(*) OVER (PARTITION BY producto_ref) AS ofertas_count,
@@ -47,6 +48,7 @@ PRIMARY_OFFERS_SQL = """
       FROM oferta_stock
     )
     SELECT oferta_id, producto_ref, precio_actual, moneda, vendedor_id,
+           vendedor_usuario_id,
            nombre_comercial, stock, ofertas_count
     FROM ranked
     WHERE rn = 1
@@ -63,6 +65,7 @@ def projection_from_row(row: dict) -> dict:
         'stock': stock,
         'disponible': stock > 0,
         'vendedor_id': int(row['vendedor_id']),
+        'vendedor_usuario_id': int(row['vendedor_usuario_id']),
         'vendedor_nombre': row['nombre_comercial'],
         'ofertas_count': int(row['ofertas_count']),
     }

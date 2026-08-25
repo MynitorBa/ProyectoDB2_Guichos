@@ -1,6 +1,6 @@
 # Diagrama ER definitivo — MySQL
 
-**Estado:** vigente después de la extensión de integridad de la Fase 7.
+**Estado:** vigente después de la extensión de catálogo del 25 de agosto de 2026.
 
 ```mermaid
 erDiagram
@@ -54,6 +54,7 @@ erDiagram
         INT categoria_padre_id FK
         VARCHAR nombre
         VARCHAR slug UK
+        VARCHAR sku_prefix UK
         TEXT descripcion
         VARCHAR imagen_url
         BOOLEAN activa
@@ -63,6 +64,21 @@ erDiagram
         INT id PK
         CHAR producto_ref UK
         INT categoria_id FK
+        DATETIME fecha_creacion
+    }
+    producto_referencia_categorias {
+        INT id PK
+        INT producto_referencia_id FK
+        INT categoria_id FK
+        BOOLEAN es_principal
+    }
+    producto_imagenes {
+        INT id PK
+        INT producto_referencia_id FK
+        INT subida_por FK
+        LONGBLOB datos
+        VARCHAR mime_type
+        SMALLINT orden
         DATETIME fecha_creacion
     }
     ofertas {
@@ -215,6 +231,34 @@ erDiagram
         DATETIME creado_en
         DATETIME procesado_en
     }
+    solicitudes_catalogo {
+        BIGINT id PK
+        INT vendedor_id FK
+        ENUM tipo
+        ENUM estado
+        CHAR producto_ref_solicitado FK
+        VARCHAR nombre
+        VARCHAR sku_propuesto
+        DECIMAL precio_propuesto
+        INT stock_propuesto
+        INT revisada_por FK
+        CHAR producto_ref_resultado FK
+        INT oferta_id_resultado FK
+        DATETIME fecha_creacion
+        DATETIME fecha_revision
+    }
+    solicitud_catalogo_categorias {
+        BIGINT id PK
+        BIGINT solicitud_id FK
+        INT categoria_id FK
+        SMALLINT orden
+    }
+    solicitud_catalogo_imagenes {
+        BIGINT id PK
+        BIGINT solicitud_id FK
+        INT producto_imagen_id FK
+        SMALLINT orden
+    }
 
     usuarios ||--o{ usuario_rol : recibe
     roles ||--o{ usuario_rol : asigna
@@ -222,6 +266,10 @@ erDiagram
     usuarios ||--o| vendedores : administra
     categorias ||--o{ categorias : contiene
     categorias ||--o{ producto_referencias : clasifica
+    categorias ||--o{ producto_referencia_categorias : agrupa
+    producto_referencias ||--o{ producto_referencia_categorias : categoriza
+    producto_referencias ||--o{ producto_imagenes : almacena
+    usuarios |o--o{ producto_imagenes : carga
     producto_referencias ||--o{ ofertas : habilita
     vendedores ||--o{ ofertas : publica
     ofertas ||--o{ oferta_precios_historial : historiza
@@ -247,6 +295,14 @@ erDiagram
     producto_referencias ||--o{ resenas : recibe
     usuarios ||--o{ notificaciones : recibe
     pedidos |o--o{ notificaciones : contextualiza
+    vendedores ||--o{ solicitudes_catalogo : propone
+    usuarios |o--o{ solicitudes_catalogo : revisa
+    producto_referencias |o--o{ solicitudes_catalogo : solicita_o_resulta
+    ofertas |o--o{ solicitudes_catalogo : resulta
+    solicitudes_catalogo ||--o{ solicitud_catalogo_categorias : clasifica
+    categorias ||--o{ solicitud_catalogo_categorias : propone
+    solicitudes_catalogo ||--o{ solicitud_catalogo_imagenes : adjunta
+    producto_imagenes ||--o| solicitud_catalogo_imagenes : vincula
 ```
 
 ## Referencias lógicas hacia MongoDB
@@ -273,7 +329,11 @@ inventario pertenece a la oferta, no al documento.
 - `carrito_items`: una oferta por carrito.
 - `resenas`: una reseña por `(usuario_id, producto_referencia_id)`.
 - `oferta_precios_historial`: una sola vigencia abierta por oferta.
+- `producto_referencia_categorias`: una relación única por producto/categoría
+  y exactamente una categoría principal, verificada por instalación y pruebas.
+- `solicitudes_catalogo`: solo las solicitudes pendientes pueden revisarse;
+  las categorías y las posiciones de imagen no se duplican dentro de una
+  solicitud.
 
 El diagrama representa el esquema posterior a
-`database/mysql/11_phase7_reference_integrity.sql`, no el DDL transicional
-previo.
+`database/mysql/13_catalog_requests.sql`, no el DDL transicional previo.

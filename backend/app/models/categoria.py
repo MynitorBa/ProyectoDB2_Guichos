@@ -11,7 +11,7 @@ class Categoria(Base):
     categoria_padre_id: Mapped[int | None] = mapped_column(ForeignKey('categorias.id'))
     nombre: Mapped[str] = mapped_column(String(100))
     slug: Mapped[str] = mapped_column(String(120), unique=True)
-    sku_prefix: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    sku_prefix: Mapped[str | None] = mapped_column(String(3), unique=True, nullable=True)
     descripcion: Mapped[str | None] = mapped_column(Text)
     imagen_url: Mapped[str | None] = mapped_column(String(500))
     activa: Mapped[bool] = mapped_column(Boolean, default=True)

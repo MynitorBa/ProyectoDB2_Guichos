@@ -9,6 +9,7 @@ import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
   TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
+  Inbox,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getProducts, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
@@ -22,6 +23,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } fr
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
 import { formatQ, formatDate, cn } from '../lib/utils'
+import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequestsSection'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
@@ -30,6 +32,7 @@ const NAV_ITEMS = [
   { id: 'users',      label: 'Usuarios',     icon: Users          },
   { id: 'orders',     label: 'Pedidos',      icon: ClipboardList  },
   { id: 'sales',      label: 'Ventas',       icon: TrendingUp     },
+  { id: 'requests',   label: 'Solicitudes',  icon: Inbox          },
 ]
 
 const ESTADO_BADGE = {
@@ -344,7 +347,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
           atributos: { ...(product.atributos || {}) },
           stock: product.stock ?? '',
           imagenes: imgs,
-          vendedor_usuario_id: product.vendedor_id || '',
+          vendedor_usuario_id: product.vendedor_usuario_id || '',
         })
       } else {
         setForm(EMPTY)
@@ -404,6 +407,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
     e.preventDefault()
     if (!form.nombre || !form.precio) return toast.error('Nombre y precio son obligatorios.')
     if (form.categoria_slugs.length === 0) return toast.error('Selecciona al menos una categoría.')
+    if (!isEdit && form.vendedor_usuario_id === '') return toast.error('Selecciona el vendedor de la oferta inicial.')
 
     const atributos = {}
     allAttrSections.forEach(({ fields }) => {
@@ -626,7 +630,9 @@ function OffersModal({ product, open, onOpenChange }) {
   })
 
   const existingVendorIds = new Set(offers.filter(o => o.estado !== 'descontinuada').map(o => o.vendedor_id))
-  const availableVendors = vendorsData.filter(v => !existingVendorIds.has(v.usuario_id))
+  const availableVendors = vendorsData.filter(
+    v => v.vendedor_id && !existingVendorIds.has(v.vendedor_id)
+  )
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['product-offers', product?._id] })
@@ -758,7 +764,7 @@ function OffersModal({ product, open, onOpenChange }) {
                   </SelectTrigger>
                   <SelectContent>
                     {availableVendors.map(v => (
-                      <SelectItem key={v.usuario_id} value={String(v.usuario_id)}>
+                      <SelectItem key={v.vendedor_id} value={String(v.vendedor_id)}>
                         {v.nombre_comercial || v.nombre_completo}
                       </SelectItem>
                     ))}
@@ -1722,6 +1728,7 @@ export default function AdminPage() {
           {activeSection === 'users'      && <UsersSection />}
           {activeSection === 'orders'     && <OrdersSection />}
           {activeSection === 'sales'      && <SalesSection />}
+          {activeSection === 'requests'   && <AdminCatalogRequestsSection />}
         </main>
       </div>
     </div>

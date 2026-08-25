@@ -55,3 +55,12 @@ export const addProductOffer = (productoRef, data) =>
 
 export const updateProductOffer = (ofertaId, data) =>
   api.patch(`/admin/offers/${ofertaId}`, data)
+
+export const getAdminCatalogRequests = (params = {}) =>
+  api.get('/admin/catalog-requests', { params })
+
+export const approveCatalogRequest = (requestId, observaciones = '') =>
+  api.post(`/admin/catalog-requests/${requestId}/approve`, { observaciones })
+
+export const rejectCatalogRequest = (requestId, observaciones) =>
+  api.post(`/admin/catalog-requests/${requestId}/reject`, { observaciones })

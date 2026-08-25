@@ -2,25 +2,17 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from io import BytesIO
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pymongo.database import Database
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 GT_TZ = timezone(timedelta(hours=-6))
-
-ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-_EXT_MIME = {
-    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-    '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
-}
-
 
 def _generar_sku(mongo_db, prefix: str) -> str:
     prefix = (prefix or 'GEN')[:3].upper()
@@ -50,7 +42,11 @@ from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
 from app.services.outbox_service import enqueue_outbox
-from app.services.offer_service import actualizar_precio_oferta
+from app.services.offer_service import (
+    actualizar_precio_oferta,
+    enqueue_primary_offer_projection,
+)
+from app.services.image_service import read_valid_image
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
 
@@ -69,14 +65,14 @@ class VendorProfilePayload(BaseModel):
 
 class OfferCreate(BaseModel):
     vendedor_id: int
-    precio: Decimal
-    stock: int
-    sku: str | None = None
+    precio: Decimal = Field(gt=0)
+    stock: int = Field(ge=0)
+    sku: str | None = Field(default=None, max_length=50)
 
 
 class OfferUpdate(BaseModel):
-    precio: Decimal | None = None
-    stock: int | None = None
+    precio: Decimal | None = Field(default=None, gt=0)
+    stock: int | None = Field(default=None, ge=0)
     estado: str | None = None
 
 
@@ -155,6 +151,7 @@ def list_vendors(
     vendedores = {v.usuario_id: v for v in db.query(Vendedor).filter(Vendedor.usuario_id.in_(usuario_ids)).all()}
     return [
         {
+            'vendedor_id': vendedores[u.id].id if u.id in vendedores else None,
             'usuario_id': u.id,
             'nombre_completo': f'{u.nombre} {u.apellido}',
             'email': u.email,
@@ -215,33 +212,38 @@ def crear_producto(
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
 ):
-    if not payload.categoria_slugs:
-        raise HTTPException(400, 'Debes indicar al menos una categoría.')
-    primary_slug = payload.categoria_slugs[0]
-    categoria = mysql_db.query(Categoria).filter_by(slug=primary_slug, activa=True).first()
-    if not categoria:
-        raise HTTPException(400, 'La categoría principal no existe o está inactiva.')
+    slugs = list(dict.fromkeys(payload.categoria_slugs))
+    primary_slug = slugs[0]
+    todas_categorias = mysql_db.query(Categoria).filter(
+        Categoria.slug.in_(slugs), Categoria.activa.is_(True)
+    ).all()
+    by_slug = {category.slug: category for category in todas_categorias}
+    invalidas = [slug for slug in slugs if slug not in by_slug]
+    if invalidas:
+        raise HTTPException(
+            400,
+            f'Categorías inexistentes o inactivas: {", ".join(invalidas)}',
+        )
+    categoria = by_slug[primary_slug]
+    todas_categorias = [by_slug[slug] for slug in slugs]
+
+    if not payload.vendedor_usuario_id:
+        raise HTTPException(400, 'Selecciona el vendedor de la oferta inicial.')
+    v_user = mysql_db.get(Usuario, payload.vendedor_usuario_id)
+    v_rec = mysql_db.query(Vendedor).filter_by(
+        usuario_id=payload.vendedor_usuario_id
+    ).first()
+    if not v_user or not v_rec:
+        raise HTTPException(400, 'El usuario seleccionado no tiene perfil de vendedor.')
+
     sku_prefix = categoria.sku_prefix or primary_slug[:3].upper()
     sku = payload.sku or _generar_sku(db, sku_prefix)
-    todas_categorias = mysql_db.query(Categoria).filter(
-        Categoria.slug.in_(payload.categoria_slugs), Categoria.activa == True
-    ).all()
-    esquema = db.categoria_esquemas.find_one({'categoria_slug': primary_slug})
-    categoria_nombre = esquema['categoria_nombre'] if esquema else categoria.nombre
+    v_nombre = v_rec.nombre_comercial
+    v_mongo_id = v_rec.id
     cats_mongo = [
-        {'slug': c.slug, 'nombre': c.nombre}
-        for c in sorted(todas_categorias, key=lambda c: payload.categoria_slugs.index(c.slug))
+        {'slug': category.slug, 'nombre': category.nombre}
+        for category in todas_categorias
     ]
-
-    if payload.vendedor_usuario_id:
-        v_user = mysql_db.get(Usuario, payload.vendedor_usuario_id)
-        v_nombre = f'{v_user.nombre} {v_user.apellido}' if v_user else f'Usuario #{payload.vendedor_usuario_id}'
-        v_mongo_id = str(payload.vendedor_usuario_id)
-        v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=payload.vendedor_usuario_id).first()
-    else:
-        v_nombre = f'{current_user.nombre} {current_user.apellido}'
-        v_mongo_id = str(current_user.id)
-        v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=current_user.id).first()
 
     doc = {
         'sku': sku,
@@ -254,62 +256,71 @@ def crear_producto(
         'atributos': payload.atributos,
         'imagenes': list(payload.imagenes),
         'vendedor_id': v_mongo_id,
+        'vendedor_usuario_id': v_user.id,
         'vendedor_nombre': v_nombre,
         'resumen_resenas': {'promedio': 0.0, 'total': 0},
         'stock': payload.stock,
         'disponible': payload.stock > 0,
     }
-    producto_mongo = catalog_service.crear_producto(db, doc, usuario_id=str(current_user.id))
+    producto_mongo = catalog_service.crear_producto(
+        db, doc, usuario_id=str(current_user.id)
+    )
 
     # MySQL conserva solo identidad relacional, oferta, precio e inventario.
-    vendedor_id = v_rec.id if v_rec else 1
-    ref = ProductoReferencia(producto_ref=producto_mongo['_id'], categoria_id=categoria.id)
-    mysql_db.add(ref)
-    mysql_db.flush()
-    for cat in todas_categorias:
-        mysql_db.add(ProductoReferenciaCategoria(
-            producto_referencia_id=ref.id,
-            categoria_id=cat.id,
-            es_principal=(cat.slug == primary_slug),
-        ))
+    try:
+        ref = ProductoReferencia(
+            producto_ref=producto_mongo['_id'], categoria_id=categoria.id
+        )
+        mysql_db.add(ref)
+        mysql_db.flush()
+        for category in todas_categorias:
+            mysql_db.add(ProductoReferenciaCategoria(
+                producto_referencia_id=ref.id,
+                categoria_id=category.id,
+                es_principal=(category.slug == primary_slug),
+            ))
 
-    for orden, url in enumerate(payload.imagenes):
-        try:
-            img_id = int(url.rsplit('/', 1)[-1])
+        for orden, url in enumerate(payload.imagenes):
+            try:
+                img_id = int(url.rsplit('/', 1)[-1])
+            except (ValueError, AttributeError):
+                continue
             img_row = mysql_db.get(ProductoImagen, img_id)
-            if img_row:
+            if img_row and img_row.producto_referencia_id is None:
                 img_row.producto_referencia_id = ref.id
                 img_row.orden = orden
-        except (ValueError, AttributeError):
-            pass
 
-    oferta = Oferta(
-        producto_ref=producto_mongo['_id'],
-        vendedor_id=vendedor_id,
-        sku=sku,
-        precio_actual=payload.precio,
-        moneda='GTQ',
-        estado='activa',
-        version=1,
-    )
-    mysql_db.add(oferta)
-    mysql_db.flush()
-    mysql_db.add(OfertaPrecioHistorial(
-        oferta_id=oferta.id,
-        precio=payload.precio,
-        moneda='GTQ',
-        vigente_desde=datetime.now(),
-        cambiado_por=current_user.id,
-        motivo='Precio inicial al crear la oferta',
-    ))
-
-    inv = Inventario(
-        oferta_id=oferta.id,
-        cantidad_disponible=payload.stock,
-        bodega='principal',
-    )
-    mysql_db.add(inv)
-    mysql_db.commit()
+        oferta = Oferta(
+            producto_ref=producto_mongo['_id'],
+            vendedor_id=v_rec.id,
+            sku=sku,
+            precio_actual=payload.precio,
+            moneda='GTQ',
+            estado='activa',
+            version=1,
+        )
+        mysql_db.add(oferta)
+        mysql_db.flush()
+        mysql_db.add(OfertaPrecioHistorial(
+            oferta_id=oferta.id,
+            precio=payload.precio,
+            moneda='GTQ',
+            vigente_desde=datetime.now(),
+            cambiado_por=current_user.id,
+            motivo='Precio inicial al crear la oferta',
+        ))
+        mysql_db.add(Inventario(
+            oferta_id=oferta.id,
+            cantidad_disponible=payload.stock,
+            bodega='principal',
+        ))
+        mysql_db.commit()
+    except Exception:
+        mysql_db.rollback()
+        # Compensación: no dejar un documento comprable sin identidad/oferta SQL.
+        db.productos.delete_one({'_id': ObjectId(producto_mongo['_id'])})
+        db.producto_eventos.delete_many({'producto_id': producto_mongo['_id']})
+        raise
 
     return producto_mongo
 
@@ -317,15 +328,13 @@ def crear_producto(
 @router.post('/upload')
 async def upload_image(
     file: UploadFile = File(...),
-    _: Usuario = Depends(get_admin_user),
+    current_user: Usuario = Depends(get_admin_user),
     mysql_db: Session = Depends(get_db),
 ):
-    ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(400, f'Tipo de archivo no permitido. Usa: {", ".join(ALLOWED_EXTENSIONS)}')
-    mime = file.content_type or _EXT_MIME.get(ext, 'image/jpeg')
-    content = await file.read()
-    img = ProductoImagen(datos=content, mime_type=mime)
+    content, mime = await read_valid_image(file)
+    img = ProductoImagen(
+        datos=content, mime_type=mime, subida_por=current_user.id
+    )
     mysql_db.add(img)
     mysql_db.commit()
     mysql_db.refresh(img)
@@ -344,9 +353,7 @@ def actualizar_producto(
     if 'precio' in cambios:
         cambios['precio'] = float(cambios['precio'])
 
-    nuevas_imagenes = None
-    if 'imagenes' in cambios:
-        nuevas_imagenes = cambios['imagenes']  # lista de URL strings
+    nuevas_imagenes = cambios.pop('imagenes', None)
 
     nuevo_stock = None
     if 'stock' in cambios:
@@ -360,6 +367,7 @@ def actualizar_producto(
         if v_uid:
             v_user = mysql_db.get(Usuario, v_uid)
             cambios['vendedor_id'] = str(v_uid)
+            cambios['vendedor_usuario_id'] = v_uid
             cambios['vendedor_nombre'] = f'{v_user.nombre} {v_user.apellido}' if v_user else f'Usuario #{v_uid}'
             v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=v_uid).first()
             nuevo_vendedor_id_sql = v_rec.id if v_rec else None
@@ -397,12 +405,14 @@ def actualizar_producto(
                     pass
             for img in current_imgs:
                 if img.id not in new_ids:
-                    img.producto_referencia_id = None
+                    mysql_db.delete(img)
             for orden, url in enumerate(nuevas_imagenes):
                 try:
                     img_id = int(url.rsplit('/', 1)[-1])
                     img_row = mysql_db.get(ProductoImagen, img_id)
-                    if img_row:
+                    if img_row and (
+                        img_row.producto_referencia_id in (None, ref_img.id)
+                    ):
                         img_row.producto_referencia_id = ref_img.id
                         img_row.orden = orden
                 except (ValueError, AttributeError):
@@ -418,6 +428,12 @@ def actualizar_producto(
         todas_cats = mysql_db.query(Categoria).filter(
             Categoria.slug.in_(nuevos_slugs), Categoria.activa == True
         ).all()
+        invalidas = sorted(set(nuevos_slugs) - {cat.slug for cat in todas_cats})
+        if invalidas:
+            raise HTTPException(
+                400,
+                f'Categorías inexistentes o inactivas: {", ".join(invalidas)}',
+            )
         if todas_cats:
             cats_mongo = [
                 {'slug': c.slug, 'nombre': c.nombre}
@@ -430,7 +446,8 @@ def actualizar_producto(
             )
             ref = mysql_db.query(ProductoReferencia).filter_by(producto_ref=producto_id).first()
             if ref:
-                ref.categoria_id = todas_cats[0].id
+                principal = next(cat for cat in todas_cats if cat.slug == nuevos_slugs[0])
+                ref.categoria_id = principal.id
                 mysql_db.query(ProductoReferenciaCategoria).filter_by(
                     producto_referencia_id=ref.id
                 ).delete()
@@ -498,7 +515,8 @@ def actualizar_producto(
             agregado_id=oferta.id,
             producto_ref=oferta.producto_ref,
             payload={'projection': {
-                'vendedor_id': str(vendedor.usuario_id),
+                'vendedor_id': vendedor.id,
+                'vendedor_usuario_id': vendedor.usuario_id,
                 'vendedor_nombre': vendedor.nombre_comercial,
             }},
         )
@@ -1108,7 +1126,8 @@ def add_product_offer(
     if existing:
         raise HTTPException(400, 'Este vendedor ya tiene una oferta activa para este producto.')
 
-    sku = payload.sku or f"{doc.get('sku', producto_ref[:8])}-{vendedor.nit}"
+    sku = payload.sku or f"{doc.get('sku', producto_ref[:8])}-{vendedor.id}"
+    sku = sku[:50]
 
     oferta = Oferta(
         producto_ref=producto_ref,
@@ -1135,6 +1154,8 @@ def add_product_offer(
         cantidad_disponible=payload.stock,
         bodega='principal',
     ))
+    db.flush()
+    enqueue_primary_offer_projection(db, producto_ref, oferta.id)
     db.commit()
 
     return {
@@ -1166,6 +1187,7 @@ def update_offer(
             nuevo_precio=payload.precio,
             usuario_id=current_user.id,
             motivo='Actualización desde panel admin',
+            enqueue_projection=False,
         )
 
     if payload.stock is not None:
@@ -1181,6 +1203,8 @@ def update_offer(
             raise HTTPException(400, f'Estado no válido. Opciones: {", ".join(estados_validos)}')
         oferta.estado = payload.estado
 
+    db.flush()
+    enqueue_primary_offer_projection(db, oferta.producto_ref, oferta.id)
     db.commit()
     return {'oferta_id': oferta_id, 'updated': True}
 

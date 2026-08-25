@@ -46,7 +46,11 @@ def servir_imagen(
     img = mysql_db.get(ProductoImagen, image_id)
     if not img or not img.datos:
         raise HTTPException(status_code=404, detail='Imagen no encontrada.')
-    return Response(content=img.datos, media_type=img.mime_type)
+    return Response(
+        content=img.datos,
+        media_type=img.mime_type,
+        headers={'Cache-Control': 'public, max-age=86400'},
+    )
 
 
 @router.get('/{producto_id}')

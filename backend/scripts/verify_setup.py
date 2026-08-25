@@ -327,7 +327,72 @@ def main():
                 registry_refs = cur.fetchall()
                 print('MySQL Fase 7: categorías, referencias y ofertas enlazadas')
 
-            legacy_tables = {'productos', 'producto_imagenes'} & installed_tables
+            catalog_extension_tables = {
+                'producto_imagenes', 'producto_referencia_categorias',
+            }
+            missing_extension_tables = sorted(
+                catalog_extension_tables - installed_tables
+            )
+            extension_fks = {
+                'fk_pi_referencia', 'fk_prc_referencia', 'fk_prc_categoria',
+            }
+            missing_extension_fks = sorted(extension_fks - installed_fks)
+            extension_errors = []
+            if ('categorias', 'sku_prefix') not in installed_columns:
+                extension_errors.append('falta categorias.sku_prefix')
+            if missing_extension_tables:
+                extension_errors.append(
+                    f'tablas faltantes: {missing_extension_tables}'
+                )
+            if missing_extension_fks:
+                extension_errors.append(f'FKs faltantes: {missing_extension_fks}')
+            if not extension_errors:
+                cur.execute("""
+                    SELECT COUNT(*) AS n
+                    FROM producto_referencias pr
+                    LEFT JOIN producto_referencia_categorias prc
+                      ON prc.producto_referencia_id = pr.id
+                     AND prc.es_principal = 1
+                    WHERE prc.id IS NULL
+                """)
+                missing_primary = cur.fetchone()['n']
+                if missing_primary:
+                    extension_errors.append(
+                        f'referencias sin categoría principal: {missing_primary}'
+                    )
+            if extension_errors:
+                print(f'MySQL catálogo extendido: {"; ".join(extension_errors)}')
+                ok = False
+            else:
+                print('MySQL catálogo extendido: imágenes y categorías múltiples listas')
+
+            request_tables = {
+                'solicitudes_catalogo', 'solicitud_catalogo_categorias',
+                'solicitud_catalogo_imagenes',
+            }
+            request_fks = {
+                'fk_sc_vendedor', 'fk_sc_producto_solicitado',
+                'fk_sc_revisada_por', 'fk_sc_producto_resultado',
+                'fk_sc_oferta_resultado', 'fk_scc_solicitud',
+                'fk_scc_categoria', 'fk_sci_solicitud', 'fk_sci_imagen',
+                'fk_pi_subida_por',
+            }
+            request_errors = []
+            missing_request_tables = sorted(request_tables - installed_tables)
+            missing_request_fks = sorted(request_fks - installed_fks)
+            if ('producto_imagenes', 'subida_por') not in installed_columns:
+                request_errors.append('falta producto_imagenes.subida_por')
+            if missing_request_tables:
+                request_errors.append(f'tablas faltantes: {missing_request_tables}')
+            if missing_request_fks:
+                request_errors.append(f'FKs faltantes: {missing_request_fks}')
+            if request_errors:
+                print(f'MySQL solicitudes de catálogo: {"; ".join(request_errors)}')
+                ok = False
+            else:
+                print('MySQL solicitudes de catálogo: estructura y propiedad de imágenes listas')
+
+            legacy_tables = {'productos'} & installed_tables
             legacy_columns = {
                 ('carrito_items', 'producto_id'),
                 ('inventario', 'producto_id'),
