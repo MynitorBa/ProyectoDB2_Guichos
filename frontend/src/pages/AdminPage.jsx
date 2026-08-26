@@ -12,8 +12,8 @@ import {
   Inbox,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getCatalogStats, getProducts, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
-import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, addProductOffer, updateProductOffer } from '../api/admin'
+import { getCatalogStats, getProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
+import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -117,7 +117,7 @@ function AttrRow({ attr, onChange, onRemove }) {
 }
 
 // ── ImageManager: gestión de imágenes de un producto ──
-function ImageManager({ images, onChange }) {
+function ImageManager({ images, onChange, onUploaded, onRemove }) {
   const fileRef = useRef(null)
   const [uploading, setUploading] = useState(false)
 
@@ -128,9 +128,10 @@ function ImageManager({ images, onChange }) {
     try {
       const res = await uploadAdminImage(file)
       onChange([...images, res.data.url])
+      onUploaded?.(res.data.url)
       toast.success('Imagen subida correctamente.')
-    } catch {
-      toast.error('Error al subir la imagen.')
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Error al subir la imagen.')
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -138,6 +139,7 @@ function ImageManager({ images, onChange }) {
   }
 
   function remove(idx) {
+    onRemove?.(images[idx])
     onChange(images.filter((_, i) => i !== idx))
   }
 
@@ -329,9 +331,11 @@ function ProductFormModal({ open, onOpenChange, product }) {
 
   const EMPTY = { nombre: '', descripcion: '', precio: '', categoria_slugs: [], disponible: true, estado: 'activo', atributos: {}, stock: '', imagenes: [], vendedor_usuario_id: '' }
   const [form, setForm] = useState(EMPTY)
+  const [stagedImages, setStagedImages] = useState([])
 
   useEffect(() => {
     if (open) {
+      setStagedImages([])
       if (isEdit) {
         // Extraer URLs de imágenes (formato MongoDB: [{url, orden}] → [url])
         const imgs = (product.imagenes || []).map(img =>
@@ -374,6 +378,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
       toast.success(isEdit ? 'Producto actualizado.' : 'Producto creado.')
       queryClient.invalidateQueries({ queryKey: ['admin-products'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
+      setStagedImages([])
       onOpenChange(false)
     },
     onError: (err) => {
@@ -384,6 +389,29 @@ function ProductFormModal({ open, onOpenChange, product }) {
 
   function set(key, value) { setForm((p) => ({ ...p, [key]: value })) }
   function setAttr(key, value) { setForm((p) => ({ ...p, atributos: { ...p.atributos, [key]: value } })) }
+
+  function imageIdFromUrl(url) {
+    const match = /^\/api\/v1\/products\/images\/(\d+)$/.exec(url || '')
+    return match ? Number(match[1]) : null
+  }
+
+  function discardStagedImage(url) {
+    if (!stagedImages.includes(url)) return
+    setStagedImages((current) => current.filter((item) => item !== url))
+    const imageId = imageIdFromUrl(url)
+    if (imageId) deletePendingAdminImage(imageId).catch(() => {})
+  }
+
+  function handleDialogOpenChange(nextOpen) {
+    if (!nextOpen && stagedImages.length) {
+      stagedImages.forEach((url) => {
+        const imageId = imageIdFromUrl(url)
+        if (imageId) deletePendingAdminImage(imageId).catch(() => {})
+      })
+      setStagedImages([])
+    }
+    onOpenChange(nextOpen)
+  }
 
   const schemasQueries = useQueries({
     queries: form.categoria_slugs.map((slug) => ({
@@ -455,7 +483,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogTitle>{isEdit ? 'Editar producto' : 'Nuevo producto'}</DialogTitle>
         <DialogDescription>{isEdit ? `SKU: ${product?.sku}` : 'Los campos con * son obligatorios.'}</DialogDescription>
@@ -567,6 +595,8 @@ function ProductFormModal({ open, onOpenChange, product }) {
           <ImageManager
             images={form.imagenes}
             onChange={(imgs) => set('imagenes', imgs)}
+            onUploaded={(url) => setStagedImages((current) => [...current, url])}
+            onRemove={discardStagedImage}
           />
 
           {allAttrSections.map(({ slug, catNombre, fields }) => (
@@ -847,7 +877,15 @@ function ProductsSection() {
   })
 
   function openCreate() { setEditProduct(null); setModalOpen(true) }
-  function openEdit(prod) { setEditProduct(prod); setModalOpen(true) }
+  async function openEdit(prod) {
+    try {
+      const response = await getProduct(prod._id)
+      setEditProduct(response.data)
+      setModalOpen(true)
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'No se pudo cargar el producto completo.')
+    }
+  }
   function handleDelete(prod) {
     if (!window.confirm(`¿Eliminar "${prod.nombre}"? Esta acción no se puede deshacer.`)) return
     deleteMutation.mutate(prod._id)

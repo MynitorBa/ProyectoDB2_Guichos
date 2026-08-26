@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -7,9 +8,10 @@ const DialogTrigger = DialogPrimitive.Trigger
 const DialogPortal = DialogPrimitive.Portal
 const DialogClose = DialogPrimitive.Close
 
-function DialogOverlay({ className, ...props }) {
+const DialogOverlay = forwardRef(function DialogOverlay({ className, ...props }, ref) {
   return (
     <DialogPrimitive.Overlay
+      ref={ref}
       className={cn(
         'fixed inset-0 z-50 bg-black/50 backdrop-blur-sm',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
@@ -19,13 +21,16 @@ function DialogOverlay({ className, ...props }) {
       {...props}
     />
   )
-}
+})
 
-function DialogContent({ className, children, showClose = true, ...props }) {
+const DialogContent = forwardRef(function DialogContent(
+  { className, children, showClose = true, ...props }, ref
+) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
+        ref={ref}
         className={cn(
           'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
           'w-full max-w-lg bg-[var(--color-surface)] rounded-[var(--radius-xl)] shadow-[var(--shadow-xl)]',
@@ -49,24 +54,26 @@ function DialogContent({ className, children, showClose = true, ...props }) {
       </DialogPrimitive.Content>
     </DialogPortal>
   )
-}
+})
 
-function DialogTitle({ className, ...props }) {
+const DialogTitle = forwardRef(function DialogTitle({ className, ...props }, ref) {
   return (
     <DialogPrimitive.Title
+      ref={ref}
       className={cn('font-display font-semibold text-lg text-[var(--color-text-primary)] mb-1', className)}
       {...props}
     />
   )
-}
+})
 
-function DialogDescription({ className, ...props }) {
+const DialogDescription = forwardRef(function DialogDescription({ className, ...props }, ref) {
   return (
     <DialogPrimitive.Description
+      ref={ref}
       className={cn('text-sm text-[var(--color-text-secondary)] mb-4', className)}
       {...props}
     />
   )
-}
+})
 
 export { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose }

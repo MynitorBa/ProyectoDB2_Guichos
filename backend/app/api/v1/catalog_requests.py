@@ -315,7 +315,7 @@ def propose_offer(
     return _serialize_request(db, request, mongo)
 
 
-@vendor_router.get('/')
+@vendor_router.get('')
 def list_own_requests(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -355,7 +355,7 @@ def cancel_request(
     return {'id': request.id, 'estado': request.estado}
 
 
-@admin_router.get('/')
+@admin_router.get('')
 def list_admin_requests(
     estado: str | None = Query(None),
     tipo: str | None = Query(None),

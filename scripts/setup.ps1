@@ -158,6 +158,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Proyecciones e índices sincronizados." -ForegroundColor Green
 
+# Reconcilia atributos históricos con los esquemas actuales. Es idempotente y
+# crea un respaldo antes de modificar cualquier documento.
+& $python scripts\repair_catalog_data.py --apply
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudieron reconciliar los atributos históricos del catálogo.'
+}
+
 Write-Host "`n[6/8] Completando historial faltante en MongoDB..." -ForegroundColor Cyan
 & $python scripts\seed_mongo_events.py
 if ($LASTEXITCODE -ne 0) {

@@ -29,6 +29,9 @@ export const uploadAdminImage = (file) => {
   })
 }
 
+export const deletePendingAdminImage = (imageId) =>
+  api.delete(`/admin/upload/${imageId}`)
+
 export const getAdminSalesStats = () =>
   api.get('/admin/sales/stats')
 

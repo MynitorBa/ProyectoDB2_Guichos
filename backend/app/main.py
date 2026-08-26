@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -8,6 +9,9 @@ from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests
+
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title='TiendaYa API',
@@ -31,6 +35,10 @@ app.add_middleware(
 # Manejo centralizado de errores — no filtra stack traces al cliente
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
+    logger.error(
+        'Error no controlado en %s %s', request.method, request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
     return JSONResponse(
         status_code=500,
         content={'detail': 'Error interno del servidor.', 'code': 'INTERNAL_ERROR'},

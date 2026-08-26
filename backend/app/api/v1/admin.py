@@ -29,6 +29,7 @@ from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.models.vendedor import Vendedor
 from app.models.oferta import Oferta, OfertaPrecioHistorial
 from app.models.producto_imagen import ProductoImagen
+from app.models.solicitud_catalogo import SolicitudCatalogoImagen
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
@@ -343,6 +344,29 @@ async def upload_image(
     return {'url': f'/api/v1/products/images/{img.id}'}
 
 
+@router.delete('/upload/{image_id}', status_code=204)
+def delete_pending_admin_image(
+    image_id: int,
+    current_user: Usuario = Depends(get_admin_user),
+    mysql_db: Session = Depends(get_db),
+):
+    """Descarta únicamente una carga temporal propia que aún no tiene dueño."""
+    image = mysql_db.get(ProductoImagen, image_id)
+    linked_request = mysql_db.query(SolicitudCatalogoImagen).filter_by(
+        producto_imagen_id=image_id
+    ).first()
+    if not image:
+        raise HTTPException(404, 'Imagen temporal no encontrada.')
+    if (
+        image.subida_por != current_user.id
+        or image.producto_referencia_id is not None
+        or linked_request is not None
+    ):
+        raise HTTPException(409, 'La imagen ya está asociada y no puede descartarse.')
+    mysql_db.delete(image)
+    mysql_db.commit()
+
+
 @router.put('/products/{producto_id}')
 def actualizar_producto(
     producto_id: str,
@@ -352,6 +376,14 @@ def actualizar_producto(
     mysql_db: Session = Depends(get_db),
 ):
     cambios = payload.model_dump(exclude_none=True)
+    try:
+        mongo_id = ObjectId(producto_id)
+    except Exception as exc:
+        raise HTTPException(404, 'Producto no encontrado.') from exc
+    original_doc = db.productos.find_one({'_id': mongo_id})
+    if not original_doc:
+        raise HTTPException(404, 'Producto no encontrado.')
+
     if 'precio' in cambios:
         cambios['precio'] = float(cambios['precio'])
 
@@ -376,22 +408,76 @@ def actualizar_producto(
 
     nuevos_slugs = cambios.pop('categoria_slugs', None)
     if 'atributos' in cambios:
-        current_doc = db.productos.find_one(
-            {'_id': ObjectId(producto_id)},
-            {'categorias.slug': 1, 'categoria.slug': 1},
-        ) or {}
         current_slugs = [
-            category.get('slug') for category in current_doc.get('categorias', [])
+            category.get('slug') for category in original_doc.get('categorias', [])
             if category.get('slug')
         ]
-        if not current_slugs and current_doc.get('categoria', {}).get('slug'):
-            current_slugs = [current_doc['categoria']['slug']]
+        if not current_slugs and original_doc.get('categoria', {}).get('slug'):
+            current_slugs = [original_doc['categoria']['slug']]
         try:
             cambios['atributos'] = validate_category_attributes(
                 db, nuevos_slugs or current_slugs, cambios['atributos']
             )
         except AttributeValidationError as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    # Validar todas las referencias relacionales antes de tocar MongoDB. Así
+    # una categoría o imagen inválida no deja una edición documental parcial.
+    todas_cats = None
+    cats_mongo = None
+    if nuevos_slugs is not None:
+        if not nuevos_slugs:
+            raise HTTPException(422, 'Selecciona al menos una categoría.')
+        todas_cats = mysql_db.query(Categoria).filter(
+            Categoria.slug.in_(nuevos_slugs), Categoria.activa.is_(True)
+        ).all()
+        invalidas = sorted(set(nuevos_slugs) - {cat.slug for cat in todas_cats})
+        if invalidas:
+            raise HTTPException(
+                400, f'Categorías inexistentes o inactivas: {", ".join(invalidas)}'
+            )
+        cats_mongo = [
+            {'slug': category.slug, 'nombre': category.nombre}
+            for category in sorted(
+                todas_cats, key=lambda category: nuevos_slugs.index(category.slug)
+            )
+        ]
+
+    ref_img = None
+    current_imgs = []
+    image_rows: dict[int, ProductoImagen] = {}
+    new_image_ids: set[int] = set()
+    if nuevas_imagenes is not None:
+        ref_img = mysql_db.query(ProductoReferencia).filter_by(
+            producto_ref=producto_id
+        ).first()
+        if not ref_img:
+            raise HTTPException(409, 'El producto no tiene referencia SQL para sus imágenes.')
+        current_imgs = mysql_db.query(ProductoImagen).filter_by(
+            producto_referencia_id=ref_img.id
+        ).all()
+        for url in nuevas_imagenes:
+            prefix = '/api/v1/products/images/'
+            if not isinstance(url, str) or not url.startswith(prefix):
+                continue  # Las URL externas heredadas siguen siendo válidas.
+            try:
+                image_id = int(url[len(prefix):])
+            except ValueError as exc:
+                raise HTTPException(400, f'URL de imagen inválida: {url}') from exc
+            if image_id in new_image_ids:
+                raise HTTPException(400, 'La misma imagen no puede repetirse.')
+            image = mysql_db.get(ProductoImagen, image_id)
+            if not image:
+                raise HTTPException(400, f'La imagen {image_id} no existe.')
+            if image.producto_referencia_id not in (None, ref_img.id):
+                raise HTTPException(409, f'La imagen {image_id} pertenece a otro producto.')
+            if (
+                image.producto_referencia_id is None
+                and image.subida_por != current_user.id
+            ):
+                raise HTTPException(403, f'La imagen temporal {image_id} pertenece a otro usuario.')
+            new_image_ids.add(image_id)
+            image_rows[image_id] = image
 
     # Mongo recibe solo datos documentales. Precio, stock y vendedor se
     # proyectan después desde el outbox transaccional MySQL.
@@ -402,6 +488,13 @@ def actualizar_producto(
         key: value for key, value in cambios.items()
         if key not in campos_transaccionales
     }
+    if nuevas_imagenes is not None:
+        cambios_documentales['imagenes'] = nuevas_imagenes
+    if cats_mongo:
+        cambios_documentales.update({
+            'categorias': cats_mongo,
+            'categoria': cats_mongo[0],
+        })
     producto = catalog_service.actualizar_producto(
         db, producto_id, cambios_documentales, usuario_id=str(current_user.id)
     )
@@ -411,58 +504,19 @@ def actualizar_producto(
     needs_commit = False
 
     if nuevas_imagenes is not None:
-        ref_img = mysql_db.query(ProductoReferencia).filter_by(producto_ref=producto_id).first()
-        if ref_img:
-            current_imgs = mysql_db.query(ProductoImagen).filter_by(
-                producto_referencia_id=ref_img.id
-            ).all()
-            new_ids = set()
-            for url in nuevas_imagenes:
-                try:
-                    new_ids.add(int(url.rsplit('/', 1)[-1]))
-                except ValueError:
-                    pass
-            for img in current_imgs:
-                if img.id not in new_ids:
-                    mysql_db.delete(img)
-            for orden, url in enumerate(nuevas_imagenes):
-                try:
-                    img_id = int(url.rsplit('/', 1)[-1])
-                    img_row = mysql_db.get(ProductoImagen, img_id)
-                    if img_row and (
-                        img_row.producto_referencia_id in (None, ref_img.id)
-                    ):
-                        img_row.producto_referencia_id = ref_img.id
-                        img_row.orden = orden
-                except (ValueError, AttributeError):
-                    pass
-        from bson import ObjectId as BsonObjectId2
-        db.productos.update_one(
-            {'_id': BsonObjectId2(producto_id)},
-            {'$set': {'imagenes': nuevas_imagenes}}
-        )
+        for image in current_imgs:
+            if image.id not in new_image_ids:
+                mysql_db.delete(image)
+        for order, url in enumerate(nuevas_imagenes):
+            prefix = '/api/v1/products/images/'
+            if isinstance(url, str) and url.startswith(prefix):
+                image = image_rows[int(url[len(prefix):])]
+                image.producto_referencia_id = ref_img.id
+                image.orden = order
         needs_commit = True
 
-    if nuevos_slugs:
-        todas_cats = mysql_db.query(Categoria).filter(
-            Categoria.slug.in_(nuevos_slugs), Categoria.activa == True
-        ).all()
-        invalidas = sorted(set(nuevos_slugs) - {cat.slug for cat in todas_cats})
-        if invalidas:
-            raise HTTPException(
-                400,
-                f'Categorías inexistentes o inactivas: {", ".join(invalidas)}',
-            )
+    if nuevos_slugs is not None:
         if todas_cats:
-            cats_mongo = [
-                {'slug': c.slug, 'nombre': c.nombre}
-                for c in sorted(todas_cats, key=lambda c: nuevos_slugs.index(c.slug))
-            ]
-            from bson import ObjectId as BsonObjectId
-            db.productos.update_one(
-                {'_id': BsonObjectId(producto_id)},
-                {'$set': {'categorias': cats_mongo, 'categoria': cats_mongo[0]}}
-            )
             ref = mysql_db.query(ProductoReferencia).filter_by(producto_ref=producto_id).first()
             if ref:
                 principal = next(cat for cat in todas_cats if cat.slug == nuevos_slugs[0])
@@ -570,7 +624,13 @@ def actualizar_producto(
         needs_commit = True
 
     if needs_commit:
-        mysql_db.commit()
+        try:
+            mysql_db.commit()
+        except Exception:
+            mysql_db.rollback()
+            # Compensa la actualización documental si fallara el commit SQL.
+            db.productos.replace_one({'_id': mongo_id}, original_doc)
+            raise
 
     return catalog_service.obtener_producto(db, producto_id, mysql_db)
 
