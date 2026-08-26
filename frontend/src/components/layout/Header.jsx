@@ -232,38 +232,75 @@ function CategoryDropdown({ categories }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const navigate = useNavigate()
+
   useEffect(() => {
     function handler(e) { if (!ref.current?.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  useEffect(() => {
+    function handler(e) { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative shrink-0" ref={ref}>
       <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 h-9 rounded-[var(--radius-md)] font-display font-semibold text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+        onClick={() => setOpen(v => !v)}
+        className={cn(
+          'flex items-center gap-1.5 px-3 h-9 rounded-[var(--radius-md)] font-display font-semibold text-sm transition-colors whitespace-nowrap',
+          open
+            ? 'bg-[var(--color-action)] text-white'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-action)]/8 hover:text-[var(--color-action)]'
+        )}
       >
-        <Menu size={15} />
+        <Menu size={14} />
         Todas las categorías
-        <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} />
+        <ChevronDown size={11} className={cn('transition-transform duration-200', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1.5 w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] py-2 z-50 grid grid-cols-2 gap-0.5">
-          {categories.map(cat => {
-            const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
-            return (
-              <button
-                key={cat.slug}
-                onClick={() => { navigate(`/catalog?categoria=${cat.slug}`); setOpen(false) }}
-                className="flex items-center gap-2 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-[var(--radius-md)] mx-1"
-              >
-                <Icon size={15} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
-                {cat.nombre}
-              </button>
-            )
-          })}
+        <div className="absolute left-0 top-[calc(100%+6px)] w-[340px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-[200] overflow-hidden">
+          {/* header del panel */}
+          <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-background)]">
+            <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+              Explorar categorías
+            </p>
+          </div>
+
+          {/* grid de categorías */}
+          <div className="p-2 grid grid-cols-2 gap-1">
+            {categories.map(cat => {
+              const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
+              return (
+                <button
+                  key={cat.slug}
+                  onClick={() => { navigate(`/catalog?categoria=${cat.slug}`); setOpen(false) }}
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-[var(--radius-md)] text-left group hover:bg-[var(--color-action)]/8 transition-colors"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-action)]/10 group-hover:bg-[var(--color-action)]/20 transition-colors">
+                    <Icon size={14} className="text-[var(--color-action)]" strokeWidth={1.75} />
+                  </span>
+                  <span className="font-sans text-sm font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors leading-tight">
+                    {cat.nombre}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* footer — ver todo */}
+          <div className="px-3 pb-2.5">
+            <button
+              onClick={() => { navigate('/catalog'); setOpen(false) }}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--radius-md)] font-sans text-xs font-semibold text-[var(--color-action)] hover:bg-[var(--color-action)]/8 transition-colors border border-[var(--color-action)]/20 hover:border-[var(--color-action)]/40"
+            >
+              Ver todo el catálogo
+              <ChevronDown size={11} className="-rotate-90" />
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -351,22 +388,30 @@ export function Header() {
 
       {/* ── Barra de categorías — desktop ── */}
       <div className="hidden md:block border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="max-w-[1280px] mx-auto px-6 h-10 flex items-center gap-1 overflow-x-auto">
+        <div className="max-w-[1280px] mx-auto px-6 h-10 flex items-center gap-1">
+          {/* Dropdown fuera del scroll para que no quede recortado */}
           <CategoryDropdown categories={categories} />
-          {categories.length > 0 && <div className="w-px h-5 bg-[var(--color-border)] mx-1" />}
-          {categories.slice(0, 8).map(cat => {
-            const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
-            return (
-              <Link
-                key={cat.slug}
-                to={`/catalog?categoria=${cat.slug}`}
-                className="shrink-0 flex items-center gap-1.5 px-3 h-8 font-display font-semibold text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-action)] hover:bg-[var(--color-action)]/5 rounded-[var(--radius-md)] transition-colors whitespace-nowrap"
-              >
-                <Icon size={13} strokeWidth={1.5} />
-                {cat.nombre}
-              </Link>
-            )
-          })}
+
+          {categories.length > 0 && (
+            <div className="w-px h-5 bg-[var(--color-border)] mx-1 shrink-0" />
+          )}
+
+          {/* Links individuales en su propio scroll */}
+          <div className="flex items-center gap-0.5 overflow-x-auto flex-1 scrollbar-none">
+            {categories.map(cat => {
+              const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
+              return (
+                <Link
+                  key={cat.slug}
+                  to={`/catalog?categoria=${cat.slug}`}
+                  className="shrink-0 flex items-center gap-1.5 px-3 h-8 font-display font-semibold text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-action)] hover:bg-[var(--color-action)]/8 rounded-[var(--radius-md)] transition-colors whitespace-nowrap"
+                >
+                  <Icon size={13} strokeWidth={1.5} />
+                  {cat.nombre}
+                </Link>
+              )
+            })}
+          </div>
         </div>
       </div>
     </header>
