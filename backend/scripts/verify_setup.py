@@ -432,13 +432,15 @@ def main():
                            v.nombre_comercial
                 ), ranked AS (
                   SELECT oferta_stock.*,
+                         COUNT(*) OVER (PARTITION BY producto_ref) AS ofertas_count,
                          ROW_NUMBER() OVER (
                            PARTITION BY producto_ref
                            ORDER BY (stock > 0) DESC, precio_actual, id
                          ) AS rn
                   FROM oferta_stock
                 )
-                SELECT producto_ref, precio_actual, nombre_comercial, stock
+                SELECT producto_ref, id AS oferta_id, precio_actual,
+                       nombre_comercial, stock, ofertas_count
                 FROM ranked WHERE rn = 1
             """)
             offer_projections = cur.fetchall()
@@ -510,7 +512,8 @@ def main():
             try:
                 doc = mongo.productos.find_one(
                     {'_id': ObjectId(offer['producto_ref'])},
-                    {'precio': 1, 'stock': 1, 'vendedor_nombre': 1},
+                    {'precio': 1, 'stock': 1, 'vendedor_nombre': 1,
+                     'oferta_id': 1, 'ofertas_count': 1},
                 )
             except Exception:
                 doc = None
@@ -519,6 +522,8 @@ def main():
                 or float(doc.get('precio', 0)) != float(offer['precio_actual'])
                 or int(doc.get('stock', 0)) != int(offer['stock'])
                 or doc.get('vendedor_nombre') != offer['nombre_comercial']
+                or int(doc.get('oferta_id', 0)) != int(offer['oferta_id'])
+                or int(doc.get('ofertas_count', 0)) != int(offer['ofertas_count'])
             ):
                 projection_mismatches += 1
         if projection_mismatches:

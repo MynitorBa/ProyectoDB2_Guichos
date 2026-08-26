@@ -2,6 +2,7 @@
 
 from sqlalchemy import text
 
+from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import engine
 
 
@@ -58,7 +59,7 @@ def test_legacy_product_storage_is_physically_retired():
         )).scalar_one()
     assert legacy_tables == 0
     assert legacy_columns == 0
-    assert count == 65
+    assert count == get_mongo_db().productos.count_documents({})
 
 
 def test_reviews_and_movements_have_consistent_new_references():

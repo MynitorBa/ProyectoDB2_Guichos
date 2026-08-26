@@ -9,10 +9,15 @@ Un vendedor verificado puede proponer contenido comercial, pero no publicarlo.
 El panel separa explícitamente dos operaciones:
 
 - **Producto nuevo:** nombre, descripción, categorías, atributos, imágenes,
-  precio, stock, SKU opcional y comentario.
-- **Oferta de producto existente:** producto, precio, stock, SKU opcional y
-  comentario. No acepta imágenes porque estas pertenecen al producto, no a la
-  oferta del vendedor.
+  precio, stock y comentario.
+- **Oferta de producto existente:** producto, precio, stock y comentario. No
+  acepta imágenes porque estas pertenecen al producto, no a la oferta del
+  vendedor.
+
+Los SKU no son editables. El producto recibe el prefijo configurado en su
+categoría principal y un identificador hexadecimal único; las ofertas reciben
+un SKU comercial derivado automáticamente del producto y del vendedor. La
+creación administrativa y la aprobación usan el mismo servicio generador.
 
 La solicitud permanece `pendiente` y no aparece en el catálogo. El
 administrador puede aprobarla o rechazarla con observaciones. El vendedor puede
@@ -48,9 +53,13 @@ Rutas administrativas bajo `/api/v1/admin/catalog-requests`:
 - `POST /{id}/approve`, `POST /{id}/reject`.
 
 La API verifica rol, perfil de vendedor, estado `verificado`, propiedad de las
-imágenes, categorías activas, producto existente, SKU, precio y stock. También
-impide solicitudes u ofertas vigentes duplicadas para el mismo vendedor y
-producto.
+imágenes, categorías activas, producto existente, generación de SKU, precio y
+stock. También impide solicitudes u ofertas vigentes duplicadas para el mismo
+vendedor y producto.
+
+Los atributos se validan contra todos los esquemas de las categorías
+seleccionadas. El backend rechaza atributos obligatorios ausentes, tipos
+incorrectos y campos ajenos a esos esquemas.
 
 ## Evidencia funcional
 
@@ -61,12 +70,16 @@ producto.
   motivo en el historial y notificó al vendedor; los datos de prueba se
   retiraron.
 - Las solicitudes de oferta rechazan el campo de imágenes por contrato.
-- Estado final restaurado a 65 referencias SQL y 65 documentos MongoDB, sin
-  solicitudes temporales.
-- `pytest`: 40 pruebas aprobadas; `verify_setup.py`: instalación completa;
+- Los conteos de referencias SQL y documentos MongoDB permanecen alineados y
+  las pruebas automáticas no dejan solicitudes ni productos temporales.
+- `pytest`: 43 pruebas aprobadas; `verify_setup.py`: instalación completa;
   `npm run build`: compilación de producción aprobada.
 - Control de acceso real: comprador bloqueado en rutas de vendedor y vendedor
   bloqueado en revisión administrativa (HTTP 403).
+- Producto de dos categorías aprobado con diez atributos y SKU automático;
+  oferta existente aprobada con SKU derivado automáticamente.
+- Selector común probado en navegador: búsqueda textual, filtrado sin acentos,
+  desplazamiento y cero errores de consola.
 
 ## Qué debe probar el equipo
 

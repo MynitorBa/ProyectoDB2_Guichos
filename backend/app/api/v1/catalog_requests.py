@@ -1,4 +1,3 @@
-import secrets
 from decimal import Decimal
 
 from bson import ObjectId
@@ -27,10 +26,15 @@ from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.models.vendedor import Vendedor
 from app.services import catalog_service
 from app.services.image_service import read_valid_image
+from app.services.category_attribute_service import (
+    AttributeValidationError,
+    validate_category_attributes,
+)
 from app.services.offer_service import (
     actualizar_precio_oferta,
     enqueue_primary_offer_projection,
 )
+from app.services.sku_service import generate_offer_sku, generate_product_sku
 
 
 vendor_router = APIRouter(prefix='/vendor/catalog-requests', tags=['Solicitudes vendedor'])
@@ -45,7 +49,6 @@ class ProductProposalCreate(BaseModel):
     categoria_slugs: list[str] = Field(min_length=1, max_length=10)
     atributos: dict = Field(default_factory=dict)
     imagen_ids: list[int] = Field(default_factory=list, max_length=8)
-    sku: str | None = Field(default=None, max_length=50)
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
     observaciones: str | None = Field(default=None, max_length=2000)
@@ -54,7 +57,6 @@ class ProductProposalCreate(BaseModel):
 class OfferProposalCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     producto_ref: str = Field(min_length=24, max_length=24)
-    sku: str | None = Field(default=None, max_length=50)
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
     observaciones: str | None = Field(default=None, max_length=2000)
@@ -238,13 +240,17 @@ def propose_product(
     ).count() if payload.imagen_ids else 0
     if already_linked:
         raise HTTPException(409, 'Una imagen ya pertenece a otra solicitud.')
-    if payload.sku and mongo.productos.find_one({'sku': payload.sku}, {'_id': 1}):
-        raise HTTPException(409, 'El SKU propuesto ya existe.')
+    try:
+        attributes = validate_category_attributes(
+            mongo, slugs, payload.atributos
+        )
+    except AttributeValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
     request = SolicitudCatalogo(
         vendedor_id=vendor.id, tipo='producto_nuevo', estado='pendiente',
         nombre=payload.nombre, descripcion=payload.descripcion,
-        atributos=payload.atributos, sku_propuesto=payload.sku,
+        atributos=attributes,
         precio_propuesto=payload.precio, stock_propuesto=payload.stock,
         observaciones_vendedor=payload.observaciones,
     )
@@ -294,15 +300,10 @@ def propose_offer(
     ).first()
     if pending:
         raise HTTPException(409, 'Ya existe una solicitud pendiente para este producto.')
-    if payload.sku and db.query(Oferta).filter_by(
-        vendedor_id=vendor.id, sku=payload.sku
-    ).first():
-        raise HTTPException(409, 'Ya utilizas ese SKU en otra oferta.')
-
     request = SolicitudCatalogo(
         vendedor_id=vendor.id, tipo='oferta_existente', estado='pendiente',
         producto_ref_solicitado=payload.producto_ref,
-        sku_propuesto=payload.sku, precio_propuesto=payload.precio,
+        precio_propuesto=payload.precio,
         stock_propuesto=payload.stock,
         observaciones_vendedor=payload.observaciones,
     )
@@ -381,15 +382,6 @@ def list_admin_requests(
     }
 
 
-def _generate_sku(mongo: Database, prefix: str) -> str:
-    prefix = (prefix or 'GEN')[:3].upper()
-    for _ in range(20):
-        sku = f'{prefix}-{secrets.token_hex(4).upper()}'
-        if not mongo.productos.find_one({'sku': sku}, {'_id': 1}):
-            return sku
-    raise HTTPException(409, 'No se pudo generar un SKU único.')
-
-
 def _approve_new_product(
     db: Session, mongo: Database, request: SolicitudCatalogo,
     vendor: Vendedor, admin: Usuario,
@@ -399,11 +391,17 @@ def _approve_new_product(
         raise HTTPException(409, 'La propuesta no tiene categorías válidas.')
     image_rows = _image_rows(db, request.id)
     primary = category_rows[0][1]
-    sku = request.sku_propuesto or _generate_sku(
-        mongo, primary.sku_prefix or primary.slug[:3]
-    )
-    if mongo.productos.find_one({'sku': sku}, {'_id': 1}):
-        raise HTTPException(409, 'El SKU propuesto ya existe.')
+    try:
+        sku = generate_product_sku(
+            mongo, primary.sku_prefix or primary.slug[:3]
+        )
+        attributes = validate_category_attributes(
+            mongo,
+            [category.slug for _, category in category_rows],
+            request.atributos,
+        )
+    except (ValueError, AttributeValidationError) as exc:
+        raise HTTPException(409, str(exc)) from exc
     categories = [
         {'slug': category.slug, 'nombre': category.nombre}
         for _, category in category_rows
@@ -414,7 +412,7 @@ def _approve_new_product(
     doc = {
         'sku': sku, 'nombre': request.nombre,
         'descripcion': request.descripcion, 'categoria': categories[0],
-        'categorias': categories, 'atributos': request.atributos or {},
+        'categorias': categories, 'atributos': attributes,
         'imagenes': image_urls, 'estado': 'activo', 'moneda': 'GTQ',
         'precio': float(request.precio_propuesto),
         'stock': request.stock_propuesto,
@@ -457,6 +455,8 @@ def _approve_new_product(
             oferta_id=offer.id, cantidad_disponible=request.stock_propuesto,
             bodega='principal',
         ))
+        db.flush()
+        enqueue_primary_offer_projection(db, product['_id'], offer.id)
         return product['_id'], offer.id
     except Exception:
         mongo.productos.delete_one({'_id': ObjectId(product['_id'])})
@@ -482,13 +482,15 @@ def _approve_offer(
     ).first()
     if offer and offer.estado != 'descontinuada':
         raise HTTPException(409, 'El vendedor ya tiene una oferta vigente.')
-    sku = (request.sku_propuesto or f'{doc.get("sku", product_ref[:8])}-{vendor.id}')[:50]
-    duplicate_sku = db.query(Oferta).filter(
-        Oferta.vendedor_id == vendor.id, Oferta.sku == sku,
-        Oferta.id != (offer.id if offer else 0),
-    ).first()
-    if duplicate_sku:
-        raise HTTPException(409, 'El SKU ya pertenece a otra oferta del vendedor.')
+    try:
+        sku = generate_offer_sku(
+            db,
+            product_sku=doc.get('sku', product_ref[:8]),
+            vendor_id=vendor.id,
+            exclude_offer_id=offer.id if offer else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     if offer:
         offer.sku = sku
         offer.estado = 'activa'

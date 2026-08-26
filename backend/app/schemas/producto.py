@@ -1,17 +1,17 @@
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Any
 
 
 class ProductoCreate(BaseModel):
-    sku: str | None = None
+    model_config = ConfigDict(extra='forbid')
     nombre: str
     descripcion: str | None = None
     precio: Decimal = Field(ge=0)
     categoria_slugs: list[str] = Field(min_length=1)
-    atributos: dict[str, Any] = {}
-    imagenes: list[str] = []
+    atributos: dict[str, Any] = Field(default_factory=dict)
+    imagenes: list[str] = Field(default_factory=list)
     stock: int = Field(default=0, ge=0)
     vendedor_usuario_id: int | None = None
 

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { updateProfile } from '../api/auth'
 import { getAddresses, createAddress, updateAddress, deleteAddress } from '../api/orders'
 import { Button } from '../components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import {
   Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose,
 } from '../components/ui/dialog'
@@ -94,15 +95,13 @@ function AddressDialog({ open, onOpenChange, initial, onSave }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Tipo" id="tipo">
-            <select
-              id="tipo"
-              value={form.tipo}
-              onChange={e => set('tipo', e.target.value)}
-              className="h-10 px-3 bg-[var(--color-background)] border border-[var(--color-border)] rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-action)] focus:ring-2 focus:ring-[var(--color-action)]/20 transition-colors"
-            >
-              <option value="envio">Envío</option>
-              <option value="facturacion">Facturación</option>
-            </select>
+            <Select value={form.tipo} onValueChange={value => set('tipo', value)}>
+              <SelectTrigger id="tipo"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="envio">Envío</SelectItem>
+                <SelectItem value="facturacion">Facturación</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="País" id="pais">

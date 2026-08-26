@@ -238,7 +238,7 @@ erDiagram
         ENUM estado
         CHAR producto_ref_solicitado FK
         VARCHAR nombre
-        VARCHAR sku_propuesto
+        VARCHAR sku_propuesto "legado nullable; nuevos SKU automáticos"
         DECIMAL precio_propuesto
         INT stock_propuesto
         INT revisada_por FK

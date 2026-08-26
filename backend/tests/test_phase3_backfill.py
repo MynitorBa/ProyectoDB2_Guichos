@@ -27,7 +27,7 @@ def test_every_product_has_offer_and_current_price():
     with engine.connect() as conn:
         products = scalar(conn, 'SELECT COUNT(*) FROM producto_referencias')
         covered = scalar(conn, """
-            SELECT COUNT(*)
+            SELECT COUNT(DISTINCT p.id)
             FROM producto_referencias p
             JOIN ofertas o ON o.producto_ref = p.producto_ref
         """)

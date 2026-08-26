@@ -408,6 +408,15 @@ function ProductFormModal({ open, onOpenChange, product }) {
     if (!form.nombre || !form.precio) return toast.error('Nombre y precio son obligatorios.')
     if (form.categoria_slugs.length === 0) return toast.error('Selecciona al menos una categoría.')
     if (!isEdit && form.vendedor_usuario_id === '') return toast.error('Selecciona el vendedor de la oferta inicial.')
+    const missingAttributes = allAttrSections.flatMap(({ fields }) => fields)
+      .filter(({ nombre, requerido }) => requerido && (
+        form.atributos[nombre] === undefined
+        || form.atributos[nombre] === null
+        || form.atributos[nombre] === ''
+      ))
+    if (missingAttributes.length > 0) {
+      return toast.error(`Completa: ${missingAttributes.map(field => field.etiqueta).join(', ')}.`)
+    }
 
     const atributos = {}
     allAttrSections.forEach(({ fields }) => {
@@ -520,10 +529,10 @@ function ProductFormModal({ open, onOpenChange, product }) {
             </div>
             <div>
               <Label>Vendedor asignado</Label>
-              <Select value={form.vendedor_usuario_id} onValueChange={(v) => set('vendedor_usuario_id', v)}>
+              <Select value={form.vendedor_usuario_id || '__none__'} onValueChange={(v) => set('vendedor_usuario_id', v === '__none__' ? '' : v)}>
                 <SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sin asignar</SelectItem>
+                  <SelectItem value="__none__">Sin asignar</SelectItem>
                   {vendors.map((v) => (
                     <SelectItem key={v.usuario_id} value={String(v.usuario_id)}>
                       {v.nombre_comercial ? `${v.nombre_comercial} (${v.nombre_completo})` : v.nombre_completo}
@@ -572,11 +581,11 @@ function ProductFormModal({ open, onOpenChange, product }) {
                     {field.tipo === 'boolean' ? (
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="checkbox" checked={!!form.atributos[field.nombre]} onChange={(e) => setAttr(field.nombre, e.target.checked)} className="h-4 w-4 accent-[var(--color-action)]" />
-                        <span className="font-sans text-sm text-[var(--color-text-primary)]">{field.etiqueta}</span>
+                        <span className="font-sans text-sm text-[var(--color-text-primary)]">{field.etiqueta}{field.requerido ? ' *' : ''}</span>
                       </label>
                     ) : (
                       <>
-                        <Label>{field.etiqueta}</Label>
+                        <Label>{field.etiqueta}{field.requerido ? ' *' : ''}</Label>
                         <Input
                           type={field.tipo === 'number' ? 'number' : 'text'}
                           step={field.tipo === 'number' ? 'any' : undefined}
@@ -1127,10 +1136,10 @@ function CategoriesSection() {
             </div>
             <div className="space-y-1">
               <Label>Categoría padre (opcional)</Label>
-              <Select value={newPadreId} onValueChange={setNewPadreId}>
+              <Select value={newPadreId || '__root__'} onValueChange={value => setNewPadreId(value === '__root__' ? '' : value)}>
                 <SelectTrigger><SelectValue placeholder="Ninguna (categoría raíz)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Ninguna (categoría raíz)</SelectItem>
+                  <SelectItem value="__root__">Ninguna (categoría raíz)</SelectItem>
                   {cats.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -1239,12 +1248,12 @@ function OrdersSection() {
     <div className="space-y-4">
       {/* Filter */}
       <div className="flex items-center gap-3">
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
+        <Select value={statusFilter || '__all__'} onValueChange={(v) => { setStatusFilter(v === '__all__' ? '' : v); setPage(1) }}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Todos los estados" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todos</SelectItem>
+            <SelectItem value="__all__">Todos</SelectItem>
             <SelectItem value="pendiente">Pendiente</SelectItem>
             <SelectItem value="confirmado">Confirmado</SelectItem>
             <SelectItem value="enviado">Enviado</SelectItem>

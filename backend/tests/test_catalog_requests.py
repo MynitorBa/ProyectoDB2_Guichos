@@ -4,8 +4,16 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
 
+from app.api.v1.admin import OfferCreate
 from app.api.v1.catalog_requests import OfferProposalCreate, ProductProposalCreate
+from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import engine
+from app.schemas.producto import ProductoCreate
+from app.services.category_attribute_service import (
+    AttributeValidationError,
+    validate_category_attributes,
+)
+from app.services.sku_service import generate_product_sku
 
 
 def test_catalog_request_schema_and_foreign_keys_are_installed():
@@ -56,3 +64,56 @@ def test_new_product_request_requires_categories():
         ProductProposalCreate(
             nombre='Producto', categoria_slugs=[], precio=10, stock=1
         )
+
+
+def test_manual_sku_is_rejected_in_every_creation_contract():
+    with pytest.raises(ValidationError):
+        ProductProposalCreate(
+            nombre='Producto', categoria_slugs=['computadoras'],
+            precio=10, stock=1, sku='MANUAL-1',
+        )
+    with pytest.raises(ValidationError):
+        OfferProposalCreate(
+            producto_ref='a' * 24, precio=10, stock=1, sku='MANUAL-2',
+        )
+    with pytest.raises(ValidationError):
+        ProductoCreate(
+            nombre='Producto', categoria_slugs=['computadoras'], precio=10,
+            vendedor_usuario_id=1, sku='MANUAL-3',
+        )
+    with pytest.raises(ValidationError):
+        OfferCreate(vendedor_id=1, precio=10, stock=1, sku='MANUAL-4')
+
+
+def test_product_sku_uses_category_prefix_and_expected_format():
+    sku = generate_product_sku(get_mongo_db(), 'COM')
+    assert len(sku) == 12
+    assert sku.startswith('COM-')
+    assert all(character in '0123456789ABCDEF' for character in sku[4:])
+
+
+def test_attributes_are_combined_and_validated_for_all_categories():
+    mongo = get_mongo_db()
+    slugs = ['computadoras', 'audio']
+    definitions = {}
+    for schema in mongo.categoria_esquemas.find(
+        {'categoria_slug': {'$in': slugs}}
+    ):
+        for field in schema.get('atributos', []):
+            definitions[field['nombre']] = field
+    values = {}
+    for name, field in definitions.items():
+        if field['tipo'] == 'number':
+            values[name] = 1
+        elif field['tipo'] == 'boolean':
+            values[name] = False
+        else:
+            values[name] = 'Prueba'
+    normalized = validate_category_attributes(mongo, slugs, values)
+    assert set(normalized) == set(definitions)
+    required_name = next(
+        name for name, field in definitions.items() if field.get('requerido')
+    )
+    values.pop(required_name)
+    with pytest.raises(AttributeValidationError):
+        validate_category_attributes(mongo, slugs, values)

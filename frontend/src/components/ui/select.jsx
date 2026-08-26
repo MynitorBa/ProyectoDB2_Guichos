@@ -1,5 +1,6 @@
+import React, { useEffect, useRef, useState } from 'react'
 import * as SelectPrimitive from '@radix-ui/react-select'
-import { ChevronDown, Check } from 'lucide-react'
+import { ChevronDown, Check, Search } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 const Select = SelectPrimitive.Root
@@ -29,7 +30,28 @@ function SelectTrigger({ className, children, ...props }) {
   )
 }
 
-function SelectContent({ className, children, position = 'popper', ...props }) {
+function nodeText(node) {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join(' ')
+  if (React.isValidElement(node)) return nodeText(node.props.children)
+  return ''
+}
+
+function normalizeSearch(value) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function SelectContent({ className, children, position = 'popper', searchPlaceholder = 'Buscar...', ...props }) {
+  const [query, setQuery] = useState('')
+  const inputRef = useRef(null)
+  useEffect(() => {
+    const timer = setTimeout(() => inputRef.current?.focus(), 0)
+    return () => clearTimeout(timer)
+  }, [])
+  const normalizedQuery = normalizeSearch(query.trim())
+  const filteredChildren = React.Children.toArray(children).filter(child => (
+    !normalizedQuery || normalizeSearch(nodeText(child)).includes(normalizedQuery)
+  ))
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -46,8 +68,26 @@ function SelectContent({ className, children, position = 'popper', ...props }) {
         )}
         {...props}
       >
-        <SelectPrimitive.Viewport className="p-1">
-          {children}
+        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2">
+          <Search size={14} className="shrink-0 text-[var(--color-text-muted)]" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key !== 'Escape') event.stopPropagation()
+            }}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-muted)]"
+          />
+        </div>
+        <SelectPrimitive.Viewport className="max-h-60 overflow-y-auto p-1 [scrollbar-width:thin]">
+          {filteredChildren.length > 0 ? filteredChildren : (
+            <div className="px-3 py-6 text-center text-sm text-[var(--color-text-muted)]">
+              Sin resultados
+            </div>
+          )}
         </SelectPrimitive.Viewport>
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>

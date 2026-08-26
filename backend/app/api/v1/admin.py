@@ -1,4 +1,3 @@
-import secrets
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -7,20 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pymongo.database import Database
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 GT_TZ = timezone(timedelta(hours=-6))
-
-def _generar_sku(mongo_db, prefix: str) -> str:
-    prefix = (prefix or 'GEN')[:3].upper()
-    for _ in range(10):
-        candidate = f"{prefix}-{secrets.token_hex(4).upper()}"
-        if not mongo_db.productos.find_one({'sku': candidate}, {'_id': 1}):
-            return candidate
-    raise ValueError('No se pudo generar un SKU único')
 
 from bson import ObjectId
 
@@ -47,6 +38,11 @@ from app.services.offer_service import (
     enqueue_primary_offer_projection,
 )
 from app.services.image_service import read_valid_image
+from app.services.category_attribute_service import (
+    AttributeValidationError,
+    validate_category_attributes,
+)
+from app.services.sku_service import generate_offer_sku, generate_product_sku
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
 
@@ -64,10 +60,10 @@ class VendorProfilePayload(BaseModel):
 
 
 class OfferCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     vendedor_id: int
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
-    sku: str | None = Field(default=None, max_length=50)
 
 
 class OfferUpdate(BaseModel):
@@ -237,7 +233,11 @@ def crear_producto(
         raise HTTPException(400, 'El usuario seleccionado no tiene perfil de vendedor.')
 
     sku_prefix = categoria.sku_prefix or primary_slug[:3].upper()
-    sku = payload.sku or _generar_sku(db, sku_prefix)
+    try:
+        sku = generate_product_sku(db, sku_prefix)
+        attributes = validate_category_attributes(db, slugs, payload.atributos)
+    except (ValueError, AttributeValidationError) as exc:
+        raise HTTPException(422, str(exc)) from exc
     v_nombre = v_rec.nombre_comercial
     v_mongo_id = v_rec.id
     cats_mongo = [
@@ -253,7 +253,7 @@ def crear_producto(
         'moneda': 'GTQ',
         'categoria': cats_mongo[0],
         'categorias': cats_mongo,
-        'atributos': payload.atributos,
+        'atributos': attributes,
         'imagenes': list(payload.imagenes),
         'vendedor_id': v_mongo_id,
         'vendedor_usuario_id': v_user.id,
@@ -314,6 +314,8 @@ def crear_producto(
             cantidad_disponible=payload.stock,
             bodega='principal',
         ))
+        mysql_db.flush()
+        enqueue_primary_offer_projection(mysql_db, producto_mongo['_id'], oferta.id)
         mysql_db.commit()
     except Exception:
         mysql_db.rollback()
@@ -373,6 +375,23 @@ def actualizar_producto(
             nuevo_vendedor_id_sql = v_rec.id if v_rec else None
 
     nuevos_slugs = cambios.pop('categoria_slugs', None)
+    if 'atributos' in cambios:
+        current_doc = db.productos.find_one(
+            {'_id': ObjectId(producto_id)},
+            {'categorias.slug': 1, 'categoria.slug': 1},
+        ) or {}
+        current_slugs = [
+            category.get('slug') for category in current_doc.get('categorias', [])
+            if category.get('slug')
+        ]
+        if not current_slugs and current_doc.get('categoria', {}).get('slug'):
+            current_slugs = [current_doc['categoria']['slug']]
+        try:
+            cambios['atributos'] = validate_category_attributes(
+                db, nuevos_slugs or current_slugs, cambios['atributos']
+            )
+        except AttributeValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     # Mongo recibe solo datos documentales. Precio, stock y vendedor se
     # proyectan después desde el outbox transaccional MySQL.
@@ -1126,8 +1145,14 @@ def add_product_offer(
     if existing:
         raise HTTPException(400, 'Este vendedor ya tiene una oferta activa para este producto.')
 
-    sku = payload.sku or f"{doc.get('sku', producto_ref[:8])}-{vendedor.id}"
-    sku = sku[:50]
+    try:
+        sku = generate_offer_sku(
+            db,
+            product_sku=doc.get('sku', producto_ref[:8]),
+            vendor_id=vendedor.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     oferta = Oferta(
         producto_ref=producto_ref,

@@ -163,6 +163,7 @@ def enqueue_primary_offer_projection(
     primary = oferta_principal(offers)
     projection = {
         'ofertas_count': len(offers),
+        'oferta_id': primary['oferta_id'] if primary else None,
         'disponible': bool(primary and primary['disponible']),
         'stock': primary['stock'] if primary else 0,
     }
