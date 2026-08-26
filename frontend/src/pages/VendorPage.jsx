@@ -131,7 +131,7 @@ export default function VendorPage() {
             : <>
                 <StatCard label="Pedidos con mis productos" value={stats?.total_pedidos ?? '—'} />
                 <StatCard label="Mis ingresos totales" value={stats ? formatQ(stats.ingresos_totales) : '—'} sub="Sin cancelados/reembolsados" />
-                <StatCard label="Pedidos pendientes" value={stats?.pendientes ?? '—'} />
+                <StatCard label="Por preparar" value={stats?.pendientes ?? '—'} sub="Confirmados sin enviar" />
               </>
           }
         </div>
@@ -208,12 +208,17 @@ export default function VendorPage() {
                                     disabled={isUpdating || ['cancelado', 'reembolsado'].includes(pedido.estado)}
                                   >
                                     <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue />
+                                      <SelectValue placeholder={ESTADO_LABEL[pedido.estado] || pedido.estado} />
                                     </SelectTrigger>
                                     <SelectContent>
                                       {estadosDisponibles.map(e => (
                                         <SelectItem key={e} value={e}>{ESTADO_LABEL[e] || e}</SelectItem>
                                       ))}
+                                      {['cancelado', 'reembolsado'].includes(pedido.estado) && (
+                                        <SelectItem value={pedido.estado} disabled>
+                                          {ESTADO_LABEL[pedido.estado] || pedido.estado}
+                                        </SelectItem>
+                                      )}
                                     </SelectContent>
                                   </Select>
                                 </td>

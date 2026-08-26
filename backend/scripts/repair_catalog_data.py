@@ -105,6 +105,42 @@ ATTRIBUTE_REPLACEMENTS: dict[str, dict] = {
         'incluye': 'Maletín',
     },
     'HER-A9E516E7': {'uso': 'Pa chambear'},
+    'HER-MED-001': {'uso': 'Medición eléctrica'},
+    'ROPA-CAL-001': {
+        'talla': 42, 'color': 'Blanco', 'material': 'Cuero sintético', 'genero': 'Unisex',
+    },
+    'LIBRO-FIC-001': {
+        'autor': 'Gabriel García Márquez', 'isbn': '978-0307474728',
+        'editorial': 'Random House', 'paginas': 432,
+    },
+    'LIBRO-TEC-001': {
+        'autor': 'Robert C. Martin', 'isbn': '978-0132350884',
+        'editorial': 'Prentice Hall', 'paginas': 431,
+    },
+    'LIBRO-TEC-002': {
+        'autor': 'Martin Kleppmann', 'isbn': '978-1449373320',
+        'editorial': "O'Reilly", 'paginas': 562,
+    },
+    'LIBRO-EDU-001': {
+        'autor': 'Abraham Silberschatz', 'isbn': '978-0073523323',
+        'editorial': 'McGraw-Hill', 'paginas': 1376,
+    },
+    'LIBRO-FIC-002': {
+        'autor': 'Patrick Rothfuss', 'isbn': '978-8401337208',
+        'editorial': 'Ediciones B', 'paginas': 662,
+    },
+    'LIBRO-TEC-003': {
+        'autor': 'Eric Matthes', 'isbn': '978-1593279288',
+        'editorial': 'No Starch Press', 'paginas': 544,
+    },
+    'LIBRO-FIC-003': {
+        'autor': 'J.K. Rowling', 'isbn': '978-8498383638',
+        'editorial': 'Salamandra', 'paginas': 309,
+    },
+    'LIBRO-AUT-001': {
+        'autor': 'George S. Clason', 'isbn': '978-8497774338',
+        'editorial': 'Obelisco', 'paginas': 192,
+    },
     'TECH-AUD-002': {
         'tipo_audio': 'Bocina', 'conectividad': 'Bluetooth',
         'bateria_horas': 20, 'cancelacion_ruido': False,

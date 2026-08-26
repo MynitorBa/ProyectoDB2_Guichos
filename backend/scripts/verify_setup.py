@@ -334,7 +334,7 @@ def main():
                 catalog_extension_tables - installed_tables
             )
             extension_fks = {
-                'fk_pi_referencia', 'fk_prc_referencia', 'fk_prc_categoria',
+                'fk_prod_img_ref', 'fk_prc_referencia', 'fk_prc_categoria',
             }
             missing_extension_fks = sorted(extension_fks - installed_fks)
             extension_errors = []

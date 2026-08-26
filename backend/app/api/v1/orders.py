@@ -1,4 +1,5 @@
 import logging
+from datetime import timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
@@ -191,7 +192,7 @@ def listar_pedidos(
             'id': p.id,
             'estado': p.estado,
             'total': float(p.total),
-            'fecha': p.fecha_creacion.isoformat(),
+            'fecha': p.fecha_creacion.replace(tzinfo=timezone.utc).isoformat(),
             'num_lineas': len(p.lineas),
         }
         for p in pedidos
@@ -237,7 +238,7 @@ def detalle_pedido(
         'subtotal': float(pedido.subtotal),
         'impuestos': float(pedido.impuestos),
         'total': float(pedido.total),
-        'fecha': pedido.fecha_creacion.isoformat(),
+        'fecha': pedido.fecha_creacion.replace(tzinfo=timezone.utc).isoformat(),
         'lineas': [
             {
                 'producto_nombre': l.producto_nombre,
@@ -253,7 +254,7 @@ def detalle_pedido(
                 'monto': float(p.monto),
                 'estado': p.estado,
                 'referencia': p.referencia_transaccion,
-                'fecha': p.fecha.isoformat(),
+                'fecha': p.fecha.replace(tzinfo=timezone.utc).isoformat(),
             }
             for p in pedido.pagos
         ],

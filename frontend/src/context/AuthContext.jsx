@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { me } from '../api/auth'
+import { queryClient } from '../lib/queryClient'
 
 const AuthContext = createContext(null)
 
@@ -27,6 +28,7 @@ export function AuthProvider({ children }) {
   const signOut = () => {
     localStorage.removeItem('token')
     setUser(null)
+    queryClient.clear()
   }
 
   const updateUser = (userData) => {

@@ -12,7 +12,7 @@ import { cn } from '../lib/utils'
 const ESTADO_BADGE = {
   pendiente: 'warning',
   confirmado: 'action',
-  en_preparacion: 'action',
+  preparando: 'action',
   enviado: 'jade',
   entregado: 'success',
   cancelado: 'error',
@@ -21,7 +21,6 @@ const ESTADO_BADGE = {
 
 const PROGRESS_STEPS = [
   { key: 'confirmado', label: 'Confirmado' },
-  { key: 'en_preparacion', label: 'En preparación' },
   { key: 'enviado', label: 'Enviado' },
   { key: 'entregado', label: 'Entregado' },
 ]

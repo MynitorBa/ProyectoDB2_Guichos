@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db_mysql import get_db
 from app.core.deps import require_role
-from app.models.pedido import Pedido
+from app.models.pedido import Pedido, PedidoLinea
 from app.models.pedido_vendedor import PedidoVendedor
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
@@ -71,7 +71,7 @@ def vendor_stats(
         db.query(func.count(PedidoVendedor.id))
         .filter(
             PedidoVendedor.vendedor_id == v.id,
-            PedidoVendedor.estado == 'pendiente',
+            PedidoVendedor.estado == 'confirmado',
         )
         .scalar() or 0
     )
@@ -110,7 +110,11 @@ def vendor_orders(
     items = []
     for part, p in rows:
         u = p.usuario
-        mis_lineas = [l for l in p.lineas if l.pedido_vendedor_id == part.id]
+        mis_lineas = (
+            db.query(PedidoLinea)
+            .filter(PedidoLinea.pedido_vendedor_id == part.id)
+            .all()
+        )
         items.append({
             'id': p.id,
             'pedido_vendedor_id': part.id,
