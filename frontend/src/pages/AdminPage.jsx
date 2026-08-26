@@ -12,7 +12,7 @@ import {
   Inbox,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getCatalogStats, getProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
+import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
 import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -245,10 +245,12 @@ function StatsSection() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <StatCard label="Total de productos" value={global.total_productos ?? '—'} />
-        <StatCard label="Disponibles" value={global.total_disponibles ?? '—'} sub={global.total_productos ? `${Math.round((global.total_disponibles / global.total_productos) * 100)}% del catálogo` : undefined} />
-        <StatCard label="Precio promedio global" value={global.precio_promedio_global ? formatQ(global.precio_promedio_global) : '—'} />
+        <StatCard label="Activos" value={global.total_activos ?? '—'} />
+        <StatCard label="Inactivos" value={global.total_inactivos ?? '—'} />
+        <StatCard label="Descontinuados" value={global.total_descontinuados ?? '—'} />
+        <StatCard label="Disponibles" value={global.total_disponibles ?? '—'} sub="Activos con oferta e inventario" />
       </div>
 
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
@@ -841,6 +843,7 @@ function ProductsSection() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [estado, setEstado] = useState('todos')
   const [modalOpen, setModalOpen] = useState(false)
   const [editProduct, setEditProduct] = useState(null)
   const [offersOpen, setOffersOpen] = useState(false)
@@ -849,8 +852,8 @@ function ProductsSection() {
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-products', page, search],
-    queryFn: () => getProducts({ page, page_size: PAGE_SIZE, ...(search && { q: search }) }).then((r) => r.data),
+    queryKey: ['admin-products', page, search, estado],
+    queryFn: () => getAdminProducts({ page, page_size: PAGE_SIZE, estado, ...(search && { q: search }) }).then((r) => r.data),
     placeholderData: keepPreviousData,
   })
 
@@ -869,9 +872,10 @@ function ProductsSection() {
   const deleteMutation = useMutation({
     mutationFn: (id) => deleteProduct(id),
     onSuccess: () => {
-      toast.success('Producto eliminado.')
+      toast.success('Producto descontinuado; permanece disponible en administración.')
       queryClient.invalidateQueries({ queryKey: ['admin-products'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['catalog-stats'] })
     },
     onError: () => toast.error('No se pudo eliminar el producto.'),
   })
@@ -887,7 +891,7 @@ function ProductsSection() {
     }
   }
   function handleDelete(prod) {
-    if (!window.confirm(`¿Eliminar "${prod.nombre}"? Esta acción no se puede deshacer.`)) return
+    if (!window.confirm(`¿Descontinuar "${prod.nombre}"? Seguirá visible en administración y conservará su historial.`)) return
     deleteMutation.mutate(prod._id)
   }
 
@@ -900,7 +904,7 @@ function ProductsSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <form onSubmit={handleSearch} className="relative flex-1 max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
           <input
@@ -920,6 +924,17 @@ function ProductsSection() {
             Resultados para <span className="font-semibold text-[var(--color-text-primary)]">"{search}"</span>
           </span>
         )}
+        <div className="w-48">
+          <Select value={estado} onValueChange={(value) => { setEstado(value); setPage(1) }}>
+            <SelectTrigger><SelectValue placeholder="Todos los estados" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos los estados</SelectItem>
+              <SelectItem value="activo">Activos</SelectItem>
+              <SelectItem value="inactivo">Inactivos</SelectItem>
+              <SelectItem value="descontinuado">Descontinuados</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="ml-auto">
           <Button size="sm" onClick={openCreate}><Plus size={14} /> Nuevo producto</Button>
         </div>
@@ -930,7 +945,7 @@ function ProductsSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[var(--color-background)]">
-                {['Imagen', 'Nombre', 'Categoría', 'Precio', 'Stock', 'Disponible', 'Acciones'].map((h) => (
+                {['Imagen', 'Nombre', 'Categoría', 'Precio', 'Stock', 'Estado', 'Disponible', 'Acciones'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">{h}</th>
                 ))}
               </tr>
@@ -965,6 +980,11 @@ function ProductsSection() {
                       ) : (
                         <span className="text-[var(--color-text-primary)]">{prod.stock}</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant={prod.estado === 'activo' ? 'success' : prod.estado === 'descontinuado' ? 'error' : 'secondary'}>
+                        {prod.estado || 'activo'}
+                      </Badge>
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={prod.disponible ? 'success' : 'error'}>{prod.disponible ? 'Sí' : 'No'}</Badge>

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Enum, ForeignKey, DateTime, Integer
+from sqlalchemy import Computed, String, Enum, ForeignKey, DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
@@ -32,3 +32,26 @@ class MovimientoInventario(Base):
         ForeignKey('usuarios.id'), nullable=True
     )
     fecha: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class InventarioSaldoHistorial(Base):
+    """Snapshots temporales del saldo de una fila de inventario."""
+
+    __tablename__ = 'inventario_saldos_historial'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    inventario_id: Mapped[int] = mapped_column(ForeignKey('inventario.id'))
+    cantidad_disponible: Mapped[int] = mapped_column(Integer)
+    cantidad_reservada: Mapped[int] = mapped_column(Integer)
+    vigente_desde: Mapped[datetime] = mapped_column(DateTime)
+    vigente_hasta: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cambiado_por: Mapped[int | None] = mapped_column(
+        ForeignKey('usuarios.id'), nullable=True
+    )
+    motivo: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fecha_registro: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    es_vigente: Mapped[int | None] = mapped_column(
+        Integer,
+        Computed('IF(vigente_hasta IS NULL, 1, NULL)', persisted=True),
+        nullable=True,
+    )

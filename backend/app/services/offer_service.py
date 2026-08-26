@@ -1,7 +1,7 @@
 """Lectura transaccional de ofertas, vendedores e inventario desde MySQL."""
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import func
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.inventario import Inventario
 from app.models.oferta import Oferta, OfertaPrecioHistorial
 from app.models.vendedor import Vendedor
+from app.core.time import utc_now
 from app.services.outbox_service import enqueue_outbox
 
 
@@ -27,12 +28,13 @@ def actualizar_precio_oferta(
     if oferta.precio_actual == nuevo_precio:
         return False
 
-    precio_anterior = oferta.precio_actual
-    ahora = datetime.now()
+    ahora = utc_now()
     vigente = db.query(OfertaPrecioHistorial).filter_by(
         oferta_id=oferta.id, vigente_hasta=None
     ).first()
     if vigente:
+        if ahora <= vigente.vigente_desde:
+            ahora = vigente.vigente_desde + timedelta(microseconds=1)
         vigente.vigente_hasta = ahora
         db.flush()
 
@@ -46,43 +48,17 @@ def actualizar_precio_oferta(
         cambiado_por=usuario_id,
         motivo=motivo,
     ))
-    if enqueue_projection:
-        enqueue_outbox(
-            db,
-            tipo_evento='oferta.precio_actualizado',
-            agregado_tipo='oferta',
-            agregado_id=oferta.id,
-            producto_ref=oferta.producto_ref,
-            payload={
-                'projection': {
-                    'precio': float(nuevo_precio),
-                    'moneda': oferta.moneda,
-                },
-                'history': {
-                    'tipo_evento': 'PRECIO_ACTUALIZADO',
-                    'datos_anteriores': {'precio': float(precio_anterior)},
-                    'datos_nuevos': {'precio': float(nuevo_precio)},
-                    'usuario_id': str(usuario_id) if usuario_id is not None else None,
-                },
-            },
-        )
-    else:
-        enqueue_outbox(
-            db,
-            tipo_evento='oferta.precio_actualizado',
-            agregado_tipo='oferta',
-            agregado_id=oferta.id,
-            producto_ref=oferta.producto_ref,
-            payload={
-                'projection': {},
-                'history': {
-                    'tipo_evento': 'PRECIO_ACTUALIZADO',
-                    'datos_anteriores': {'precio': float(precio_anterior)},
-                    'datos_nuevos': {'precio': float(nuevo_precio)},
-                    'usuario_id': str(usuario_id) if usuario_id is not None else None,
-                },
-            },
-        )
+    enqueue_outbox(
+        db,
+        tipo_evento='oferta.precio_actualizado',
+        agregado_tipo='oferta',
+        agregado_id=oferta.id,
+        producto_ref=oferta.producto_ref,
+        payload={'projection': ({
+            'precio': float(nuevo_precio),
+            'moneda': oferta.moneda,
+        } if enqueue_projection else {})},
+    )
     return True
 
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, time, timezone, timedelta
 from decimal import Decimal
 from io import BytesIO
 
@@ -38,6 +38,14 @@ from app.services.offer_service import (
     actualizar_precio_oferta,
     enqueue_primary_offer_projection,
 )
+from app.services.offer_history_service import (
+    historial_precios_diario,
+    historial_operativo_unificado,
+    reconstruir_ofertas_en_fecha,
+    registrar_estado_oferta,
+    registrar_saldo_inventario,
+)
+from app.core.time import utc_now
 from app.services.image_service import read_valid_image
 from app.services.category_attribute_service import (
     AttributeValidationError,
@@ -202,6 +210,29 @@ def stats_catalog(
 
 # ── CRUD de productos (escribe en Mongo + genera eventos) ─────────────────────
 
+@router.get('/products')
+def listar_productos_admin(
+    estado: str = Query('todos'),
+    q: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _: Usuario = Depends(get_admin_user),
+    db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
+):
+    estados_validos = {'todos', 'activo', 'inactivo', 'descontinuado'}
+    if estado not in estados_validos:
+        raise HTTPException(422, f'Estado inválido: {estado}.')
+    return catalog_service.listar_productos(
+        db,
+        mysql_db,
+        q=q,
+        page=page,
+        page_size=page_size,
+        orden='nombre_asc',
+        estado=None if estado == 'todos' else estado,
+    )
+
 @router.post('/products', status_code=201)
 def crear_producto(
     payload: ProductoCreate,
@@ -306,16 +337,25 @@ def crear_producto(
             oferta_id=oferta.id,
             precio=payload.precio,
             moneda='GTQ',
-            vigente_desde=datetime.now(),
+            vigente_desde=utc_now(),
             cambiado_por=current_user.id,
             motivo='Precio inicial al crear la oferta',
         ))
-        mysql_db.add(Inventario(
+        inventory = Inventario(
             oferta_id=oferta.id,
             cantidad_disponible=payload.stock,
             bodega='principal',
-        ))
+        )
+        mysql_db.add(inventory)
         mysql_db.flush()
+        registrar_estado_oferta(
+            mysql_db, oferta=oferta, usuario_id=current_user.id,
+            motivo='Estado inicial al crear la oferta', forzar=True,
+        )
+        registrar_saldo_inventario(
+            mysql_db, inventario=inventory, usuario_id=current_user.id,
+            motivo='Saldo inicial al crear la oferta', forzar=True,
+        )
         enqueue_primary_offer_projection(mysql_db, producto_mongo['_id'], oferta.id)
         mysql_db.commit()
     except Exception:
@@ -558,8 +598,11 @@ def actualizar_producto(
         if oferta else None
     )
     if nuevo_stock is not None and inv:
-        stock_anterior = inv.cantidad_disponible
         inv.cantidad_disponible = nuevo_stock
+        registrar_saldo_inventario(
+            mysql_db, inventario=inv, usuario_id=current_user.id,
+            motivo='Actualización de stock desde panel administrativo',
+        )
         enqueue_outbox(
             mysql_db,
             tipo_evento='inventario.actualizado',
@@ -568,12 +611,6 @@ def actualizar_producto(
             producto_ref=producto_id,
             payload={
                 'projection': {'stock': nuevo_stock, 'disponible': nuevo_stock > 0},
-                'history': {
-                    'tipo_evento': 'DISPONIBILIDAD_CAMBIADA',
-                    'datos_anteriores': {'stock': stock_anterior},
-                    'datos_nuevos': {'stock': nuevo_stock, 'disponible': nuevo_stock > 0},
-                    'usuario_id': str(current_user.id),
-                },
             },
         )
         needs_commit = True
@@ -623,6 +660,16 @@ def actualizar_producto(
         )
         needs_commit = True
 
+    if oferta and (
+        nuevo_vendedor_id_sql is not None
+        or 'estado' in cambios
+        or 'disponible' in cambios
+    ):
+        registrar_estado_oferta(
+            mysql_db, oferta=oferta, usuario_id=current_user.id,
+            motivo='Actualización de oferta desde panel administrativo',
+        )
+
     if needs_commit:
         try:
             mysql_db.commit()
@@ -645,9 +692,13 @@ def eliminar_producto(
     eliminado = catalog_service.eliminar_producto(db, producto_id, usuario_id=str(current_user.id))
     if not eliminado:
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
-    oferta = mysql_db.query(Oferta).filter_by(producto_ref=producto_id).first()
-    if oferta:
+    ofertas = mysql_db.query(Oferta).filter_by(producto_ref=producto_id).all()
+    for oferta in ofertas:
         oferta.estado = 'descontinuada'
+        registrar_estado_oferta(
+            mysql_db, oferta=oferta, usuario_id=current_user.id,
+            motivo='Producto descontinuado desde panel administrativo',
+        )
         enqueue_outbox(
             mysql_db,
             tipo_evento='oferta.estado_actualizado',
@@ -664,13 +715,60 @@ def eliminar_producto(
 @router.get('/products/{producto_id}/history')
 def historial_producto(
     producto_id: str,
+    desde: date | None = Query(None),
+    hasta: date | None = Query(None),
+    fuente: str = Query('todas'),
     _: Usuario = Depends(get_admin_user),
     db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
 ):
-    eventos = obtener_historial(db, producto_id)
+    if fuente not in {'todas', 'mongodb', 'mysql'}:
+        raise HTTPException(422, 'Fuente inválida. Usa todas, mongodb o mysql.')
+    if desde and hasta and desde > hasta:
+        raise HTTPException(422, 'La fecha inicial no puede ser posterior a la fecha final.')
+    desde_utc = (
+        datetime.combine(desde, time.min, tzinfo=GT_TZ)
+        .astimezone(timezone.utc).replace(tzinfo=None)
+        if desde else None
+    )
+    hasta_utc = (
+        datetime.combine(hasta, time.max, tzinfo=GT_TZ)
+        .astimezone(timezone.utc).replace(tzinfo=None)
+        if hasta else None
+    )
+    eventos = []
+    if fuente in {'todas', 'mongodb'}:
+        for event in obtener_historial(db, producto_id):
+            # Precio, oferta e inventario tienen como fuente autoritativa MySQL.
+            if event['tipo_evento'] in {'PRECIO_ACTUALIZADO', 'DISPONIBILIDAD_CAMBIADA'}:
+                continue
+            event['fuente'] = 'mongodb'
+            event['entidad'] = 'producto'
+            event_dt = datetime.fromisoformat(event['timestamp']).astimezone(
+                timezone.utc
+            ).replace(tzinfo=None)
+            if ((desde_utc is None or event_dt >= desde_utc)
+                    and (hasta_utc is None or event_dt <= hasta_utc)):
+                eventos.append(event)
+    if fuente in {'todas', 'mysql'}:
+        eventos.extend(historial_operativo_unificado(
+            mysql_db,
+            producto_ref=producto_id,
+            desde_utc=desde_utc,
+            hasta_utc=hasta_utc,
+        ))
+    eventos.sort(key=lambda event: (event['timestamp'], event['_id']))
     if not eventos:
         raise HTTPException(status_code=404, detail='No hay historial para este producto.')
-    return {'producto_id': producto_id, 'eventos': eventos}
+    return {
+        'producto_id': producto_id,
+        'eventos': eventos,
+        'filtros': {
+            'desde': desde.isoformat() if desde else None,
+            'hasta': hasta.isoformat() if hasta else None,
+            'fuente': fuente,
+        },
+    }
 
 
 @router.get('/products/{producto_id}/state-at')
@@ -679,6 +777,7 @@ def estado_en_fecha(
     fecha: str = Query(..., description='Fecha en formato YYYY-MM-DD o YYYY-MM-DDTHH:MM:SS'),
     _: Usuario = Depends(get_admin_user),
     db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
 ):
     try:
         if 'T' in fecha:
@@ -702,7 +801,44 @@ def estado_en_fecha(
             status_code=404,
             detail=f'El producto no existía o no tiene eventos hasta {fecha}.'
         )
+    estado['ofertas'] = reconstruir_ofertas_en_fecha(
+        mysql_db, producto_ref=producto_id, instante_utc=fecha_utc
+    )
+    for legacy_field in (
+        'precio', 'moneda', 'stock', 'oferta_id', 'vendedor_id',
+        'vendedor_usuario_id', 'vendedor_nombre',
+    ):
+        estado.pop(legacy_field, None)
+    estado['disponible'] = any(
+        offer['disponible'] for offer in estado['ofertas']
+    )
+    estado['_fuentes'] = {
+        'producto': 'MongoDB producto_eventos',
+        'ofertas': 'MySQL historiales temporales',
+    }
     return estado
+
+
+@router.get('/products/{producto_id}/price-history')
+def historial_precios_producto(
+    producto_id: str,
+    desde: date | None = Query(None),
+    hasta: date | None = Query(None),
+    _: Usuario = Depends(get_admin_user),
+    mysql_db: Session = Depends(get_db),
+):
+    try:
+        result = historial_precios_diario(
+            mysql_db, producto_ref=producto_id, desde=desde, hasta=hasta
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not result['ofertas']:
+        raise HTTPException(
+            status_code=404,
+            detail='No hay historial de precios para las ofertas de este producto.',
+        )
+    return result
 
 
 # ── Migración de stock ────────────────────────────────────────────────────────
@@ -1230,16 +1366,25 @@ def add_product_offer(
         oferta_id=oferta.id,
         precio=payload.precio,
         moneda='GTQ',
-        vigente_desde=datetime.now(),
+        vigente_desde=utc_now(),
         cambiado_por=current_user.id,
         motivo='Precio inicial de oferta adicional',
     ))
-    db.add(Inventario(
+    inventory = Inventario(
         oferta_id=oferta.id,
         cantidad_disponible=payload.stock,
         bodega='principal',
-    ))
+    )
+    db.add(inventory)
     db.flush()
+    registrar_estado_oferta(
+        db, oferta=oferta, usuario_id=current_user.id,
+        motivo='Estado inicial de oferta adicional', forzar=True,
+    )
+    registrar_saldo_inventario(
+        db, inventario=inventory, usuario_id=current_user.id,
+        motivo='Saldo inicial de oferta adicional', forzar=True,
+    )
     enqueue_primary_offer_projection(db, producto_ref, oferta.id)
     db.commit()
 
@@ -1280,13 +1425,28 @@ def update_offer(
         if inv:
             inv.cantidad_disponible = payload.stock
         else:
-            db.add(Inventario(oferta_id=oferta_id, cantidad_disponible=payload.stock, bodega='principal'))
+            inv = Inventario(
+                oferta_id=oferta_id, cantidad_disponible=payload.stock,
+                bodega='principal'
+            )
+            db.add(inv)
+        db.flush()
+        registrar_saldo_inventario(
+            db, inventario=inv, usuario_id=current_user.id,
+            motivo='Actualización de stock desde panel admin',
+        )
 
     if payload.estado is not None:
         estados_validos = {'activa', 'pausada', 'descontinuada', 'borrador'}
         if payload.estado not in estados_validos:
             raise HTTPException(400, f'Estado no válido. Opciones: {", ".join(estados_validos)}')
         oferta.estado = payload.estado
+
+    if payload.estado is not None:
+        registrar_estado_oferta(
+            db, oferta=oferta, usuario_id=current_user.id,
+            motivo='Actualización de estado desde panel admin',
+        )
 
     db.flush()
     enqueue_primary_offer_projection(db, oferta.producto_ref, oferta.id)

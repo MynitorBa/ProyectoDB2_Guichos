@@ -54,6 +54,27 @@ def reset_stock():
             """),
             {'oid': OFERTA_TEST_ID},
         ).scalar_one()
+        inventory_id = conn.execute(
+            text("""
+                SELECT id FROM inventario
+                WHERE oferta_id = :oid AND bodega = 'principal'
+            """),
+            {'oid': OFERTA_TEST_ID},
+        ).scalar_one()
+        original_balance_id = conn.execute(
+            text("""
+                SELECT id FROM inventario_saldos_historial
+                WHERE inventario_id = :inventory_id AND vigente_hasta IS NULL
+            """),
+            {'inventory_id': inventory_id},
+        ).scalar_one()
+        original_max_balance_id = conn.execute(
+            text("""
+                SELECT COALESCE(MAX(id), 0) FROM inventario_saldos_historial
+                WHERE inventario_id = :inventory_id
+            """),
+            {'inventory_id': inventory_id},
+        ).scalar_one()
         producto_ref = conn.execute(
             text('SELECT producto_ref FROM ofertas WHERE id = :oid'),
             {'oid': OFERTA_TEST_ID},
@@ -108,6 +129,26 @@ def reset_stock():
             conn.commit()
 
     with engine.connect() as conn:
+        conn.execute(
+            text("""
+                DELETE FROM inventario_saldos_historial
+                WHERE inventario_id = :inventory_id AND id > :original_max_id
+            """),
+            {
+                'inventory_id': inventory_id,
+                'original_max_id': original_max_balance_id,
+            },
+        )
+        conn.execute(
+            text("""
+                UPDATE inventario_saldos_historial
+                SET vigente_hasta = NULL,
+                    cantidad_disponible = :stock,
+                    cantidad_reservada = 0
+                WHERE id = :original_id
+            """),
+            {'stock': original_stock, 'original_id': original_balance_id},
+        )
         conn.execute(
             text("""
                 UPDATE inventario SET cantidad_disponible = :stock

@@ -3,6 +3,9 @@ import api from './client'
 export const getProducts = (params) =>
   api.get('/products', { params })
 
+export const getAdminProducts = (params) =>
+  api.get('/admin/products', { params })
+
 export const getProduct = (id) =>
   api.get(`/products/${id}`)
 
@@ -22,11 +25,14 @@ export const updateProduct = (id, data) =>
 export const deleteProduct = (id) =>
   api.delete(`/admin/products/${id}`)
 
-export const getProductHistory = (id) =>
-  api.get(`/admin/products/${id}/history`)
+export const getProductHistory = (id, params = {}) =>
+  api.get(`/admin/products/${id}/history`, { params })
 
 export const getProductStateAt = (id, fecha) =>
   api.get(`/admin/products/${id}/state-at`, { params: { fecha } })
+
+export const getProductPriceHistory = (id, params = {}) =>
+  api.get(`/admin/products/${id}/price-history`, { params })
 
 export const getCatalogStats = () =>
   api.get('/admin/stats/catalog')

@@ -392,6 +392,41 @@ def main():
             else:
                 print('MySQL solicitudes de catálogo: estructura y propiedad de imágenes listas')
 
+            temporal_tables = {
+                'oferta_estados_historial', 'inventario_saldos_historial',
+            }
+            temporal_errors = []
+            missing_temporal_tables = sorted(temporal_tables - installed_tables)
+            if missing_temporal_tables:
+                temporal_errors.append(
+                    f'tablas faltantes: {missing_temporal_tables}'
+                )
+            else:
+                temporal_checks = {
+                    'ofertas sin estado temporal vigente': """
+                        SELECT COUNT(*) AS n FROM ofertas o
+                        LEFT JOIN oferta_estados_historial h
+                          ON h.oferta_id = o.id AND h.vigente_hasta IS NULL
+                        WHERE h.id IS NULL
+                    """,
+                    'inventarios sin saldo temporal vigente': """
+                        SELECT COUNT(*) AS n FROM inventario i
+                        LEFT JOIN inventario_saldos_historial h
+                          ON h.inventario_id = i.id AND h.vigente_hasta IS NULL
+                        WHERE h.id IS NULL
+                    """,
+                }
+                for label, query in temporal_checks.items():
+                    cur.execute(query)
+                    count = cur.fetchone()['n']
+                    if count:
+                        temporal_errors.append(f'{label}: {count}')
+            if temporal_errors:
+                print(f'MySQL historial temporal: {"; ".join(temporal_errors)}')
+                ok = False
+            else:
+                print('MySQL historial temporal: ofertas e inventarios completos')
+
             legacy_tables = {'productos'} & installed_tables
             legacy_columns = {
                 ('carrito_items', 'producto_id'),
@@ -498,6 +533,30 @@ def main():
         n_eventos = mongo.producto_eventos.count_documents({})
         print(f'MongoDB productos: {n_mongo}')
         print(f'MongoDB eventos:   {n_eventos}')
+
+        operational_events = mongo.producto_eventos.count_documents({
+            'tipo_evento': {'$in': ['PRECIO_ACTUALIZADO', 'DISPONIBILIDAD_CAMBIADA']}
+        })
+        events_before_creation = 0
+        for product_id in mongo.producto_eventos.distinct('producto_id'):
+            created = mongo.producto_eventos.find_one({
+                'producto_id': product_id,
+                'tipo_evento': 'PRODUCTO_CREADO',
+            }, {'timestamp': 1})
+            if created and created.get('timestamp'):
+                events_before_creation += mongo.producto_eventos.count_documents({
+                    'producto_id': product_id,
+                    'timestamp': {'$lt': created['timestamp']},
+                })
+        if operational_events or events_before_creation:
+            print(
+                'MongoDB historial: separación pendiente '
+                f'({operational_events} operativos, '
+                f'{events_before_creation} anteriores a creación)'
+            )
+            ok = False
+        else:
+            print('MongoDB historial: únicamente eventos documentales coherentes')
 
         indexes = mongo.producto_eventos.index_information()
         outbox_index = indexes.get('uidx_evento_outbox', {})

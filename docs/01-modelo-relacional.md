@@ -39,7 +39,9 @@ precio y con cuánto inventario**:
 - `ofertas`: vendedor, SKU, precio vigente, moneda, estado y versión; su
   `producto_ref` referencia el registro anterior.
 - `oferta_precios_historial`: intervalos de vigencia del precio.
+- `oferta_estados_historial`: intervalos de estado, vendedor y SKU.
 - `inventario`: existencias por oferta y bodega.
+- `inventario_saldos_historial`: intervalos del saldo disponible y reservado.
 - `movimientos_inventario`: entradas, salidas, ajustes, reservas y liberaciones.
 
 ### Solicitudes de catálogo
@@ -80,6 +82,12 @@ edite después su libreta en `direcciones`.
 bloquea oferta e inventario en MySQL y copia el precio cobrado a
 `pedido_lineas.precio_unitario` dentro de la misma transacción.
 
+`oferta_estados_historial` e `inventario_saldos_historial` aplican el mismo
+modelo de intervalos al estado comercial y al saldo. Junto con el replay
+documental de MongoDB permiten reconstruir el producto y todas sus ofertas en
+una fecha y hora arbitrarias, sin usar valores actuales como si fueran
+históricos.
+
 ### Reseñas
 
 Las reseñas completas permanecen en MySQL porque deben pertenecer a un usuario
@@ -101,8 +109,8 @@ entrega confiable entre MySQL y MongoDB.
 | Área | Tablas | Responsabilidad |
 |---|---|---|
 | Identidad | `usuarios`, `roles`, `usuario_rol`, `direcciones` | Cuentas, permisos y libreta de direcciones |
-| Comercio | `vendedores`, `categorias`, `producto_referencias`, `producto_referencia_categorias`, `producto_imagenes`, `ofertas`, `oferta_precios_historial`, `solicitudes_catalogo`, `solicitud_catalogo_categorias`, `solicitud_catalogo_imagenes` | Perfil comercial, navegación, identidad mínima, imágenes, precio y aprobación previa |
-| Inventario | `inventario`, `movimientos_inventario` | Stock actual y trazabilidad de cambios |
+| Comercio | `vendedores`, `categorias`, `producto_referencias`, `producto_referencia_categorias`, `producto_imagenes`, `ofertas`, `oferta_precios_historial`, `oferta_estados_historial`, `solicitudes_catalogo`, `solicitud_catalogo_categorias`, `solicitud_catalogo_imagenes` | Perfil comercial, navegación, identidad mínima, imágenes, precio, estado temporal y aprobación previa |
+| Inventario | `inventario`, `inventario_saldos_historial`, `movimientos_inventario` | Stock actual, saldos temporales y movimientos |
 | Pedidos | `pedidos`, `pedido_vendedores`, `pedido_direcciones`, `pedido_lineas` | Compra global, partes por vendedor y snapshots |
 | Pagos | `metodos_pago`, `pagos` | Medio, monto y resultado del pago |
 | Interacción | `carritos`, `carrito_items`, `resenas`, `notificaciones` | Intención de compra, opiniones y avisos |

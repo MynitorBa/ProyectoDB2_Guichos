@@ -73,3 +73,18 @@ Desde la raíz del repositorio:
 cd frontend
 npm run build
 ```
+
+## Actualización del historial por ofertas — 26 de agosto de 2026
+
+- Migración aditiva `14_offer_temporal_history.sql` aplicada dos veces para
+  comprobar idempotencia.
+- 70/70 ofertas con estado temporal vigente.
+- 70/70 inventarios con saldo temporal vigente.
+- Endpoint diario comprobado con un producto que posee dos ofertas: devuelve
+  dos series y ocho puntos dentro del rango disponible.
+- Reconstrucción puntual comprobada sobre el mismo producto: devuelve sus dos
+  ofertas con precio, vendedor, estado y stock.
+- Caso de dos cambios de precio de una misma oferta durante un día: conserva
+  el segundo cambio al cierre del día.
+- Backend: **49 pruebas aprobadas**.
+- Frontend: compilación de producción aprobada (2,636 módulos).

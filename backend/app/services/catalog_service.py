@@ -3,6 +3,7 @@ Servicio para operaciones sobre el catálogo de productos en MongoDB.
 Toda escritura en la colección 'productos' genera su evento correspondiente.
 """
 from datetime import datetime
+import re
 from typing import Any
 
 from pymongo.database import Database
@@ -39,19 +40,31 @@ def listar_productos(
     page: int = 1,
     page_size: int = 20,
     orden: str = 'precio_asc',
+    estado: str | None = 'activo',
 ) -> dict:
-    filtro: dict[str, Any] = {'estado': 'activo'}
+    filtro: dict[str, Any] = {}
+    if estado:
+        filtro['estado'] = estado
 
+    clauses = []
     if categoria_slug:
         # Los documentos nuevos pueden pertenecer a varias categorías. La
         # condición también funciona para el arreglo de subdocumentos y el
         # fallback conserva compatibilidad con documentos heredados.
-        filtro['$or'] = [
+        clauses.append({'$or': [
             {'categorias.slug': categoria_slug},
             {'categoria.slug': categoria_slug},
-        ]
+        ]})
     if q:
-        filtro['$text'] = {'$search': q}
+        # El panel promete buscar también por SKU. Para el volumen actual,
+        # una expresión escapada evita limitar la consulta al índice textual.
+        pattern = re.escape(q.strip())
+        clauses.append({'$or': [
+            {'nombre': {'$regex': pattern, '$options': 'i'}},
+            {'sku': {'$regex': pattern, '$options': 'i'}},
+        ]})
+    if clauses:
+        filtro['$and'] = clauses
 
     if mysql_db is not None:
         docs = list(db.productos.find(filtro))
@@ -289,13 +302,18 @@ def actualizar_producto(
             usuario_id=usuario_id,
         )
 
-    if cambios.get('estado') == 'descontinuado' and doc_anterior.get('estado') != 'descontinuado':
+    if 'estado' in cambios and cambios['estado'] != doc_anterior.get('estado'):
+        tipo_estado = (
+            'PRODUCTO_DESCONTINUADO'
+            if cambios['estado'] == 'descontinuado'
+            else 'ESTADO_PRODUCTO_CAMBIADO'
+        )
         registrar_evento(
             db,
             producto_id=producto_id,
-            tipo_evento='PRODUCTO_DESCONTINUADO',
+            tipo_evento=tipo_estado,
             datos_anteriores={'estado': doc_anterior.get('estado')},
-            datos_nuevos={'estado': 'descontinuado'},
+            datos_nuevos={'estado': cambios['estado']},
             usuario_id=usuario_id,
         )
 
@@ -319,10 +337,10 @@ def eliminar_producto(db: Database, producto_id: str, usuario_id: str | None = N
 
 def stats_catalogo(db: Database) -> list[dict]:
     pipeline = [
-        {'$match': {'estado': 'activo'}},
         {
             '$facet': {
                 'estadisticas_por_categoria': [
+                    {'$match': {'estado': 'activo'}},
                     {
                         '$group': {
                             '_id': '$categoria.slug',
@@ -337,6 +355,7 @@ def stats_catalogo(db: Database) -> list[dict]:
                     {'$sort': {'total_productos': -1}},
                 ],
                 'top_productos_precio': [
+                    {'$match': {'estado': 'activo'}},
                     {'$sort': {'precio': -1}},
                     {'$limit': 5},
                     {'$project': {
@@ -350,10 +369,30 @@ def stats_catalogo(db: Database) -> list[dict]:
                         '$group': {
                             '_id': None,
                             'total_productos': {'$sum': 1},
-                            'total_disponibles': {'$sum': {'$cond': ['$disponible', 1, 0]}},
-                            'precio_promedio_global': {'$avg': '$precio'},
+                            'total_activos': {'$sum': {'$cond': [
+                                {'$eq': ['$estado', 'activo']}, 1, 0
+                            ]}},
+                            'total_inactivos': {'$sum': {'$cond': [
+                                {'$eq': ['$estado', 'inactivo']}, 1, 0
+                            ]}},
+                            'total_descontinuados': {'$sum': {'$cond': [
+                                {'$eq': ['$estado', 'descontinuado']}, 1, 0
+                            ]}},
+                            'total_disponibles': {'$sum': {'$cond': [
+                                {'$and': [
+                                    {'$eq': ['$estado', 'activo']},
+                                    '$disponible',
+                                ]}, 1, 0
+                            ]}},
+                            'precio_promedio_global': {'$avg': {'$cond': [
+                                {'$eq': ['$estado', 'activo']}, '$precio', None
+                            ]}},
                         }
                     },
+                ],
+                'productos_por_estado': [
+                    {'$group': {'_id': '$estado', 'cantidad': {'$sum': 1}}},
+                    {'$sort': {'_id': 1}},
                 ],
             }
         }

@@ -5,13 +5,15 @@ from app.models.categoria import Categoria
 from app.models.producto_referencia import ProductoReferencia
 from app.models.producto_imagen import ProductoImagen
 from app.models.producto_referencia_categoria import ProductoReferenciaCategoria
-from app.models.inventario import Inventario, MovimientoInventario
+from app.models.inventario import (
+    Inventario, MovimientoInventario, InventarioSaldoHistorial,
+)
 from app.models.pedido import Pedido, PedidoLinea
 from app.models.pago import MetodoPago, Pago
 from app.models.carrito import Carrito, CarritoItem
 from app.models.resena import Resena
 from app.models.notificacion import Notificacion
-from app.models.oferta import Oferta, OfertaPrecioHistorial
+from app.models.oferta import Oferta, OfertaPrecioHistorial, OfertaEstadoHistorial
 from app.models.pedido_vendedor import PedidoVendedor, PedidoDireccion
 from app.models.outbox import OutboxEvento
 from app.models.solicitud_catalogo import (
@@ -23,13 +25,13 @@ __all__ = [
     'Direccion', 'Vendedor',
     'Categoria', 'ProductoReferencia', 'ProductoImagen',
     'ProductoReferenciaCategoria',
-    'Inventario', 'MovimientoInventario',
+    'Inventario', 'MovimientoInventario', 'InventarioSaldoHistorial',
     'Pedido', 'PedidoLinea',
     'MetodoPago', 'Pago',
     'Carrito', 'CarritoItem',
     'Resena',
     'Notificacion',
-    'Oferta', 'OfertaPrecioHistorial',
+    'Oferta', 'OfertaPrecioHistorial', 'OfertaEstadoHistorial',
     'PedidoVendedor', 'PedidoDireccion',
     'OutboxEvento',
     'SolicitudCatalogo', 'SolicitudCatalogoCategoria',

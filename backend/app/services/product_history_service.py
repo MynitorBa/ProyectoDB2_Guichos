@@ -37,6 +37,7 @@ TIPOS_EVENTO = {
     'DISPONIBILIDAD_CAMBIADA',
     'ATRIBUTOS_ACTUALIZADOS',
     'PRODUCTO_DESCONTINUADO',
+    'ESTADO_PRODUCTO_CAMBIADO',
 }
 
 
@@ -126,6 +127,9 @@ def reconstruir_estado(db: Database, producto_id: str, fecha: datetime) -> dict[
         elif tipo == 'PRODUCTO_DESCONTINUADO':
             estado['estado'] = 'descontinuado'
             estado['disponible'] = False
+
+        elif tipo == 'ESTADO_PRODUCTO_CAMBIADO':
+            estado['estado'] = nuevos.get('estado', estado.get('estado'))
 
     fecha_utc_aware = fecha.replace(tzinfo=timezone.utc) if fecha.tzinfo is None else fecha
     estado['_reconstruido_al'] = fecha_utc_aware.astimezone(GT_TZ).isoformat()

@@ -18,6 +18,7 @@ from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
 from app.schemas.checkout import CheckoutItem
 from app.services.offer_service import resolver_oferta_comprable
+from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.outbox_service import enqueue_outbox
 
 IVA = Decimal('0.12')
@@ -200,15 +201,6 @@ def procesar_checkout(
                     'stock': projected_stock,
                     'disponible': projected_stock > 0,
                 },
-                'history': {
-                    'tipo_evento': 'DISPONIBILIDAD_CAMBIADA',
-                    'datos_anteriores': {},
-                    'datos_nuevos': {
-                        'stock': projected_stock,
-                        'disponible': projected_stock > 0,
-                    },
-                    'usuario_id': str(usuario_id),
-                },
             },
         )
         db.add(MovimientoInventario(
@@ -219,6 +211,12 @@ def procesar_checkout(
             pedido_id=pedido.id,
             usuario_id=usuario_id,
         ))
+        registrar_saldo_inventario(
+            db,
+            inventario=inventory,
+            usuario_id=usuario_id,
+            motivo=f'Venta del pedido #{pedido.id}',
+        )
 
     db.add(Pago(
         pedido_id=pedido.id,

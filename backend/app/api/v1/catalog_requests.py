@@ -34,6 +34,10 @@ from app.services.offer_service import (
     actualizar_precio_oferta,
     enqueue_primary_offer_projection,
 )
+from app.services.offer_history_service import (
+    registrar_estado_oferta,
+    registrar_saldo_inventario,
+)
 from app.services.sku_service import generate_offer_sku, generate_product_sku
 
 
@@ -451,11 +455,22 @@ def _approve_new_product(
             vigente_desde=utc_now(), cambiado_por=admin.id,
             motivo=f'Aprobación de solicitud #{request.id}',
         ))
-        db.add(Inventario(
+        inventory = Inventario(
             oferta_id=offer.id, cantidad_disponible=request.stock_propuesto,
             bodega='principal',
-        ))
+        )
+        db.add(inventory)
         db.flush()
+        registrar_estado_oferta(
+            db, oferta=offer, usuario_id=admin.id,
+            motivo=f'Estado inicial por aprobación de solicitud #{request.id}',
+            forzar=True,
+        )
+        registrar_saldo_inventario(
+            db, inventario=inventory, usuario_id=admin.id,
+            motivo=f'Saldo inicial por aprobación de solicitud #{request.id}',
+            forzar=True,
+        )
         enqueue_primary_offer_projection(db, product['_id'], offer.id)
         return product['_id'], offer.id
     except Exception:
@@ -519,11 +534,20 @@ def _approve_offer(
         inventory.cantidad_disponible = request.stock_propuesto
         inventory.cantidad_reservada = 0
     else:
-        db.add(Inventario(
+        inventory = Inventario(
             oferta_id=offer.id, cantidad_disponible=request.stock_propuesto,
             bodega='principal',
-        ))
+        )
+        db.add(inventory)
     db.flush()
+    registrar_estado_oferta(
+        db, oferta=offer, usuario_id=admin.id,
+        motivo=f'Oferta aprobada mediante solicitud #{request.id}',
+    )
+    registrar_saldo_inventario(
+        db, inventario=inventory, usuario_id=admin.id,
+        motivo=f'Stock aprobado mediante solicitud #{request.id}',
+    )
     enqueue_primary_offer_projection(db, product_ref, offer.id)
     return product_ref, offer.id
 

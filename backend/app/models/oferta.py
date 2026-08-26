@@ -49,3 +49,29 @@ class OfertaPrecioHistorial(Base):
         Computed('IF(vigente_hasta IS NULL, 1, NULL)', persisted=True),
         nullable=True,
     )
+
+
+class OfertaEstadoHistorial(Base):
+    """Intervalos de vigencia de la configuración comercial de una oferta."""
+
+    __tablename__ = 'oferta_estados_historial'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    oferta_id: Mapped[int] = mapped_column(ForeignKey('ofertas.id'))
+    vendedor_id: Mapped[int] = mapped_column(ForeignKey('vendedores.id'))
+    sku: Mapped[str] = mapped_column(String(50))
+    estado: Mapped[str] = mapped_column(
+        Enum('borrador', 'activa', 'pausada', 'descontinuada')
+    )
+    vigente_desde: Mapped[datetime] = mapped_column(DateTime)
+    vigente_hasta: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cambiado_por: Mapped[int | None] = mapped_column(
+        ForeignKey('usuarios.id'), nullable=True
+    )
+    motivo: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fecha_registro: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    es_vigente: Mapped[int | None] = mapped_column(
+        Integer,
+        Computed('IF(vigente_hasta IS NULL, 1, NULL)', persisted=True),
+        nullable=True,
+    )

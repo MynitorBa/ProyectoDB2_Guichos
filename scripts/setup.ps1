@@ -150,6 +150,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Falló la instalación del flujo de solicitudes de vendedores.'
 }
 
+& $python scripts\apply_offer_temporal_history.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'Falló la instalación del historial temporal de ofertas.'
+}
+
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
 & $python scripts\sync_mongo_projections.py
@@ -166,6 +171,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "`n[6/8] Completando historial faltante en MongoDB..." -ForegroundColor Cyan
+& $python scripts\repair_mongo_product_history.py --apply
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo separar el historial documental del historial operativo.'
+}
 & $python scripts\seed_mongo_events.py
 if ($LASTEXITCODE -ne 0) {
     throw 'No se pudo completar el historial de productos.'

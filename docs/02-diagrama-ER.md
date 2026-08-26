@@ -104,6 +104,18 @@ erDiagram
         VARCHAR motivo
         DATETIME fecha_registro
     }
+    oferta_estados_historial {
+        BIGINT id PK
+        INT oferta_id FK
+        INT vendedor_id FK
+        VARCHAR sku
+        ENUM estado
+        DATETIME vigente_desde
+        DATETIME vigente_hasta
+        INT cambiado_por FK
+        VARCHAR motivo
+        DATETIME fecha_registro
+    }
     inventario {
         INT id PK
         INT oferta_id FK
@@ -122,6 +134,17 @@ erDiagram
         INT pedido_id FK
         INT usuario_id FK
         DATETIME fecha
+    }
+    inventario_saldos_historial {
+        BIGINT id PK
+        INT inventario_id FK
+        INT cantidad_disponible
+        INT cantidad_reservada
+        DATETIME vigente_desde
+        DATETIME vigente_hasta
+        INT cambiado_por FK
+        VARCHAR motivo
+        DATETIME fecha_registro
     }
     pedidos {
         INT id PK
@@ -274,7 +297,12 @@ erDiagram
     vendedores ||--o{ ofertas : publica
     ofertas ||--o{ oferta_precios_historial : historiza
     usuarios |o--o{ oferta_precios_historial : cambia
+    ofertas ||--o{ oferta_estados_historial : historiza_estado
+    vendedores ||--o{ oferta_estados_historial : identifica
+    usuarios |o--o{ oferta_estados_historial : cambia
     ofertas ||--o{ inventario : abastece
+    inventario ||--o{ inventario_saldos_historial : historiza_saldo
+    usuarios |o--o{ inventario_saldos_historial : cambia
     inventario ||--o{ movimientos_inventario : registra
     usuarios |o--o{ movimientos_inventario : ejecuta
     usuarios ||--o{ pedidos : realiza
@@ -329,6 +357,8 @@ inventario pertenece a la oferta, no al documento.
 - `carrito_items`: una oferta por carrito.
 - `resenas`: una reseña por `(usuario_id, producto_referencia_id)`.
 - `oferta_precios_historial`: una sola vigencia abierta por oferta.
+- `oferta_estados_historial`: una sola configuración abierta por oferta.
+- `inventario_saldos_historial`: un solo saldo abierto por inventario.
 - `producto_referencia_categorias`: una relación única por producto/categoría
   y exactamente una categoría principal, verificada por instalación y pruebas.
 - `solicitudes_catalogo`: solo las solicitudes pendientes pueden revisarse;
@@ -336,4 +366,4 @@ inventario pertenece a la oferta, no al documento.
   solicitud.
 
 El diagrama representa el esquema posterior a
-`database/mysql/13_catalog_requests.sql`, no el DDL transicional previo.
+`database/mysql/14_offer_temporal_history.sql`, no el DDL transicional previo.

@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """
-Genera historial sintético de eventos para los últimos 6 meses.
-Produce entre 4 y 8 eventos por producto: cambios de precio, descripción,
-disponibilidad y atributos. La secuencia es cronológica y verosímil.
+Inicializa el evento documental PRODUCTO_CREADO de productos sin historial.
 
-Cada producto tiene su evento PRODUCTO_CREADO y luego eventos posteriores,
-de modo que se puede demostrar la reconstrucción de estado en cualquier fecha.
+Precio, oferta e inventario pertenecen a los historiales temporales de MySQL;
+no se fabrican fechas anteriores a la creación ni eventos operativos en MongoDB.
 """
 import sys
 import os
-import random
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -25,18 +22,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 MONGO_URI = os.getenv('MONGO_URI', 'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin')
 MONGO_DB  = os.getenv('MONGO_DB', 'tiendaya')
 
-random.seed(42)
-
-
-def fecha_hace_dias(dias: int, variacion: int = 0) -> datetime:
-    d = utc_now() - timedelta(days=dias)
-    if variacion:
-        d += timedelta(hours=random.randint(-variacion, variacion))
-    return d
-
-
 def generar_eventos_producto(producto: dict) -> list[dict]:
-    """Genera una secuencia creíble de eventos para un producto."""
+    """Genera únicamente el origen documental verificable del producto."""
     pid = str(producto['_id'])
     precio_actual = producto.get('precio', 100)
     desc_actual   = producto.get('descripcion', '')
@@ -47,8 +34,7 @@ def generar_eventos_producto(producto: dict) -> list[dict]:
     eventos = []
     version = 1
 
-    # ── Evento 1: PRODUCTO_CREADO (hace ~6 meses) ─────────────────────────────
-    ts_creacion = producto.get('fecha_creacion') or fecha_hace_dias(180)
+    ts_creacion = producto.get('fecha_creacion') or utc_now()
     if isinstance(ts_creacion, str):
         ts_creacion = datetime.fromisoformat(ts_creacion)
 
@@ -68,107 +54,6 @@ def generar_eventos_producto(producto: dict) -> list[dict]:
         'timestamp': ts_creacion,
         'version': version,
     })
-    version += 1
-
-    # ── Evento 2: PRECIO_ACTUALIZADO (hace ~4 meses — precio de lanzamiento era más alto) ─
-    precio_lanzamiento = round(precio_actual * 1.08, 2)
-    ts_precio1 = fecha_hace_dias(120, 12)
-    eventos.append({
-        'producto_id': pid,
-        'tipo_evento': 'PRECIO_ACTUALIZADO',
-        'datos_anteriores': {'precio': precio_lanzamiento},
-        'datos_nuevos': {'precio': precio_actual},
-        'usuario_id': '1',
-        'timestamp': ts_precio1,
-        'version': version,
-    })
-    version += 1
-
-    # ── Evento 3: DESCRIPCION_ACTUALIZADA (hace ~3 meses — mejoró el copy) ───
-    ts_desc = fecha_hace_dias(90, 6)
-    nueva_desc = f"{desc_actual} — Actualizado con descripción mejorada."
-    eventos.append({
-        'producto_id': pid,
-        'tipo_evento': 'DESCRIPCION_ACTUALIZADA',
-        'datos_anteriores': {'descripcion': desc_actual},
-        'datos_nuevos': {'descripcion': nueva_desc},
-        'usuario_id': '1',
-        'timestamp': ts_desc,
-        'version': version,
-    })
-    version += 1
-
-    # ── Evento 4: DISPONIBILIDAD_CAMBIADA (hace ~2 meses — agotado temporalmente) ─
-    ts_disp_off = fecha_hace_dias(60, 4)
-    eventos.append({
-        'producto_id': pid,
-        'tipo_evento': 'DISPONIBILIDAD_CAMBIADA',
-        'datos_anteriores': {'disponible': True},
-        'datos_nuevos': {'disponible': False},
-        'usuario_id': '1',
-        'timestamp': ts_disp_off,
-        'version': version,
-    })
-    version += 1
-
-    # ── Evento 5: DISPONIBILIDAD_CAMBIADA (hace ~50 días — repuesto el stock) ─
-    ts_disp_on = fecha_hace_dias(50, 3)
-    eventos.append({
-        'producto_id': pid,
-        'tipo_evento': 'DISPONIBILIDAD_CAMBIADA',
-        'datos_anteriores': {'disponible': False},
-        'datos_nuevos': {'disponible': True},
-        'usuario_id': '1',
-        'timestamp': ts_disp_on,
-        'version': version,
-    })
-    version += 1
-
-    # ── Evento 6: PRECIO_ACTUALIZADO (hace ~30 días — oferta de temporada) ──
-    precio_oferta = round(precio_actual * 0.90, 2)
-    ts_precio2 = fecha_hace_dias(30, 6)
-    eventos.append({
-        'producto_id': pid,
-        'tipo_evento': 'PRECIO_ACTUALIZADO',
-        'datos_anteriores': {'precio': precio_actual},
-        'datos_nuevos': {'precio': precio_oferta},
-        'usuario_id': '1',
-        'timestamp': ts_precio2,
-        'version': version,
-    })
-    version += 1
-
-    # ── Evento 7: PRECIO_ACTUALIZADO (hace ~10 días — fin de oferta) ─────────
-    ts_precio3 = fecha_hace_dias(10, 3)
-    eventos.append({
-        'producto_id': pid,
-        'tipo_evento': 'PRECIO_ACTUALIZADO',
-        'datos_anteriores': {'precio': precio_oferta},
-        'datos_nuevos': {'precio': precio_actual},
-        'usuario_id': '1',
-        'timestamp': ts_precio3,
-        'version': version,
-    })
-    version += 1
-
-    # ── Evento 8 (opcional): ATRIBUTOS_ACTUALIZADOS en el 30% de los productos ─
-    if random.random() < 0.3 and atributos:
-        ts_attr = fecha_hace_dias(5, 2)
-        nuevo_attr = dict(atributos)
-        keys = list(nuevo_attr.keys())
-        if keys:
-            nuevo_attr['nota_adicional'] = 'Especificación revisada por el vendedor'
-        eventos.append({
-            'producto_id': pid,
-            'tipo_evento': 'ATRIBUTOS_ACTUALIZADOS',
-            'datos_anteriores': {'atributos': atributos},
-            'datos_nuevos': {'atributos': nuevo_attr},
-            'usuario_id': '1',
-            'timestamp': ts_attr,
-            'version': version,
-        })
-        version += 1
-
     return eventos
 
 
@@ -216,7 +101,7 @@ def main(*, reset: bool = False):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Genera historial sintético faltante.')
+    parser = argparse.ArgumentParser(description='Inicializa historial documental faltante.')
     parser.add_argument(
         '--reset',
         action='store_true',
