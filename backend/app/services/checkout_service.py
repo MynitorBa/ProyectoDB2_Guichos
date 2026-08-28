@@ -21,7 +21,9 @@ from app.services.offer_service import resolver_oferta_comprable
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.outbox_service import enqueue_outbox
 
-IVA = Decimal('0.12')
+# En Guatemala los precios ya incluyen IVA (12%). El factor 12/112 extrae
+# el componente IVA del precio con IVA incluido: precio * 12/112 = IVA.
+_IVA_FACTOR = Decimal('12') / Decimal('112')
 
 
 class CheckoutError(Exception):
@@ -121,13 +123,16 @@ def procesar_checkout(
         subtotal += line_subtotal
         subtotal_by_vendor[offer.vendedor_id] += line_subtotal
 
-    impuestos = (subtotal * IVA).quantize(Decimal('0.01'))
-    total = subtotal + impuestos
+    # Los precios ya incluyen IVA. Se extrae el componente en vez de sumarlo.
+    precio_con_iva = subtotal
+    subtotal_base = (precio_con_iva / Decimal('1.12')).quantize(Decimal('0.01'))
+    impuestos = precio_con_iva - subtotal_base
+    total = precio_con_iva
     pedido = Pedido(
         usuario_id=usuario_id,
         direccion_id=direccion_id,
         estado='confirmado',
-        subtotal=subtotal,
+        subtotal=subtotal_base,
         impuestos=impuestos,
         total=total,
     )

@@ -11,9 +11,9 @@ import { useCart } from '../../context/CartContext'
 export function CartSheet({ open, onClose }) {
   const { cart, remove, loading } = useCart()
   const items = cart?.items || []
-  const subtotal = items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0)
-  const iva = subtotal * 0.12
-  const total = subtotal + iva
+  const total = items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0)
+  const base = total / 1.12
+  const iva = total - base
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
@@ -73,11 +73,11 @@ export function CartSheet({ open, onClose }) {
             <div className="border-t border-[var(--color-border)] px-5 py-4 space-y-3 bg-[var(--color-background)]">
               <div className="space-y-1.5">
                 <div className="flex justify-between font-sans text-sm">
-                  <span className="text-[var(--color-text-secondary)]">Subtotal</span>
-                  <span className="text-[var(--color-text-primary)]">{formatQ(subtotal)}</span>
+                  <span className="text-[var(--color-text-secondary)]">Subtotal (sin IVA)</span>
+                  <span className="text-[var(--color-text-primary)]">{formatQ(base)}</span>
                 </div>
                 <div className="flex justify-between font-sans text-sm">
-                  <span className="text-[var(--color-text-secondary)]">IVA (12%)</span>
+                  <span className="text-[var(--color-text-secondary)]">IVA incluido (12%)</span>
                   <span className="text-[var(--color-text-primary)]">{formatQ(iva)}</span>
                 </div>
                 <Separator />

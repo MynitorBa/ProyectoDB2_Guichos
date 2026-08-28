@@ -7,8 +7,6 @@ import { Separator } from '../components/ui/separator'
 import { Skeleton } from '../components/ui/skeleton'
 import { formatQ } from '../lib/utils'
 
-const IVA_RATE = 0.12
-
 // Página de carrito: lista items con opción de eliminar y muestra resumen con subtotal, IVA (12%) y total
 export default function CartPage() {
   const { cart, loading, fetchCart, remove } = useCart()
@@ -19,9 +17,9 @@ export default function CartPage() {
   }, [fetchCart])
 
   const items = cart?.items || []
-  const subtotal = items.reduce((acc, item) => acc + (item.subtotal || item.precio * item.cantidad || 0), 0)
-  const iva = subtotal * IVA_RATE
-  const total = subtotal + iva
+  const total = items.reduce((acc, item) => acc + (item.subtotal ?? item.precio * item.cantidad ?? 0), 0)
+  const base = total / 1.12
+  const iva = total - base
 
   if (loading && items.length === 0) {
     return (
@@ -117,11 +115,11 @@ export default function CartPage() {
 
               <div className="space-y-3">
                 <div className="flex justify-between font-sans text-sm text-[var(--color-text-secondary)]">
-                  <span>Subtotal</span>
-                  <span className="font-mono">{formatQ(subtotal)}</span>
+                  <span>Subtotal (sin IVA)</span>
+                  <span className="font-mono">{formatQ(base)}</span>
                 </div>
                 <div className="flex justify-between font-sans text-sm text-[var(--color-text-secondary)]">
-                  <span>IVA (12%)</span>
+                  <span>IVA incluido (12%)</span>
                   <span className="font-mono">{formatQ(iva)}</span>
                 </div>
                 <Separator />

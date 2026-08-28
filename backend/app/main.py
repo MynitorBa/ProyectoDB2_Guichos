@@ -4,6 +4,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.encoders import ENCODERS_BY_TYPE
+from bson import ObjectId
+from bson.decimal128 import Decimal128
+
+# Enseña a FastAPI a serializar tipos BSON que pymongo devuelve en documentos MongoDB
+ENCODERS_BY_TYPE[ObjectId] = str
+ENCODERS_BY_TYPE[Decimal128] = lambda d: float(d.to_decimal())
 
 from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
@@ -39,10 +46,22 @@ async def generic_error_handler(request: Request, exc: Exception):
         'Error no controlado en %s %s', request.method, request.url.path,
         exc_info=(type(exc), exc, exc.__traceback__),
     )
-    return JSONResponse(
+    origin = request.headers.get('origin', '')
+    allowed_origins = [
+        settings.FRONTEND_URL,
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ]
+    response = JSONResponse(
         status_code=500,
         content={'detail': 'Error interno del servidor.', 'code': 'INTERNAL_ERROR'},
     )
+    # Algunos errores 500 bypass la CORSMiddleware; se agregan las cabeceras
+    # manualmente para que el frontend siempre pueda leer la respuesta de error.
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
 
 
 # Archivos estáticos (imágenes de productos)

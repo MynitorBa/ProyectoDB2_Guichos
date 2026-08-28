@@ -61,7 +61,7 @@ def registrar_evento(
         {'producto_id': producto_id},
         sort=[('version', -1)]
     )
-    siguiente_version = (ultimo['version'] + 1) if ultimo else 1
+    siguiente_version = (ultimo.get('version', 0) + 1) if ultimo else 1
 
     evento = {
         'producto_id': producto_id,

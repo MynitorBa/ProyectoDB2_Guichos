@@ -10,7 +10,8 @@ import { Separator } from '../components/ui/separator'
 import { Badge } from '../components/ui/badge'
 import { cn, formatQ } from '../lib/utils'
 
-const IVA_RATE = 0.12
+// Guatemala: precios ya incluyen IVA. Se extrae el componente (precio × 12/112).
+const IVA_DIVISOR = 112
 
 const PAYMENT_METHODS = [
   { id: 1, label: 'Tarjeta de crédito',    Icon: CreditCard      },
@@ -77,12 +78,13 @@ function StepIndicator({ current }) {
 }
 
 function OrderSummary({ items, cart }) {
-  const subtotal = items.reduce(
+  const total = items.reduce(
     (acc, item) => acc + (item.subtotal ?? item.precio * item.cantidad),
     0
   )
-  const iva = subtotal * IVA_RATE
-  const total = subtotal + iva
+  // Los precios incluyen IVA. Se extrae el componente (total × 12/112).
+  const base = total / 1.12
+  const iva = total - base
 
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 sticky top-20">
@@ -104,11 +106,11 @@ function OrderSummary({ items, cart }) {
       <Separator />
       <div className="space-y-2 mt-3">
         <div className="flex justify-between font-sans text-sm text-[var(--color-text-secondary)]">
-          <span>Subtotal</span>
-          <span className="font-mono">{formatQ(subtotal)}</span>
+          <span>Subtotal (sin IVA)</span>
+          <span className="font-mono">{formatQ(base)}</span>
         </div>
         <div className="flex justify-between font-sans text-sm text-[var(--color-text-secondary)]">
-          <span>IVA (12%)</span>
+          <span>IVA incluido (12%)</span>
           <span className="font-mono">{formatQ(iva)}</span>
         </div>
         <Separator />

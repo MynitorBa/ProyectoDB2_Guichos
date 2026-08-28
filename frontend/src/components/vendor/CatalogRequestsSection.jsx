@@ -25,7 +25,7 @@ function ProductProposalDialog({ open, onOpenChange }) {
   const fileRef = useRef(null)
   const [form, setForm] = useState({
     nombre: '', descripcion: '', categoria_slugs: [], atributos: {},
-    imagenes: [], precio: '', stock: '', observaciones: '',
+    imagenes: [], precio: '', stock: '', variante_color: '', variante_talla: '', observaciones: '',
   })
   const [uploading, setUploading] = useState(false)
   const { data: categories = [] } = useQuery({
@@ -44,13 +44,15 @@ function ProductProposalDialog({ open, onOpenChange }) {
     categoryName: categories.find(category => category.slug === slug)?.nombre || slug,
     fields: schemaQueries[index]?.data?.atributos || [],
   })).filter(section => section.fields.length > 0)
+  const coloresOpciones = [...new Set(schemaQueries.flatMap(q => q.data?.colores_disponibles || []))]
+  const tallasOpciones = [...new Set(schemaQueries.flatMap(q => q.data?.tallas_disponibles || []))]
   const mutation = useMutation({
     mutationFn: proposeProduct,
     onSuccess: () => {
       toast.success('Propuesta enviada para revisión.')
       queryClient.invalidateQueries({ queryKey: ['vendor-catalog-requests'] })
       onOpenChange(false)
-      setForm({ nombre: '', descripcion: '', categoria_slugs: [], atributos: {}, imagenes: [], precio: '', stock: '', observaciones: '' })
+      setForm({ nombre: '', descripcion: '', categoria_slugs: [], atributos: {}, imagenes: [], precio: '', stock: '', variante_color: '', variante_talla: '', observaciones: '' })
     },
     onError: err => toast.error(err?.response?.data?.detail || 'No se pudo enviar la propuesta.'),
   })
@@ -93,6 +95,8 @@ function ProductProposalDialog({ open, onOpenChange }) {
       categoria_slugs: form.categoria_slugs, atributos: attributes,
       imagen_ids: form.imagenes.map(i => i.id),
       precio: Number(form.precio), stock: Number(form.stock) || 0,
+      variante_color: form.variante_color.trim(),
+      variante_talla: form.variante_talla.trim(),
       observaciones: form.observaciones || null,
     })
   }
@@ -117,6 +121,10 @@ function ProductProposalDialog({ open, onOpenChange }) {
           <div className="grid grid-cols-2 gap-3">{section.fields.map(attr => <div key={attr.nombre}>{attr.tipo === 'boolean' ? <label className="flex items-center gap-2 pt-5 cursor-pointer"><input type="checkbox" checked={!!form.atributos[attr.nombre]} onChange={e => setForm(p => ({ ...p, atributos: { ...p.atributos, [attr.nombre]: e.target.checked } }))} className="h-4 w-4 accent-[var(--color-action)]" /><span className="text-sm">{attr.etiqueta}{attr.requerido ? ' *' : ''}</span></label> : <><Label>{attr.etiqueta}{attr.requerido ? ' *' : ''}</Label><Input type={attr.tipo === 'number' ? 'number' : 'text'} placeholder={attr.placeholder || ''} value={form.atributos[attr.nombre] ?? ''} onChange={e => setForm(p => ({ ...p, atributos: { ...p.atributos, [attr.nombre]: e.target.value } }))} /></>}</div>)}</div>
         </div>)}
         <div className="grid grid-cols-2 gap-3"><div><Label>Precio inicial *</Label><Input type="number" min="0.01" step="0.01" value={form.precio} onChange={e => setForm(p => ({ ...p, precio: e.target.value }))} /></div><div><Label>Stock inicial *</Label><Input type="number" min="0" value={form.stock} onChange={e => setForm(p => ({ ...p, stock: e.target.value }))} /></div></div>
+        {(coloresOpciones.length > 0 || tallasOpciones.length > 0) && <div className="grid grid-cols-2 gap-3">
+          {coloresOpciones.length > 0 && <div><Label>Color</Label><Select value={form.variante_color} onValueChange={v => setForm(p => ({ ...p, variante_color: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar color..." /></SelectTrigger><SelectContent><SelectItem value="">— Sin color —</SelectItem>{coloresOpciones.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>}
+          {tallasOpciones.length > 0 && <div><Label>Talla</Label><Select value={form.variante_talla} onValueChange={v => setForm(p => ({ ...p, variante_talla: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar talla..." /></SelectTrigger><SelectContent><SelectItem value="">— Sin talla —</SelectItem>{tallasOpciones.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>}
+        </div>}
         <p className="text-xs text-[var(--color-text-muted)]">El SKU del producto y de la oferta se generará automáticamente al aprobar.</p>
         <div><div className="flex items-center justify-between"><Label>Imágenes del producto</Label><Button type="button" variant="secondary" size="sm" onClick={() => fileRef.current?.click()} loading={uploading}><ImagePlus size={13} />Agregar</Button></div><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={upload} /><div className="grid grid-cols-4 gap-2 mt-2">{form.imagenes.map(image => <div key={image.id} className="relative aspect-square border rounded overflow-hidden"><img src={image.url} className="w-full h-full object-cover" /><button type="button" onClick={() => removeImage(image)} className="absolute top-1 right-1 rounded-full bg-black/70 text-white p-1"><X size={11} /></button></div>)}</div></div>
         <div><Label>Comentario para el administrador</Label><textarea rows={2} value={form.observaciones} onChange={e => setForm(p => ({ ...p, observaciones: e.target.value }))} className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm" /></div>
@@ -129,24 +137,40 @@ function ProductProposalDialog({ open, onOpenChange }) {
 // Dialog para solicitar una oferta sobre un producto ya existente, con precio y stock propios del vendedor
 function OfferProposalDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({ producto_ref: '', precio: '', stock: '', observaciones: '' })
+  const [form, setForm] = useState({ producto_ref: '', precio: '', stock: '', variante_color: '', variante_talla: '', observaciones: '' })
   const { data } = useQuery({
     queryKey: ['products-for-offer-request'],
     queryFn: () => getProducts({ page_size: 100, orden: 'nombre_asc' }).then(r => r.data),
     enabled: open,
   })
   const products = data?.items || []
+  const selectedProduct = products.find(p => p._id === form.producto_ref)
+  const productSlugs = selectedProduct?.categorias?.map(c => c.slug) || []
+  const offerSchemaQueries = useQueries({
+    queries: productSlugs.map(slug => ({
+      queryKey: ['category-schema', slug],
+      queryFn: () => getCategorySchema(slug).then(r => r.data),
+      enabled: !!slug,
+      staleTime: 5 * 60 * 1000,
+    })),
+  })
+  const coloresOpciones = [...new Set(offerSchemaQueries.flatMap(q => q.data?.colores_disponibles || []))]
+  const tallasOpciones = [...new Set(offerSchemaQueries.flatMap(q => q.data?.tallas_disponibles || []))]
   const mutation = useMutation({
     mutationFn: proposeOffer,
-    onSuccess: () => { toast.success('Solicitud de oferta enviada.'); queryClient.invalidateQueries({ queryKey: ['vendor-catalog-requests'] }); onOpenChange(false); setForm({ producto_ref: '', precio: '', stock: '', observaciones: '' }) },
+    onSuccess: () => { toast.success('Solicitud de oferta enviada.'); queryClient.invalidateQueries({ queryKey: ['vendor-catalog-requests'] }); onOpenChange(false); setForm({ producto_ref: '', precio: '', stock: '', variante_color: '', variante_talla: '', observaciones: '' }) },
     onError: err => toast.error(err?.response?.data?.detail || 'No se pudo enviar la solicitud.'),
   })
-  function submit(e) { e.preventDefault(); if (!form.producto_ref || !form.precio) return toast.error('Selecciona producto y precio.'); mutation.mutate({ producto_ref: form.producto_ref, precio: Number(form.precio), stock: Number(form.stock) || 0, observaciones: form.observaciones || null }) }
+  function submit(e) { e.preventDefault(); if (!form.producto_ref || !form.precio) return toast.error('Selecciona producto y precio.'); mutation.mutate({ producto_ref: form.producto_ref, precio: Number(form.precio), stock: Number(form.stock) || 0, variante_color: form.variante_color.trim(), variante_talla: form.variante_talla.trim(), observaciones: form.observaciones || null }) }
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
     <DialogTitle>Solicitar una oferta</DialogTitle><DialogDescription>Publicarás tu propio precio e inventario sobre un producto existente. Las imágenes pertenecen al producto.</DialogDescription>
     <form onSubmit={submit} className="space-y-4">
-      <div><Label>Producto *</Label><Select value={form.producto_ref} onValueChange={v => setForm(p => ({ ...p, producto_ref: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar producto..." /></SelectTrigger><SelectContent>{products.map(p => <SelectItem key={p._id} value={p._id}>{p.nombre} · {p.sku}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Producto *</Label><Select value={form.producto_ref} onValueChange={v => setForm(p => ({ ...p, producto_ref: v, variante_color: '', variante_talla: '' }))}><SelectTrigger><SelectValue placeholder="Seleccionar producto..." /></SelectTrigger><SelectContent>{products.map(p => <SelectItem key={p._id} value={p._id}>{p.nombre} · {p.sku}</SelectItem>)}</SelectContent></Select></div>
       <div className="grid grid-cols-2 gap-3"><div><Label>Tu precio *</Label><Input type="number" min="0.01" step="0.01" value={form.precio} onChange={e => setForm(p => ({ ...p, precio: e.target.value }))} /></div><div><Label>Tu stock *</Label><Input type="number" min="0" value={form.stock} onChange={e => setForm(p => ({ ...p, stock: e.target.value }))} /></div></div>
+      {(coloresOpciones.length > 0 || tallasOpciones.length > 0) && <div className="grid grid-cols-2 gap-3">
+        {coloresOpciones.length > 0 && <div><Label>Color</Label><Select value={form.variante_color} onValueChange={v => setForm(p => ({ ...p, variante_color: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar color..." /></SelectTrigger><SelectContent><SelectItem value="">— Sin color —</SelectItem>{coloresOpciones.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>}
+        {tallasOpciones.length > 0 && <div><Label>Talla</Label><Select value={form.variante_talla} onValueChange={v => setForm(p => ({ ...p, variante_talla: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar talla..." /></SelectTrigger><SelectContent><SelectItem value="">— Sin talla —</SelectItem>{tallasOpciones.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>}
+      </div>}
       <p className="text-xs text-[var(--color-text-muted)]">El SKU de la oferta se generará automáticamente al aprobar.</p>
       <div><Label>Comentario</Label><textarea rows={3} value={form.observaciones} onChange={e => setForm(p => ({ ...p, observaciones: e.target.value }))} className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm" /></div>
       <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancelar</Button><Button type="submit" loading={mutation.isPending}>Enviar solicitud</Button></div>
@@ -164,7 +188,7 @@ export function CatalogRequestsSection() {
   const rows = data?.items || []
   return <div className="space-y-4">
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><button onClick={() => setProductOpen(true)} className="text-left p-4 border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] hover:border-[var(--color-action)]"><FilePlus2 className="text-[var(--color-action)] mb-2" /><p className="font-display font-semibold">Proponer producto</p><p className="text-xs text-[var(--color-text-muted)]">Información, categorías, imágenes y oferta inicial.</p></button><button onClick={() => setOfferOpen(true)} className="text-left p-4 border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] hover:border-[var(--color-jade)]"><Layers className="text-[var(--color-jade)] mb-2" /><p className="font-display font-semibold">Solicitar oferta</p><p className="text-xs text-[var(--color-text-muted)]">Tu precio y stock para un producto ya publicado.</p></button></div>
-    <div className="space-y-2">{isLoading ? <Skeleton className="h-24" /> : rows.length === 0 ? <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">Todavía no has enviado solicitudes.</div> : rows.map(row => <div key={row.id} className="p-4 border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] flex gap-4 items-start"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-mono text-xs">#{row.id}</span><Badge variant={STATUS[row.estado]}>{row.estado}</Badge><Badge variant="secondary">{row.tipo === 'producto_nuevo' ? 'Producto nuevo' : 'Oferta'}</Badge></div><p className="font-display font-semibold mt-2">{row.nombre || row.producto_nombre}</p><p className="text-xs text-[var(--color-text-muted)] mt-1">{formatQ(row.precio_propuesto)} · {row.stock_propuesto} unidades · {formatDate(row.fecha_creacion)}</p>{row.observaciones_admin && <p className="text-xs mt-2 p-2 rounded bg-[var(--color-background)]">Administrador: {row.observaciones_admin}</p>}</div>{row.estado === 'pendiente' && <Button size="sm" variant="secondary" onClick={() => cancelMutation.mutate(row.id)}>Cancelar</Button>}</div>)}</div>
+    <div className="space-y-2">{isLoading ? <Skeleton className="h-24" /> : rows.length === 0 ? <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">Todavía no has enviado solicitudes.</div> : rows.map(row => <div key={row.id} className="p-4 border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] flex gap-4 items-start"><div className="flex-1"><div className="flex items-center gap-2"><span className="font-mono text-xs">#{row.id}</span><Badge variant={STATUS[row.estado]}>{row.estado}</Badge><Badge variant="secondary">{row.tipo === 'producto_nuevo' ? 'Producto nuevo' : 'Oferta'}</Badge></div><p className="font-display font-semibold mt-2">{row.nombre || row.producto_nombre}</p><p className="text-xs text-[var(--color-text-muted)] mt-1">{formatQ(row.precio_propuesto)} · {row.stock_propuesto} unidades{(row.variante_color || row.variante_talla) ? ` · ${[row.variante_color, row.variante_talla].filter(Boolean).join(' / ')}` : ''} · {formatDate(row.fecha_creacion)}</p>{row.observaciones_admin && <p className="text-xs mt-2 p-2 rounded bg-[var(--color-background)]">Administrador: {row.observaciones_admin}</p>}</div>{row.estado === 'pendiente' && <Button size="sm" variant="secondary" onClick={() => cancelMutation.mutate(row.id)}>Cancelar</Button>}</div>)}</div>
     <ProductProposalDialog open={productOpen} onOpenChange={setProductOpen} />
     <OfferProposalDialog open={offerOpen} onOpenChange={setOfferOpen} />
   </div>

@@ -17,16 +17,23 @@ def generate_product_sku(mongo: Database, prefix: str) -> str:
     raise ValueError('No se pudo generar un SKU único para el producto.')
 
 
-# El primer candidato es '{product_sku}-V{vendor_id}'; si ya existe, agrega un sufijo aleatorio
+# El primer candidato incluye color y talla como sufijos cuando aplica; si colisiona, agrega hex aleatorio
 def generate_offer_sku(
     db: Session,
     *,
     product_sku: str,
     vendor_id: int,
+    variante_color: str = '',
+    variante_talla: str = '',
     exclude_offer_id: int | None = None,
 ) -> str:
     """Genera un SKU comercial sin aceptar identificadores elegidos por usuario."""
-    suffix = f'-V{vendor_id}'
+    parts = [f'V{vendor_id}']
+    if variante_color:
+        parts.append(variante_color[:4].upper().replace(' ', ''))
+    if variante_talla:
+        parts.append(variante_talla[:4].upper().replace(' ', ''))
+    suffix = '-' + '-'.join(parts)
     base = (product_sku or 'PRODUCTO')[:50 - len(suffix)]
     candidates = [f'{base}{suffix}']
     candidates.extend(

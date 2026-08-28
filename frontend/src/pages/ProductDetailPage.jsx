@@ -49,6 +49,8 @@ export default function ProductDetailPage() {
   const [selectedImg, setSelectedImg] = useState(0)
   const [cantidad, setCantidad] = useState(1)
   const [selectedOfferId, setSelectedOfferId] = useState(null)
+  const [selectedColor, setSelectedColor] = useState(null)
+  const [selectedTalla, setSelectedTalla] = useState(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['product', id],
@@ -63,14 +65,16 @@ export default function ProductDetailPage() {
       navigate('/login')
       return
     }
-    const offer = (product.ofertas || []).find((item) => item.oferta_id === selectedOfferId)
-      || product.ofertas?.[0]
-    if (!offer?.oferta_id && !product.oferta_id) {
+    if (!selectedOffer?.oferta_id && !product.oferta_id) {
       toast.error('Producto no disponible para compra')
       return
     }
+    if (hasVariants && (!selectedColor || !selectedTalla)) {
+      toast.error('Selecciona color y talla antes de agregar al carrito')
+      return
+    }
     try {
-      await add(offer?.oferta_id || product.oferta_id, cantidad)
+      await add(selectedOffer?.oferta_id || product.oferta_id, cantidad)
       toast.success(`${product.nombre} agregado al carrito`)
     } catch {
       toast.error('No se pudo agregar al carrito')
@@ -101,8 +105,21 @@ export default function ProductDetailPage() {
   const resenas = product.resumen_resenas || {}
   const atributos = product.atributos || {}
   const ofertas = product.ofertas || []
-  const selectedOffer = ofertas.find((item) => item.oferta_id === selectedOfferId)
-    || ofertas[0]
+
+  const hasVariants = ofertas.some((o) => o.variante_color || o.variante_talla)
+  const uniqueColors = hasVariants ? [...new Set(ofertas.map((o) => o.variante_color).filter(Boolean))] : []
+  const uniqueTallas = hasVariants ? [...new Set(ofertas.map((o) => o.variante_talla).filter(Boolean))] : []
+  const tallasForColor = selectedColor
+    ? [...new Set(ofertas.filter((o) => o.variante_color === selectedColor).map((o) => o.variante_talla).filter(Boolean))]
+    : uniqueTallas
+  const variantOffer = hasVariants
+    ? ofertas.find((o) => o.variante_color === selectedColor && o.variante_talla === selectedTalla)
+      || (selectedColor ? ofertas.find((o) => o.variante_color === selectedColor) : null)
+    : null
+
+  const selectedOffer = hasVariants
+    ? (variantOffer || ofertas[0])
+    : (ofertas.find((item) => item.oferta_id === selectedOfferId) || ofertas[0])
   const displayPrice = selectedOffer?.precio ?? product.precio
   const displayStock = selectedOffer?.stock ?? product.stock ?? 0
   const displayAvailable = selectedOffer?.disponible ?? product.disponible
@@ -209,7 +226,65 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {ofertas.length > 1 && (
+            {hasVariants && uniqueColors.length > 0 && (
+              <div className="space-y-2">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Color</p>
+                <div className="flex flex-wrap gap-2">
+                  {uniqueColors.map((color) => {
+                    const available = ofertas.some((o) => o.variante_color === color && o.disponible)
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => { setSelectedColor(color); setSelectedTalla(null); setCantidad(1) }}
+                        disabled={!available}
+                        className={`px-3 py-1.5 rounded-full border text-sm font-sans transition-colors ${
+                          selectedColor === color
+                            ? 'border-[var(--color-action)] bg-[var(--color-action)]/10 text-[var(--color-action)] font-semibold'
+                            : available
+                              ? 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:border-[var(--color-action)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)] line-through cursor-not-allowed'
+                        }`}
+                      >
+                        {color}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {hasVariants && uniqueTallas.length > 0 && (
+              <div className="space-y-2">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Talla</p>
+                <div className="flex flex-wrap gap-2">
+                  {tallasForColor.map((talla) => {
+                    const available = ofertas.some(
+                      (o) => o.variante_talla === talla && (!selectedColor || o.variante_color === selectedColor) && o.disponible
+                    )
+                    return (
+                      <button
+                        key={talla}
+                        type="button"
+                        onClick={() => { setSelectedTalla(talla); setCantidad(1) }}
+                        disabled={!available}
+                        className={`min-w-[40px] px-3 py-1.5 rounded-[var(--radius-md)] border text-sm font-mono font-semibold transition-colors ${
+                          selectedTalla === talla
+                            ? 'border-[var(--color-action)] bg-[var(--color-action)] text-white'
+                            : available
+                              ? 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:border-[var(--color-action)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)] line-through cursor-not-allowed'
+                        }`}
+                      >
+                        {talla}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!hasVariants && ofertas.length > 1 && (
               <div className="space-y-2">
                 <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
                   Otras ofertas

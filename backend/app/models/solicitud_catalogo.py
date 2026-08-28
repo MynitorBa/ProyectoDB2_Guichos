@@ -28,6 +28,8 @@ class SolicitudCatalogo(Base):
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     atributos: Mapped[dict] = mapped_column(JSON, default=dict)
     sku_propuesto: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    variante_color: Mapped[str] = mapped_column(String(50), default='', server_default='')
+    variante_talla: Mapped[str] = mapped_column(String(20), default='', server_default='')
     precio_propuesto: Mapped[Decimal] = mapped_column(DECIMAL(12, 2))
     stock_propuesto: Mapped[int] = mapped_column(Integer)
     observaciones_vendedor: Mapped[str | None] = mapped_column(Text, nullable=True)

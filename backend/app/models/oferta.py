@@ -24,6 +24,8 @@ class Oferta(Base):
         Enum('borrador', 'activa', 'pausada', 'descontinuada'),
         default='activa',
     )
+    variante_color: Mapped[str] = mapped_column(String(50), default='', server_default='')
+    variante_talla: Mapped[str] = mapped_column(String(20), default='', server_default='')
     version: Mapped[int] = mapped_column(Integer, default=1)
     fecha_creacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     fecha_actualizacion: Mapped[datetime] = mapped_column(

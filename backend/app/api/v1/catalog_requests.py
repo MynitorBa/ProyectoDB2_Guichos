@@ -55,6 +55,8 @@ class ProductProposalCreate(BaseModel):
     imagen_ids: list[int] = Field(default_factory=list, max_length=8)
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
+    variante_color: str = ''
+    variante_talla: str = ''
     observaciones: str | None = Field(default=None, max_length=2000)
 
 
@@ -63,6 +65,8 @@ class OfferProposalCreate(BaseModel):
     producto_ref: str = Field(min_length=24, max_length=24)
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
+    variante_color: str = ''
+    variante_talla: str = ''
     observaciones: str | None = Field(default=None, max_length=2000)
 
 
@@ -171,6 +175,8 @@ def _serialize_request(
         'atributos': request.atributos or {},
         'imagenes': images,
         'sku_propuesto': request.sku_propuesto,
+        'variante_color': request.variante_color or '',
+        'variante_talla': request.variante_talla or '',
         'precio_propuesto': float(request.precio_propuesto),
         'stock_propuesto': request.stock_propuesto,
         'observaciones_vendedor': request.observaciones_vendedor,
@@ -258,6 +264,8 @@ def propose_product(
         vendedor_id=vendor.id, tipo='producto_nuevo', estado='pendiente',
         nombre=payload.nombre, descripcion=payload.descripcion,
         atributos=attributes,
+        variante_color=payload.variante_color,
+        variante_talla=payload.variante_talla,
         precio_propuesto=payload.precio, stock_propuesto=payload.stock,
         observaciones_vendedor=payload.observaciones,
     )
@@ -298,19 +306,25 @@ def propose_offer(
     existing_offer = db.query(Oferta).filter(
         Oferta.producto_ref == payload.producto_ref,
         Oferta.vendedor_id == vendor.id,
+        Oferta.variante_color == (payload.variante_color or ''),
+        Oferta.variante_talla == (payload.variante_talla or ''),
         Oferta.estado != 'descontinuada',
     ).first()
     if existing_offer:
-        raise HTTPException(409, 'Ya tienes una oferta vigente para este producto.')
+        raise HTTPException(409, 'Ya tienes una oferta vigente para este producto con esta variante.')
     pending = db.query(SolicitudCatalogo).filter_by(
         vendedor_id=vendor.id, tipo='oferta_existente', estado='pendiente',
         producto_ref_solicitado=payload.producto_ref,
+        variante_color=payload.variante_color or '',
+        variante_talla=payload.variante_talla or '',
     ).first()
     if pending:
-        raise HTTPException(409, 'Ya existe una solicitud pendiente para este producto.')
+        raise HTTPException(409, 'Ya existe una solicitud pendiente para este producto con esta variante.')
     request = SolicitudCatalogo(
         vendedor_id=vendor.id, tipo='oferta_existente', estado='pendiente',
         producto_ref_solicitado=payload.producto_ref,
+        variante_color=payload.variante_color or '',
+        variante_talla=payload.variante_talla or '',
         precio_propuesto=payload.precio,
         stock_propuesto=payload.stock,
         observaciones_vendedor=payload.observaciones,
@@ -452,6 +466,8 @@ def _approve_new_product(
             producto_ref=product['_id'], vendedor_id=vendor.id, sku=sku,
             precio_actual=request.precio_propuesto, moneda='GTQ',
             estado='activa', version=1,
+            variante_color=request.variante_color or '',
+            variante_talla=request.variante_talla or '',
         )
         db.add(offer)
         db.flush()
@@ -499,10 +515,12 @@ def _approve_offer(
     ).first():
         raise HTTPException(409, 'El producto dejó de estar disponible.')
     offer = db.query(Oferta).filter_by(
-        producto_ref=product_ref, vendedor_id=vendor.id
+        producto_ref=product_ref, vendedor_id=vendor.id,
+        variante_color=request.variante_color or '',
+        variante_talla=request.variante_talla or '',
     ).first()
     if offer and offer.estado != 'descontinuada':
-        raise HTTPException(409, 'El vendedor ya tiene una oferta vigente.')
+        raise HTTPException(409, 'El vendedor ya tiene una oferta vigente para esta variante.')
     try:
         sku = generate_offer_sku(
             db,
@@ -525,6 +543,8 @@ def _approve_offer(
             producto_ref=product_ref, vendedor_id=vendor.id, sku=sku,
             precio_actual=request.precio_propuesto, moneda='GTQ',
             estado='activa', version=1,
+            variante_color=request.variante_color or '',
+            variante_talla=request.variante_talla or '',
         )
         db.add(offer)
         db.flush()

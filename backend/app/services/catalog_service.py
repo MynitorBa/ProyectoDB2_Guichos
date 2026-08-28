@@ -15,15 +15,32 @@ from app.services.product_history_service import registrar_evento
 from app.services.offer_service import listar_ofertas_por_referencias, oferta_principal
 
 
+def _to_json(value):
+    """Convierte recursivamente valores BSON no serializables a tipos Python nativos."""
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _to_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_json(item) for item in value]
+    return value
+
+
 def _serialize(doc: dict) -> dict:
     """Convierte ObjectId a string para serialización JSON."""
-    doc['_id'] = str(doc['_id'])
+    doc = _to_json(doc)
     if 'imagenes' in doc:
-        doc['imagenes'] = [
-            img['url'] if isinstance(img, dict) else img
-            for img in doc['imagenes']
-            if img
-        ]
+        urls = []
+        for img in doc['imagenes']:
+            if not img:
+                continue
+            if isinstance(img, dict):
+                url = img.get('url')
+                if url:
+                    urls.append(url)
+            else:
+                urls.append(img)
+        doc['imagenes'] = urls
     if 'categorias' not in doc and 'categoria' in doc:
         doc['categorias'] = [doc['categoria']]
     return doc

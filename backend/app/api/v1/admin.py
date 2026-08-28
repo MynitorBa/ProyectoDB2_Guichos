@@ -73,6 +73,8 @@ class OfferCreate(BaseModel):
     vendedor_id: int
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
+    variante_color: str = ''
+    variante_talla: str = ''
 
 
 class OfferUpdate(BaseModel):
@@ -96,12 +98,16 @@ class CategoriaCreate(BaseModel):
     padre_id: int | None = None
     sku_prefix: str | None = None
     atributos: list[AtributoEsquema] = []
+    tallas_disponibles: list[str] = []
+    colores_disponibles: list[str] = []
 
 
 class EsquemaUpdate(BaseModel):
     atributos: list[AtributoEsquema]
     categoria_nombre: str | None = None
     sku_prefix: str | None = None
+    tallas_disponibles: list[str] = []
+    colores_disponibles: list[str] = []
 
 
 # ── Gestión de usuarios ───────────────────────────────────────────────────────
@@ -178,6 +184,9 @@ def update_user_roles(
     current_user: Usuario = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
+    if not payload.roles:
+        raise HTTPException(400, 'El usuario debe tener al menos un rol.')
+
     if user_id == current_user.id and 'administrador' not in payload.roles:
         raise HTTPException(400, 'No puedes quitarte el rol de administrador a ti mismo.')
 
@@ -621,22 +630,33 @@ def actualizar_producto(
         )
         needs_commit = True
 
-    if oferta and nuevo_vendedor_id_sql is not None:
-        oferta.vendedor_id = nuevo_vendedor_id_sql
-        vendedor = mysql_db.get(Vendedor, nuevo_vendedor_id_sql)
-        enqueue_outbox(
-            mysql_db,
-            tipo_evento='oferta.vendedor_actualizado',
-            agregado_tipo='oferta',
-            agregado_id=oferta.id,
-            producto_ref=oferta.producto_ref,
-            payload={'projection': {
-                'vendedor_id': vendedor.id,
-                'vendedor_usuario_id': vendedor.usuario_id,
-                'vendedor_nombre': vendedor.nombre_comercial,
-            }},
-        )
-        needs_commit = True
+    vendor_actualizado = False
+    if oferta and nuevo_vendedor_id_sql is not None and oferta.vendedor_id != nuevo_vendedor_id_sql:
+        # Si el vendor objetivo ya tiene oferta para este producto, no reasignar
+        # (el form siempre envía el vendedor de la oferta principal, que puede ser
+        # distinto al de la primera oferta por id; en ese caso no hay nada que cambiar)
+        ya_tiene_oferta = mysql_db.query(Oferta).filter(
+            Oferta.producto_ref == producto_id,
+            Oferta.vendedor_id == nuevo_vendedor_id_sql,
+            Oferta.id != oferta.id,
+        ).first()
+        if not ya_tiene_oferta:
+            oferta.vendedor_id = nuevo_vendedor_id_sql
+            vendedor = mysql_db.get(Vendedor, nuevo_vendedor_id_sql)
+            enqueue_outbox(
+                mysql_db,
+                tipo_evento='oferta.vendedor_actualizado',
+                agregado_tipo='oferta',
+                agregado_id=oferta.id,
+                producto_ref=oferta.producto_ref,
+                payload={'projection': {
+                    'vendedor_id': vendedor.id,
+                    'vendedor_usuario_id': vendedor.usuario_id,
+                    'vendedor_nombre': vendedor.nombre_comercial,
+                }},
+            )
+            vendor_actualizado = True
+            needs_commit = True
 
     if oferta and ('estado' in cambios or 'disponible' in cambios):
         if 'estado' in cambios:
@@ -667,7 +687,7 @@ def actualizar_producto(
         needs_commit = True
 
     if oferta and (
-        nuevo_vendedor_id_sql is not None
+        vendor_actualizado
         or 'estado' in cambios
         or 'disponible' in cambios
     ):
@@ -902,8 +922,10 @@ def listar_categorias_admin(
     """Lista categorías de MySQL enriquecidas con su esquema de MongoDB."""
     categorias = db.query(Categoria).order_by(Categoria.orden, Categoria.nombre).all()
     esquemas = {
-        e['categoria_slug']: e.get('atributos', [])
-        for e in mongo.categoria_esquemas.find({}, {'categoria_slug': 1, 'atributos': 1})
+        e['categoria_slug']: e
+        for e in mongo.categoria_esquemas.find(
+            {}, {'categoria_slug': 1, 'atributos': 1, 'tallas_disponibles': 1, 'colores_disponibles': 1}
+        )
     }
     return [
         {
@@ -914,7 +936,9 @@ def listar_categorias_admin(
             'descripcion': c.descripcion,
             'padre_id': c.categoria_padre_id,
             'activa': c.activa,
-            'atributos': esquemas.get(c.slug, []),  # schema desde Mongo
+            'atributos': esquemas.get(c.slug, {}).get('atributos', []),
+            'tallas_disponibles': esquemas.get(c.slug, {}).get('tallas_disponibles', []),
+            'colores_disponibles': esquemas.get(c.slug, {}).get('colores_disponibles', []),
         }
         for c in categorias
     ]
@@ -960,6 +984,8 @@ def crear_categoria(
             'categoria_slug': payload.slug,
             'categoria_nombre': payload.nombre,
             'atributos': [a.model_dump() for a in payload.atributos],
+            'tallas_disponibles': payload.tallas_disponibles,
+            'colores_disponibles': payload.colores_disponibles,
         }},
         upsert=True,
     )
@@ -997,6 +1023,8 @@ def actualizar_esquema(
         {'$set': {
             'categoria_nombre': payload.categoria_nombre or cat.nombre,
             'atributos': [a.model_dump() for a in payload.atributos],
+            'tallas_disponibles': payload.tallas_disponibles,
+            'colores_disponibles': payload.colores_disponibles,
         }},
         upsert=True,
     )
@@ -1322,6 +1350,8 @@ def list_product_offers(
             'stock': max(0, stock_disp - stock_res),
             'stock_disponible': stock_disp,
             'version': oferta.version,
+            'variante_color': oferta.variante_color or '',
+            'variante_talla': oferta.variante_talla or '',
         })
     return result
 
@@ -1348,18 +1378,25 @@ def add_product_offer(
 
     existing = (
         db.query(Oferta)
-        .filter_by(producto_ref=producto_ref, vendedor_id=payload.vendedor_id)
+        .filter_by(
+            producto_ref=producto_ref,
+            vendedor_id=payload.vendedor_id,
+            variante_color=payload.variante_color,
+            variante_talla=payload.variante_talla,
+        )
         .filter(Oferta.estado != 'descontinuada')
         .first()
     )
     if existing:
-        raise HTTPException(400, 'Este vendedor ya tiene una oferta activa para este producto.')
+        raise HTTPException(400, 'Ya existe una oferta activa para este vendedor con esta variante.')
 
     try:
         sku = generate_offer_sku(
             db,
             product_sku=doc.get('sku', producto_ref[:8]),
             vendor_id=vendedor.id,
+            variante_color=payload.variante_color,
+            variante_talla=payload.variante_talla,
         )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -1372,6 +1409,8 @@ def add_product_offer(
         moneda='GTQ',
         estado='activa',
         version=1,
+        variante_color=payload.variante_color,
+        variante_talla=payload.variante_talla,
     )
     db.add(oferta)
     db.flush()
@@ -1410,6 +1449,8 @@ def add_product_offer(
         'precio': float(oferta.precio_actual),
         'estado': oferta.estado,
         'stock': payload.stock,
+        'variante_color': oferta.variante_color,
+        'variante_talla': oferta.variante_talla,
     }
 
 

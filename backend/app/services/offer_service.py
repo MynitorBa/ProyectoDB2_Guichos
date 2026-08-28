@@ -117,6 +117,8 @@ def listar_ofertas_por_referencias(
             'vendedor_nombre': vendor.nombre_comercial,
             'stock': available,
             'disponible': offer.estado == 'activa' and available > 0,
+            'variante_color': offer.variante_color or '',
+            'variante_talla': offer.variante_talla or '',
         })
 
     for offers in grouped.values():

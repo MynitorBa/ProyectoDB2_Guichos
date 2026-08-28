@@ -145,8 +145,8 @@ def generar_factura_pdf(pedido, usuario, direccion) -> bytes:
     # ── Totales ───────────────────────────────────────────────────────────────
     story.append(Table(
         [
-            ['Subtotal:', _fmt_q(pedido.subtotal)],
-            ['IVA (12%):', _fmt_q(pedido.impuestos)],
+            ['Subtotal (sin IVA):', _fmt_q(pedido.subtotal)],
+            ['IVA incluido (12%):', _fmt_q(pedido.impuestos)],
             ['TOTAL:', _fmt_q(pedido.total)],
         ],
         colWidths=[14*cm, 4*cm],

@@ -654,6 +654,8 @@ function OffersModal({ product, open, onOpenChange }) {
   const [newVendorId, setNewVendorId] = useState('')
   const [newPrecio, setNewPrecio] = useState('')
   const [newStock, setNewStock] = useState('')
+  const [newColor, setNewColor] = useState('')
+  const [newTalla, setNewTalla] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editPrecio, setEditPrecio] = useState('')
   const [editStock, setEditStock] = useState('')
@@ -670,10 +672,19 @@ function OffersModal({ product, open, onOpenChange }) {
     enabled: open,
   })
 
-  const existingVendorIds = new Set(offers.filter(o => o.estado !== 'descontinuada').map(o => o.vendedor_id))
-  const availableVendors = vendorsData.filter(
-    v => v.vendedor_id && !existingVendorIds.has(v.vendedor_id)
-  )
+  const categorySlugs = (product?.categorias || []).map(c => c.slug)
+  const schemaQueries = useQueries({
+    queries: categorySlugs.map(slug => ({
+      queryKey: ['category-schema', slug],
+      queryFn: () => getCategorySchema(slug).then(r => r.data),
+      enabled: open && !!slug,
+      staleTime: 5 * 60 * 1000,
+    })),
+  })
+  const coloresOpciones = [...new Set(schemaQueries.flatMap(q => q.data?.colores_disponibles || []))]
+  const tallasOpciones = [...new Set(schemaQueries.flatMap(q => q.data?.tallas_disponibles || []))]
+
+  const availableVendors = vendorsData.filter(v => v.vendedor_id)
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['product-offers', product?._id] })
@@ -685,7 +696,7 @@ function OffersModal({ product, open, onOpenChange }) {
     mutationFn: (data) => addProductOffer(product._id, data),
     onSuccess: () => {
       toast.success('Oferta añadida.')
-      setNewVendorId(''); setNewPrecio(''); setNewStock('')
+      setNewVendorId(''); setNewPrecio(''); setNewStock(''); setNewColor(''); setNewTalla('')
       invalidate()
     },
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al añadir oferta.'),
@@ -704,7 +715,13 @@ function OffersModal({ product, open, onOpenChange }) {
   function handleAdd(e) {
     e.preventDefault()
     if (!newVendorId) return
-    addMutation.mutate({ vendedor_id: Number(newVendorId), precio: Number(newPrecio), stock: Number(newStock) })
+    addMutation.mutate({
+      vendedor_id: Number(newVendorId),
+      precio: Number(newPrecio),
+      stock: Number(newStock),
+      variante_color: newColor.trim(),
+      variante_talla: newTalla.trim(),
+    })
   }
 
   function startEdit(offer) {
@@ -741,18 +758,23 @@ function OffersModal({ product, open, onOpenChange }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[var(--color-background)]">
-                  {['Vendedor', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
+                  {['Vendedor', 'Variante', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {offers.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin ofertas registradas</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin ofertas registradas</td></tr>
                 )}
                 {offers.map((offer) => (
                   <tr key={offer.oferta_id} className="border-b border-[var(--color-border)] last:border-0">
                     <td className="px-3 py-2 font-sans font-semibold text-[var(--color-text-primary)]">{offer.vendedor_nombre}</td>
+                    <td className="px-3 py-2 font-sans text-xs text-[var(--color-text-secondary)]">
+                      {offer.variante_color || offer.variante_talla
+                        ? [offer.variante_color, offer.variante_talla].filter(Boolean).join(' / ')
+                        : <span className="text-[var(--color-text-muted)]">—</span>}
+                    </td>
                     <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{offer.sku}</td>
                     <td className="px-3 py-2">
                       {editingId === offer.oferta_id ? (
@@ -795,7 +817,7 @@ function OffersModal({ product, open, onOpenChange }) {
 
         {availableVendors.length > 0 && (
           <form onSubmit={handleAdd} className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3 bg-[var(--color-background)]">
-            <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)]">Añadir oferta de otro vendedor</p>
+            <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)]">Añadir oferta</p>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs">Vendedor *</Label>
@@ -821,14 +843,42 @@ function OffersModal({ product, open, onOpenChange }) {
                 <Input required type="number" min="0" value={newStock} onChange={e => setNewStock(e.target.value)} className="h-8 text-xs mt-1 font-mono" placeholder="0" />
               </div>
             </div>
+            {(coloresOpciones.length > 0 || tallasOpciones.length > 0) && (
+              <div className="grid grid-cols-2 gap-3">
+                {coloresOpciones.length > 0 && (
+                  <div>
+                    <Label className="text-xs">Color</Label>
+                    <Select value={newColor} onValueChange={setNewColor}>
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">— Sin color —</SelectItem>
+                        {coloresOpciones.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {tallasOpciones.length > 0 && (
+                  <div>
+                    <Label className="text-xs">Talla</Label>
+                    <Select value={newTalla} onValueChange={setNewTalla}>
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">— Sin talla —</SelectItem>
+                        {tallasOpciones.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex justify-end">
               <Button type="submit" size="sm" loading={addMutation.isPending} disabled={!newVendorId}><Plus size={13} /> Añadir oferta</Button>
             </div>
           </form>
         )}
 
-        {availableVendors.length === 0 && offers.length > 0 && (
-          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-2">Todos los vendedores registrados ya tienen una oferta para este producto.</p>
+        {availableVendors.length === 0 && (
+          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-2">No hay vendedores registrados para agregar ofertas.</p>
         )}
 
         <div className="flex justify-end pt-1">
@@ -1025,6 +1075,39 @@ function ProductsSection() {
   )
 }
 
+// ── TagInput: entrada de etiquetas para tallas y colores ──
+function TagInput({ values, onChange, placeholder }) {
+  const [input, setInput] = useState('')
+  function add() {
+    const v = input.trim()
+    if (v && !values.includes(v)) onChange([...values, v])
+    setInput('')
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1 min-h-[24px]">
+        {values.map(tag => (
+          <span key={tag} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-sans bg-[var(--color-jade)]/10 text-[var(--color-jade)] border border-[var(--color-jade)]/30">
+            {tag}
+            <button type="button" onClick={() => onChange(values.filter(t => t !== tag))} className="rounded-full hover:bg-[var(--color-jade)]/20 p-0.5"><XIcon size={9} /></button>
+          </span>
+        ))}
+        {values.length === 0 && <span className="text-xs text-[var(--color-text-muted)] italic">Sin opciones aún</span>}
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+          placeholder={placeholder}
+          className="h-7 text-xs"
+        />
+        <Button type="button" size="sm" variant="secondary" onClick={add} className="h-7 px-2"><Plus size={12} /></Button>
+      </div>
+    </div>
+  )
+}
+
 // ── CategoriesSection ──
 function CategoriesSection() {
   const queryClient = useQueryClient()
@@ -1039,8 +1122,12 @@ function CategoriesSection() {
   const [newPadreId, setNewPadreId] = useState('')
   const [newSkuPrefix, setNewSkuPrefix] = useState('')
   const [newAttrs, setNewAttrs] = useState([])
+  const [newTallas, setNewTallas] = useState([])
+  const [newColores, setNewColores] = useState([])
   const [editAttrs, setEditAttrs] = useState([])
   const [editSkuPrefix, setEditSkuPrefix] = useState('')
+  const [editTallas, setEditTallas] = useState([])
+  const [editColores, setEditColores] = useState([])
 
   const { data: cats = [], isLoading } = useQuery({
     queryKey: ['admin-categories'],
@@ -1054,7 +1141,7 @@ function CategoriesSection() {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
       queryClient.invalidateQueries({ queryKey: ['categories'] })
       setCreateOpen(false)
-      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewSkuPrefix(''); setNewAttrs([])
+      setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewSkuPrefix(''); setNewAttrs([]); setNewTallas([]); setNewColores([])
     },
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al crear categoría.'),
   })
@@ -1093,6 +1180,8 @@ function CategoriesSection() {
     setEditTarget(cat)
     setEditAttrs(cat.atributos.length ? cat.atributos.map((a) => ({ ...a })) : [])
     setEditSkuPrefix(cat.sku_prefix || '')
+    setEditTallas(cat.tallas_disponibles || [])
+    setEditColores(cat.colores_disponibles || [])
     setEditOpen(true)
   }
 
@@ -1138,7 +1227,15 @@ function CategoriesSection() {
                   {cat.padre_id ? cats.find((c) => c.id === cat.padre_id)?.nombre || `#${cat.padre_id}` : <span className="text-[var(--color-text-muted)]">—</span>}
                 </td>
                 <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)]">
-                  {cat.atributos.length > 0 ? cat.atributos.map((a) => a.etiqueta).join(', ') : <span className="text-[var(--color-text-muted)] italic">sin campos</span>}
+                  <div className="space-y-1">
+                    {cat.atributos.length > 0 ? <span className="text-xs">{cat.atributos.map((a) => a.etiqueta).join(', ')}</span> : <span className="text-[var(--color-text-muted)] italic text-xs">sin campos</span>}
+                    {(cat.tallas_disponibles?.length > 0 || cat.colores_disponibles?.length > 0) && (
+                      <div className="flex gap-1 flex-wrap">
+                        {cat.tallas_disponibles?.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-jade)]/10 text-[var(--color-jade)] border border-[var(--color-jade)]/20">{cat.tallas_disponibles.length} tallas</span>}
+                        {cat.colores_disponibles?.length > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-action)]/10 text-[var(--color-action)] border border-[var(--color-action)]/20">{cat.colores_disponibles.length} colores</span>}
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1">
@@ -1164,7 +1261,7 @@ function CategoriesSection() {
           <DialogDescription>Los datos básicos se guardan en MySQL. Los campos personalizados se guardan en MongoDB.</DialogDescription>
           <form className="space-y-4 mt-2" onSubmit={(e) => {
             e.preventDefault()
-            createMut.mutate({ nombre: newNombre, slug: newSlug || slugify(newNombre), descripcion: newDesc || undefined, padre_id: newPadreId ? Number(newPadreId) : undefined, sku_prefix: newSkuPrefix.trim().toUpperCase() || undefined, atributos: newAttrs.filter((a) => a.nombre && a.etiqueta) })
+            createMut.mutate({ nombre: newNombre, slug: newSlug || slugify(newNombre), descripcion: newDesc || undefined, padre_id: newPadreId ? Number(newPadreId) : undefined, sku_prefix: newSkuPrefix.trim().toUpperCase() || undefined, atributos: newAttrs.filter((a) => a.nombre && a.etiqueta), tallas_disponibles: newTallas, colores_disponibles: newColores })
           }}>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -1216,6 +1313,19 @@ function CategoriesSection() {
                 ))}
               </div>
             </div>
+            <Separator />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Tallas disponibles</p>
+                <p className="font-sans text-[11px] text-[var(--color-text-muted)]">Escribe y presiona Enter o +</p>
+                <TagInput values={newTallas} onChange={setNewTallas} placeholder="S, M, L, XL, 42..." />
+              </div>
+              <div className="space-y-1.5">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Colores disponibles</p>
+                <p className="font-sans text-[11px] text-[var(--color-text-muted)]">Escribe y presiona Enter o +</p>
+                <TagInput values={newColores} onChange={setNewColores} placeholder="Rojo, Azul, Negro..." />
+              </div>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <DialogClose asChild><Button type="button" variant="secondary">Cancelar</Button></DialogClose>
               <Button type="submit" loading={createMut.isPending}>Crear categoría</Button>
@@ -1231,7 +1341,7 @@ function CategoriesSection() {
           <DialogDescription>Modifica los campos personalizados de esta categoría (solo MongoDB).</DialogDescription>
           <form className="space-y-4 mt-2" onSubmit={(e) => {
             e.preventDefault()
-            schemaMut.mutate({ slug: editTarget.slug, data: { atributos: editAttrs.filter((a) => a.nombre && a.etiqueta), sku_prefix: editSkuPrefix.trim().toUpperCase() || null } })
+            schemaMut.mutate({ slug: editTarget.slug, data: { atributos: editAttrs.filter((a) => a.nombre && a.etiqueta), sku_prefix: editSkuPrefix.trim().toUpperCase() || null, tallas_disponibles: editTallas, colores_disponibles: editColores } })
           }}>
             <div className="space-y-1">
               <Label>Prefijo SKU <span className="text-[var(--color-text-muted)] font-normal">(3 letras)</span></Label>
@@ -1254,6 +1364,19 @@ function CategoriesSection() {
                 {editAttrs.map((attr, i) => (
                   <AttrRow key={i} attr={attr} onChange={(updated) => setEditAttrs((a) => a.map((x, j) => j === i ? updated : x))} onRemove={() => setEditAttrs((a) => a.filter((_, j) => j !== i))} />
                 ))}
+              </div>
+            </div>
+            <Separator />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Tallas disponibles</p>
+                <p className="font-sans text-[11px] text-[var(--color-text-muted)]">Escribe y presiona Enter o +</p>
+                <TagInput values={editTallas} onChange={setEditTallas} placeholder="S, M, L, XL, 42..." />
+              </div>
+              <div className="space-y-1.5">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Colores disponibles</p>
+                <p className="font-sans text-[11px] text-[var(--color-text-muted)]">Escribe y presiona Enter o +</p>
+                <TagInput values={editColores} onChange={setEditColores} placeholder="Rojo, Azul, Negro..." />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
