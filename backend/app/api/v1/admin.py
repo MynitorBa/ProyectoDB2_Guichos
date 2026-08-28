@@ -106,6 +106,7 @@ class EsquemaUpdate(BaseModel):
 
 # ── Gestión de usuarios ───────────────────────────────────────────────────────
 
+# Lista todos los usuarios del sistema con paginación; solo accesible por administradores
 @router.get('/users')
 def list_users(
     page: int = Query(1, ge=1),
@@ -141,6 +142,7 @@ def list_users(
     }
 
 
+# Cruza usuarios con rol 'vendedor' y sus perfiles de Vendedor para mostrar NIT y nombre comercial
 @router.get('/vendors')
 def list_vendors(
     _: Usuario = Depends(get_admin_user),
@@ -168,6 +170,7 @@ def list_vendors(
     ]
 
 
+# Reemplaza completamente los roles de un usuario; impide que el admin se quite su propio rol
 @router.patch('/users/{user_id}/roles')
 def update_user_roles(
     user_id: int,
@@ -233,6 +236,7 @@ def listar_productos_admin(
         estado=None if estado == 'todos' else estado,
     )
 
+# Crea el documento en MongoDB y acto seguido crea ProductoReferencia, Oferta e Inventario en MySQL (con compensación si falla SQL)
 @router.post('/products', status_code=201)
 def crear_producto(
     payload: ProductoCreate,
@@ -368,6 +372,7 @@ def crear_producto(
     return producto_mongo
 
 
+# Sube una imagen temporal a MySQL; queda huérfana hasta ser asignada a un producto
 @router.post('/upload')
 async def upload_image(
     file: UploadFile = File(...),
@@ -407,6 +412,7 @@ def delete_pending_admin_image(
     mysql_db.commit()
 
 
+# Actualización híbrida: los datos documentales van a MongoDB y precio/stock/vendedor se enrutan por outbox transaccional MySQL→Mongo
 @router.put('/products/{producto_id}')
 def actualizar_producto(
     producto_id: str,
@@ -682,6 +688,7 @@ def actualizar_producto(
     return catalog_service.obtener_producto(db, producto_id, mysql_db)
 
 
+# Borrado lógico: marca el producto como 'descontinuado' en MongoDB y descontinúa todas sus ofertas en MySQL
 @router.delete('/products/{producto_id}', status_code=204)
 def eliminar_producto(
     producto_id: str,
@@ -712,6 +719,7 @@ def eliminar_producto(
 
 # ── Historial de eventos ───────────────────────────────────────────────────────
 
+# Devuelve el historial unificado de un producto: eventos documentales de MongoDB + operativos de MySQL, filtrable por rango de fechas
 @router.get('/products/{producto_id}/history')
 def historial_producto(
     producto_id: str,
@@ -771,6 +779,7 @@ def historial_producto(
     }
 
 
+# Reconstruye el estado exacto del producto en una fecha dada haciendo replay de eventos (event sourcing)
 @router.get('/products/{producto_id}/state-at')
 def estado_en_fecha(
     producto_id: str,
@@ -819,6 +828,7 @@ def estado_en_fecha(
     return estado
 
 
+# Historial de precios diario por oferta: útil para gráficas de tendencia de precios
 @router.get('/products/{producto_id}/price-history')
 def historial_precios_producto(
     producto_id: str,
@@ -1020,6 +1030,7 @@ def eliminar_categoria(
 
 # ── Panel de ventas ───────────────────────────────────────────────────────────
 
+# Agrega KPIs de ventas: ingresos, pedidos por estado, serie de 30 días y top 5 vendedores
 @router.get('/sales/stats')
 def sales_stats(
     _: Usuario = Depends(get_admin_user),
@@ -1154,6 +1165,7 @@ def list_sales(
     }
 
 
+# Exporta todos los pedidos a Excel (.xlsx) con una fila por línea de producto; útil para reportes contables
 @router.get('/sales/export')
 def export_sales_excel(
     _: Usuario = Depends(get_admin_user),
@@ -1261,6 +1273,7 @@ def list_admin_orders(
     }
 
 
+# Permite al admin cambiar el estado de cualquier pedido (incluyendo 'cancelado' y 'reembolsado')
 @router.patch('/orders/{pedido_id}/status')
 def update_admin_order_status(
     pedido_id: int,
@@ -1313,6 +1326,7 @@ def list_product_offers(
     return result
 
 
+# Agrega un vendedor adicional a un producto existente creando una nueva Oferta con su propio SKU e inventario
 @router.post('/products/{producto_ref}/offers', status_code=201)
 def add_product_offer(
     producto_ref: str,
@@ -1399,6 +1413,7 @@ def add_product_offer(
     }
 
 
+# Actualiza precio, stock o estado de una oferta individual; encola proyección al finalizar
 @router.patch('/offers/{oferta_id}')
 def update_offer(
     oferta_id: int,
@@ -1456,6 +1471,7 @@ def update_offer(
 
 # ── Perfil de vendedor ────────────────────────────────────────────────────────
 
+# Crea o actualiza el perfil de vendedor (nombre comercial + NIT) de un usuario existente
 @router.post('/users/{user_id}/vendor-profile')
 def set_vendor_profile(
     user_id: int,

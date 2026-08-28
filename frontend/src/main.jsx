@@ -8,6 +8,7 @@ import { AuthProvider } from './context/AuthContext'
 import { CartProvider } from './context/CartContext'
 import { queryClient } from './lib/queryClient'
 
+// Punto de entrada: monta la app con los providers globales (React Query, Auth, Cart) y el sistema de toasts
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

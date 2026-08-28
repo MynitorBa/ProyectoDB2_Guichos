@@ -45,6 +45,7 @@ function Logo() {
   )
 }
 
+// Barra de búsqueda que navega a /catalog?q=... al enviar el formulario
 function SearchBar({ className, onSearch }) {
   const [q, setQ] = useState('')
   const navigate = useNavigate()
@@ -149,6 +150,7 @@ function UserMenu({ user, signOut }) {
   )
 }
 
+// Campanita de notificaciones: polling cada 60s, carga el listado al abrir y marca todas como leídas automáticamente
 function NotificationBell({ user }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -228,6 +230,7 @@ function NotificationBell({ user }) {
   )
 }
 
+// Dropdown "Todas las categorías" con grid de 2 columnas y cierre con Escape o clic fuera
 function CategoryDropdown({ categories }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -307,6 +310,7 @@ function CategoryDropdown({ categories }) {
   )
 }
 
+// Header principal: sticky con búsqueda, toggle de tema oscuro, notificaciones, carrito, menú de usuario y barra de categorías
 export function Header() {
   const { user, signOut } = useAuth()
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))

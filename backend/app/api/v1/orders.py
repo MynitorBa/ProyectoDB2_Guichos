@@ -103,6 +103,7 @@ def _crear_notificaciones_vendedores(db: Session, pedido: Pedido, comprador: Usu
         logger.error('Error al crear notificaciones de vendedores pedido #%d: %s', pedido.id, exc)
 
 
+# Ejecuta el checkout transaccional; si tiene éxito, la factura PDF se envía por correo en background
 @router.post('/checkout', response_model=CheckoutResponse, status_code=201)
 def checkout(
     payload: CheckoutRequest,
@@ -126,6 +127,7 @@ def checkout(
     # Notify vendors (synchronous, exceptions are caught internally)
     _crear_notificaciones_vendedores(db, pedido, current_user)
 
+    # Se serializa el pedido en dicts planos antes de que la sesión SQLAlchemy se cierre para la tarea en background
     # Serializar antes de salir de la sesión SQLAlchemy
     direccion = db.get(Direccion, payload.direccion_id)
     pedido_snapshot = {
@@ -176,6 +178,7 @@ def checkout(
     )
 
 
+# Lista todos los pedidos del usuario autenticado ordenados del más reciente al más antiguo
 @router.get('/')
 def listar_pedidos(
     current_user: Usuario = Depends(get_current_user),
@@ -199,6 +202,7 @@ def listar_pedidos(
     ]
 
 
+# Genera y descarga la factura PDF de un pedido en tiempo real (solo el dueño puede descargarla)
 @router.get('/{pedido_id}/invoice')
 def descargar_factura(
     pedido_id: int,
@@ -222,6 +226,7 @@ def descargar_factura(
     )
 
 
+# Devuelve el detalle completo de un pedido: líneas, pagos y montos desglosados
 @router.get('/{pedido_id}')
 def detalle_pedido(
     pedido_id: int,

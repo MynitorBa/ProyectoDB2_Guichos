@@ -63,6 +63,7 @@ app.include_router(catalog_requests.vendor_router, prefix='/api/v1')
 app.include_router(catalog_requests.admin_router, prefix='/api/v1')
 
 
+# Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
 @app.on_event('startup')
 def startup():
     ensure_indexes(get_mongo_db())

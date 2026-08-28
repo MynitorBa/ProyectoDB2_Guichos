@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from app.core.config import settings
 
+# pool_pre_ping descarta conexiones muertas antes de usarlas (útil con MySQL en Docker)
 engine = create_engine(
     settings.mysql_url,
     pool_pre_ping=True,
@@ -17,6 +18,7 @@ class Base(DeclarativeBase):
     pass
 
 
+# Generador para inyección de sesión MySQL en los endpoints (usado con Depends)
 def get_db():
     db = SessionLocal()
     try:

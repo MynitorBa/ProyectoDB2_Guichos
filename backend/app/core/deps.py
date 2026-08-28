@@ -10,6 +10,7 @@ from app.models.usuario import Usuario
 bearer_scheme = HTTPBearer()
 
 
+# Valida el JWT del header Authorization y devuelve el usuario activo de la BD
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -25,6 +26,7 @@ def get_current_user(
     return user
 
 
+# Fábrica de dependencias: genera un Depends que exige uno de los roles indicados
 def require_role(*roles: str):
     def dependency(current_user: Usuario = Depends(get_current_user)) -> Usuario:
         user_roles = {r.nombre for r in current_user.roles}

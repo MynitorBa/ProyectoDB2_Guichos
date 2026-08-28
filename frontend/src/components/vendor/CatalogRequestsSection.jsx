@@ -19,6 +19,7 @@ import { formatDate, formatQ } from '../../lib/utils'
 
 const STATUS = { pendiente: 'warning', aprobada: 'success', rechazada: 'error', cancelada: 'default' }
 
+// Dialog para proponer un producto nuevo con categorías, atributos dinámicos por esquema, imágenes y oferta inicial
 function ProductProposalDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
   const fileRef = useRef(null)
@@ -125,6 +126,7 @@ function ProductProposalDialog({ open, onOpenChange }) {
   </Dialog>
 }
 
+// Dialog para solicitar una oferta sobre un producto ya existente, con precio y stock propios del vendedor
 function OfferProposalDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState({ producto_ref: '', precio: '', stock: '', observaciones: '' })
@@ -152,6 +154,7 @@ function OfferProposalDialog({ open, onOpenChange }) {
   </DialogContent></Dialog>
 }
 
+// Sección del vendedor: accesos a proponer producto u oferta, y lista de sus solicitudes enviadas con opción de cancelar las pendientes
 export function CatalogRequestsSection() {
   const queryClient = useQueryClient()
   const [productOpen, setProductOpen] = useState(false)

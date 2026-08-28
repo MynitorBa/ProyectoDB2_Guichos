@@ -6,6 +6,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Reseña ligada al producto_referencia (no a la oferta); aprobada=False la mantiene pendiente de moderación
 class Resena(Base):
     __tablename__ = 'resenas'
 

@@ -46,6 +46,7 @@ const TIPO_META = {
   INVENTARIO_SALDO_CAMBIADO:{ variant: 'jade', dot: 'bg-cyan-600',                 label: 'Inventario actualizado' },
 }
 
+// Muestra el valor anterior tachado en rojo y el nuevo resaltado en verde para facilitar la comparación de cambios
 function DiffValue({ antes, despues }) {
   if (antes === undefined && despues === undefined) return null
   const fmtVal = (v) => {
@@ -139,6 +140,7 @@ function TimelineEvent({ evento }) {
   )
 }
 
+// Muestra el snapshot reconstruido del producto tal como existía en la fecha solicitada
 function ReconstructedPanel({ estado, fecha }) {
   if (!estado) return null
   return (
@@ -348,6 +350,7 @@ function PriceHistoryPanel({ data, isLoading, isError, range, setRange, onApply 
   )
 }
 
+// Historial de un producto: gráfica de precios por oferta, línea de tiempo de eventos (MongoDB+MySQL) y reconstrucción de estado a una fecha dada
 export default function ProductHistoryPage() {
   const { id } = useParams()
   const [fecha, setFecha] = useState('')

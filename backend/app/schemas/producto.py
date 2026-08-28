@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Any
 
 
+# extra='forbid' rechaza campos desconocidos para evitar inyección de datos no esperados
 class ProductoCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     nombre: str
@@ -16,6 +17,7 @@ class ProductoCreate(BaseModel):
     vendedor_usuario_id: int | None = None
 
 
+# Todos los campos son opcionales para soportar actualizaciones parciales (PATCH)
 class ProductoUpdate(BaseModel):
     nombre: str | None = None
     descripcion: str | None = None
@@ -36,6 +38,7 @@ class ProductoUpdate(BaseModel):
         return value
 
 
+# Respuesta de un documento MongoDB; id y vendedor_id son strings (ObjectId serializado)
 class ProductoResponse(BaseModel):
     id: str
     sku: str
@@ -56,6 +59,7 @@ class ProductoResponse(BaseModel):
     model_config = {'from_attributes': True}
 
 
+# Respuesta paginada del catálogo; total_pages se calcula en el servicio según page_size
 class ProductoListResponse(BaseModel):
     items: list[dict]
     total: int

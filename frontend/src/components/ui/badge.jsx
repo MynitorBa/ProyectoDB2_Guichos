@@ -1,3 +1,4 @@
+// Etiqueta de estado con variantes de color: default, jade, action, success, warning, error, outline
 import { cva } from 'class-variance-authority'
 import { cn } from '../../lib/utils'
 

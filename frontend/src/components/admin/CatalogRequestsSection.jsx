@@ -14,6 +14,7 @@ import { formatDate, formatQ } from '../../lib/utils'
 
 const STATUS = { pendiente: 'warning', aprobada: 'success', rechazada: 'error', cancelada: 'default' }
 
+// Sección de solicitudes de catálogo para el admin: lista por estado y permite aprobar o rechazar con observaciones
 export function AdminCatalogRequestsSection() {
   const queryClient = useQueryClient()
   const [estado, setEstado] = useState('pendiente')

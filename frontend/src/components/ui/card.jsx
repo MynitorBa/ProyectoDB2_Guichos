@@ -1,3 +1,4 @@
+// Contenedor tipo tarjeta con Card, CardHeader, CardBody y CardFooter; aplica bordes y sombra del tema
 import { cn } from '../../lib/utils'
 
 export function Card({ className, children, ...props }) {

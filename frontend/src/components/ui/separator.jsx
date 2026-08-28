@@ -1,3 +1,4 @@
+// Línea divisoria horizontal o vertical con color del tema, basada en Radix Separator
 import * as SeparatorPrimitive from '@radix-ui/react-separator'
 import { cn } from '../../lib/utils'
 

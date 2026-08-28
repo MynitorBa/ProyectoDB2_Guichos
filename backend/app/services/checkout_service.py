@@ -41,6 +41,7 @@ def procesar_checkout(
     items: list[CheckoutItem],
 ) -> Pedido:
     """Bloquea oferta e inventario y crea el pedido completo atómicamente."""
+    # Las ofertas e inventarios se bloquean con SELECT ... FOR UPDATE ordenados por id para evitar deadlocks
     if not items:
         raise CheckoutError('El carrito está vacío.', 'EMPTY_CART')
 
@@ -105,6 +106,7 @@ def procesar_checkout(
                 'INSUFFICIENT_STOCK',
             )
 
+    # Se agrupa el subtotal por vendedor para crear un PedidoVendedor independiente por cada uno
     vendors = {
         vendor.id: vendor
         for vendor in db.query(Vendedor).filter(
@@ -218,6 +220,7 @@ def procesar_checkout(
             motivo=f'Venta del pedido #{pedido.id}',
         )
 
+    # El pago se aprueba automáticamente (simulación); en producción aquí iría la integración con pasarela real
     db.add(Pago(
         pedido_id=pedido.id,
         metodo_pago_id=metodo_pago_id,

@@ -12,6 +12,7 @@ GT_TZ = timezone(timedelta(hours=-6))
 router = APIRouter(prefix='/notifications', tags=['Notificaciones'])
 
 
+# Devuelve hasta 50 notificaciones del usuario: las no leídas primero, luego por fecha descendente
 @router.get('/')
 def listar_notificaciones(
     current_user: Usuario = Depends(get_current_user),
@@ -38,6 +39,7 @@ def listar_notificaciones(
     ]
 
 
+# Contador de notificaciones sin leer; el frontend lo usa para mostrar el badge en la campana
 @router.get('/unread-count')
 def unread_count(
     current_user: Usuario = Depends(get_current_user),
@@ -51,6 +53,7 @@ def unread_count(
     return {'count': count}
 
 
+# Marca en bulk todas las notificaciones del usuario como leídas en una sola query UPDATE
 @router.patch('/read-all', status_code=200)
 def marcar_todas_leidas(
     current_user: Usuario = Depends(get_current_user),
@@ -61,6 +64,7 @@ def marcar_todas_leidas(
     return {'ok': True}
 
 
+# Marca una notificación individual como leída; devuelve ok=False si no pertenece al usuario
 @router.patch('/{notif_id}/read', status_code=200)
 def marcar_leida(
     notif_id: int,

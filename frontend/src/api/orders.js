@@ -1,5 +1,6 @@
 import api from './client'
 
+// Endpoints de pedidos (checkout, listado, detalle, factura PDF) y gestión de direcciones del usuario
 export const checkout = (data) => api.post('/orders/checkout', data)
 export const getOrders = () => api.get('/orders/')
 export const getOrder = (id) => api.get(`/orders/${id}`)

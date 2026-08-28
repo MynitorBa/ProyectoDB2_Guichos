@@ -1,10 +1,12 @@
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
+// cn: combina clases condicionales (clsx) y resuelve conflictos de Tailwind (twMerge)
 export function cn(...inputs) {
   return twMerge(clsx(inputs))
 }
 
+// formatQ: formatea un número como precio en quetzales con 2 decimales y separadores guatemaltecos
 export function formatQ(amount) {
   const n = Number(amount)
   if (isNaN(n)) return 'Q0.00'

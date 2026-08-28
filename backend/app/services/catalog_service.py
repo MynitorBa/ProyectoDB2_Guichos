@@ -29,6 +29,8 @@ def _serialize(doc: dict) -> dict:
     return doc
 
 
+# Con mysql_db: enriquece cada doc con la oferta principal de MySQL y filtra/ordena en Python (dual-read)
+# Sin mysql_db: ejecuta filtros y paginación directamente en MongoDB (modo legado)
 def listar_productos(
     db: Database,
     mysql_db: Session | None = None,
@@ -176,6 +178,7 @@ def listar_productos(
     }
 
 
+# Busca por ObjectId o por SKU como fallback; si hay mysql_db, adjunta todas las ofertas activas
 def obtener_producto(
     db: Database,
     producto_id: str,
@@ -322,6 +325,7 @@ def actualizar_producto(
     return _serialize(doc) if doc else None
 
 
+# Borrado lógico vía actualizar_producto; nunca elimina el documento para preservar el historial de eventos
 def eliminar_producto(db: Database, producto_id: str, usuario_id: str | None = None) -> bool:
     doc = db.productos.find_one({'_id': ObjectId(producto_id)})
     if not doc:
@@ -335,6 +339,7 @@ def eliminar_producto(db: Database, producto_id: str, usuario_id: str | None = N
     return True
 
 
+# Usa un pipeline $facet de MongoDB para obtener estadísticas globales y por categoría en una sola consulta
 def stats_catalogo(db: Database) -> list[dict]:
     pipeline = [
         {

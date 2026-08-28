@@ -29,6 +29,7 @@ const ESTADO_LABEL = {
   reembolsado:     'Reembolsado',
 }
 
+// Crea un enlace temporal para descargar un Blob (usado para la factura PDF)
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -40,6 +41,7 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
+// Lista todos los pedidos del usuario con estado, fecha, total y botón para descargar la factura PDF
 export default function OrdersPage() {
   const [downloadingId, setDownloadingId] = useState(null)
 

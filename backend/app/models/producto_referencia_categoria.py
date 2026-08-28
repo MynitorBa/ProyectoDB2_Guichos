@@ -2,6 +2,7 @@ from sqlalchemy import Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db_mysql import Base
 
+# Relación N:M entre producto y categorías; es_principal marca la categoría principal para filtros y navegación
 class ProductoReferenciaCategoria(Base):
     __tablename__ = 'producto_referencia_categorias'
     __table_args__ = (

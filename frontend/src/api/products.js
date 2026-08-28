@@ -1,5 +1,6 @@
 import api from './client'
 
+// Endpoints públicos de productos/categorías y endpoints de admin para CRUD, historial y estadísticas
 export const getProducts = (params) =>
   api.get('/products', { params })
 

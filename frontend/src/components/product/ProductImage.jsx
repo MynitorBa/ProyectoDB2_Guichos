@@ -39,6 +39,7 @@ function ImageFallback({ categoria, nombre, size = 'md' }) {
   )
 }
 
+// Imagen de producto con fallback automático por categoría si src está vacío o falla la carga
 export function ProductImage({ src, alt, categoria, nombre, className, aspectRatio = 'aspect-square', size = 'md' }) {
   const [error, setError] = useState(false)
   const hasImage = src && !error

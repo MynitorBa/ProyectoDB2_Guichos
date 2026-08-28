@@ -6,6 +6,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Catálogo de roles disponibles (ej: "cliente", "vendedor", "administrador")
 class Rol(Base):
     __tablename__ = 'roles'
 
@@ -16,6 +17,7 @@ class Rol(Base):
     usuarios: Mapped[list['UsuarioRol']] = relationship(back_populates='rol')
 
 
+# Tabla intermedia N:M entre usuarios y roles; registra cuándo se asignó cada rol
 class UsuarioRol(Base):
     __tablename__ = 'usuario_rol'
 
@@ -27,6 +29,7 @@ class UsuarioRol(Base):
     rol: Mapped['Rol'] = relationship(back_populates='usuarios')
 
 
+# Entidad central del sistema; estado puede ser activo/inactivo/suspendido
 class Usuario(Base):
     __tablename__ = 'usuarios'
 
@@ -48,6 +51,7 @@ class Usuario(Base):
     pedidos: Mapped[list['Pedido']] = relationship(back_populates='usuario')
     carritos: Mapped[list['Carrito']] = relationship(back_populates='usuario')
 
+    # Atajo para obtener los objetos Rol sin pasar por UsuarioRol manualmente
     @property
     def roles(self) -> list[Rol]:
         return [ur.rol for ur in self.usuario_roles]

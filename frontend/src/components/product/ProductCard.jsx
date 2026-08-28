@@ -10,6 +10,7 @@ import { useCart } from '../../context/CartContext'
 import { useAuth } from '../../context/AuthContext'
 import { toast } from 'sonner'
 
+// Tarjeta de producto: imagen con fallback, precio, rating y botón de agregar al carrito con feedback visual
 export function ProductCard({ product }) {
   const { add } = useCart()
   const { user } = useAuth()

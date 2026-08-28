@@ -1,3 +1,4 @@
+// Visualización de calificación con estrellas: acepta valor decimal, cantidad de reseñas y tamaño configurable
 import { Star } from 'lucide-react'
 import { cn } from '../../lib/utils'
 

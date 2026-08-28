@@ -1,3 +1,4 @@
+// Placeholder animado para estados de carga; ProductCardSkeleton replica la estructura de la tarjeta de producto
 import { cn } from '../../lib/utils'
 
 export function Skeleton({ className, ...props }) {

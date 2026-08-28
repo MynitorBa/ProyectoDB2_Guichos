@@ -18,6 +18,7 @@ const SORT_OPTIONS = [
   { value: 'precio_desc', label: 'Precio: mayor a menor' },
 ]
 
+// Panel lateral de filtros reutilizado tanto en desktop (sidebar) como en mobile (Sheet)
 function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
   return (
     <div className="space-y-6">
@@ -104,6 +105,7 @@ function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
   )
 }
 
+// Catálogo con filtros por categoría, precio y orden; búsqueda por texto y paginación; estado sincronizado con URL
 export default function CatalogPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [page, setPage] = useState(1)

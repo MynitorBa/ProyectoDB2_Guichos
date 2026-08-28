@@ -8,6 +8,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Subpedido por vendedor dentro de un pedido global; cada vendedor gestiona su estado de forma independiente
 class PedidoVendedor(Base):
     __tablename__ = 'pedido_vendedores'
 
@@ -29,6 +30,7 @@ class PedidoVendedor(Base):
     )
 
 
+# Snapshot de la dirección de entrega al momento del pedido; se desvincula de cambios futuros en Direccion
 class PedidoDireccion(Base):
     __tablename__ = 'pedido_direcciones'
 

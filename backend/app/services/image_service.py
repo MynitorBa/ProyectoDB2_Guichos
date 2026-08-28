@@ -11,6 +11,7 @@ EXT_MIME = {
 }
 
 
+# Valida extensión, tamaño máximo (5 MB) y firma de bytes del archivo antes de aceptarlo
 async def read_valid_image(file: UploadFile) -> tuple[bytes, str]:
     ext = Path(file.filename or '').suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:

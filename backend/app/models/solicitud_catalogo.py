@@ -8,6 +8,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Flujo de aprobación para que un vendedor añada un producto nuevo o una oferta sobre uno existente
 class SolicitudCatalogo(Base):
     __tablename__ = 'solicitudes_catalogo'
 
@@ -47,6 +48,7 @@ class SolicitudCatalogo(Base):
     fecha_revision: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+# Categorías propuestas para la solicitud; la restricción de orden garantiza la posición en la galería
 class SolicitudCatalogoCategoria(Base):
     __tablename__ = 'solicitud_catalogo_categorias'
     __table_args__ = (
@@ -65,6 +67,7 @@ class SolicitudCatalogoCategoria(Base):
     orden: Mapped[int] = mapped_column(Integer, default=0)
 
 
+# Imágenes subidas durante la solicitud; se transfieren al producto si la solicitud es aprobada
 class SolicitudCatalogoImagen(Base):
     __tablename__ = 'solicitud_catalogo_imagenes'
     __table_args__ = (

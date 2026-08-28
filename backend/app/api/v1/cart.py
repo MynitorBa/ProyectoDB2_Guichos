@@ -21,6 +21,7 @@ class CartItemRequest(BaseModel):
     cantidad: int = 1
 
 
+# Obtiene el carrito activo del usuario o crea uno nuevo sin hacer commit
 def _get_or_create_cart(db: Session, usuario_id: int) -> Carrito:
     carrito = db.query(Carrito).filter_by(usuario_id=usuario_id, estado='activo').first()
     if not carrito:
@@ -30,6 +31,7 @@ def _get_or_create_cart(db: Session, usuario_id: int) -> Carrito:
     return carrito
 
 
+# Lee el carrito activo enriqueciendo cada ítem con el precio actual de la oferta y el nombre desde MongoDB
 @router.get('/')
 def ver_carrito(
     current_user: Usuario = Depends(get_current_user),
@@ -75,6 +77,7 @@ def ver_carrito(
     return {'items': items, 'total': float(total)}
 
 
+# Agrega una oferta al carrito; si ya existe el mismo oferta_id acumula la cantidad
 @router.post('/items', status_code=201)
 def agregar_item(
     payload: CartItemRequest,
@@ -112,6 +115,7 @@ def agregar_item(
     }
 
 
+# Elimina un ítem del carrito validando que pertenezca al carrito activo del usuario
 @router.delete('/items/{item_id}', status_code=204)
 def eliminar_item(
     item_id: int,

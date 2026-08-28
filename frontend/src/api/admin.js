@@ -1,5 +1,6 @@
 import api from './client'
 
+// Endpoints exclusivos del rol administrador: usuarios, categorías, pedidos, ventas, ofertas y solicitudes de catálogo
 export const getAdminUsers = (page = 1, pageSize = 20) =>
   api.get('/admin/users', { params: { page, page_size: pageSize } })
 

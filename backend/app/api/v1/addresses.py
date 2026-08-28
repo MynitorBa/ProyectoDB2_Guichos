@@ -10,6 +10,7 @@ from app.schemas.direccion import DireccionCreate, DireccionResponse
 router = APIRouter(prefix='/addresses', tags=['Direcciones'])
 
 
+# Solo devuelve las direcciones activas del usuario (las eliminadas se marcan activa=False)
 @router.get('/', response_model=list[DireccionResponse])
 def listar_direcciones(
     current_user: Usuario = Depends(get_current_user),
@@ -18,6 +19,7 @@ def listar_direcciones(
     return db.query(Direccion).filter_by(usuario_id=current_user.id, activa=True).all()
 
 
+# Si la nueva dirección es predeterminada, desactiva primero la predeterminada existente
 @router.post('/', response_model=DireccionResponse, status_code=201)
 def crear_direccion(
     payload: DireccionCreate,
@@ -34,6 +36,7 @@ def crear_direccion(
     return dir_
 
 
+# Actualiza todos los campos de una dirección; aplica la misma lógica de predeterminada única
 @router.put('/{dir_id}', response_model=DireccionResponse)
 def actualizar_direccion(
     dir_id: int,
@@ -56,6 +59,7 @@ def actualizar_direccion(
     return dir_
 
 
+# Borrado lógico: establece activa=False en lugar de eliminar el registro para preservar historial de pedidos
 @router.delete('/{dir_id}', status_code=204)
 def eliminar_direccion(
     dir_id: int,

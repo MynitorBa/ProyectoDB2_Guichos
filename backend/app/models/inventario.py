@@ -6,6 +6,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Stock real de una oferta; cantidad_reservada = unidades bloqueadas por pedidos aún no confirmados
 class Inventario(Base):
     __tablename__ = 'inventario'
 
@@ -17,6 +18,7 @@ class Inventario(Base):
     bodega: Mapped[str] = mapped_column(String(60), default='principal')
     fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
+# Auditoría de cada cambio de stock; permite reconstruir el saldo en cualquier punto del tiempo
 class MovimientoInventario(Base):
     __tablename__ = 'movimientos_inventario'
 
@@ -34,6 +36,7 @@ class MovimientoInventario(Base):
     fecha: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
+# Historial SCD tipo 2 del saldo; es_vigente (columna calculada) identifica el registro actual
 class InventarioSaldoHistorial(Base):
     """Snapshots temporales del saldo de una fila de inventario."""
 

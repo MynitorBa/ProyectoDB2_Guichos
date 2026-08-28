@@ -1,3 +1,4 @@
+// Modal accesible con overlay, animaciones de entrada/salida, botón de cierre y scroll interno si el contenido es alto
 import { forwardRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'

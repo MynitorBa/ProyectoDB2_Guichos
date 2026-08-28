@@ -9,6 +9,7 @@ import { formatQ } from '../lib/utils'
 
 const IVA_RATE = 0.12
 
+// Página de carrito: lista items con opción de eliminar y muestra resumen con subtotal, IVA (12%) y total
 export default function CartPage() {
   const { cart, loading, fetchCart, remove } = useCart()
   const navigate = useNavigate()

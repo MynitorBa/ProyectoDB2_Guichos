@@ -6,6 +6,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Perfil comercial vinculado 1:1 a un Usuario; requiere verificación del admin antes de operar
 class Vendedor(Base):
     __tablename__ = 'vendedores'
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.oferta import Oferta
 
 
+# Genera SKU único tipo 'ELE-4A3F2B1C' verificando colisiones en MongoDB; falla tras 20 intentos
 def generate_product_sku(mongo: Database, prefix: str) -> str:
     """Genera el SKU documental único usado por toda creación de productos."""
     normalized = (prefix or 'GEN')[:3].upper()
@@ -16,6 +17,7 @@ def generate_product_sku(mongo: Database, prefix: str) -> str:
     raise ValueError('No se pudo generar un SKU único para el producto.')
 
 
+# El primer candidato es '{product_sku}-V{vendor_id}'; si ya existe, agrega un sufijo aleatorio
 def generate_offer_sku(
     db: Session,
     *,

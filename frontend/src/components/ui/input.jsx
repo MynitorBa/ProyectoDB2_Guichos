@@ -1,3 +1,4 @@
+// Campo de texto (Input) y área de texto (Textarea) con estilos del tema, prop error para borde rojo y soporte de ref
 import { forwardRef } from 'react'
 import { cn } from '../../lib/utils'
 

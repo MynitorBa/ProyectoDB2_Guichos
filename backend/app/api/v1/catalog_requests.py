@@ -71,6 +71,7 @@ class ReviewPayload(BaseModel):
     observaciones: str | None = Field(default=None, max_length=2000)
 
 
+# Verifica que el usuario tenga perfil de vendedor Y esté verificado antes de operar
 def _get_vendor(db: Session, user: Usuario) -> Vendedor:
     vendor = db.query(Vendedor).filter_by(usuario_id=user.id).first()
     if not vendor:
@@ -80,6 +81,7 @@ def _get_vendor(db: Session, user: Usuario) -> Vendedor:
     return vendor
 
 
+# Notifica a todos los usuarios con rol 'administrador' sobre una nueva solicitud
 def _notify_admins(db: Session, request_id: int, vendor: Vendedor) -> None:
     admin_role = db.query(Rol).filter_by(nombre='administrador').first()
     if not admin_role:
@@ -214,6 +216,7 @@ def delete_pending_image(
     db.commit()
 
 
+# El vendedor propone un producto nuevo: valida categorías, imágenes y atributos antes de crear la SolicitudCatalogo
 @vendor_router.post('/products', status_code=201)
 def propose_product(
     payload: ProductProposalCreate,
@@ -274,6 +277,7 @@ def propose_product(
     return _serialize_request(db, request, mongo)
 
 
+# El vendedor solicita unirse como oferente a un producto ya existente en el catálogo
 @vendor_router.post('/offers', status_code=201)
 def propose_offer(
     payload: OfferProposalCreate,
@@ -386,6 +390,7 @@ def list_admin_requests(
     }
 
 
+# Aprueba un producto nuevo: genera SKU, inserta en Mongo y crea todas las entidades SQL (con compensación si falla)
 def _approve_new_product(
     db: Session, mongo: Database, request: SolicitudCatalogo,
     vendor: Vendedor, admin: Usuario,
@@ -479,6 +484,7 @@ def _approve_new_product(
         raise
 
 
+# Aprueba una solicitud de oferta: reactiva o crea la Oferta en MySQL y actualiza su inventario
 def _approve_offer(
     db: Session, request: SolicitudCatalogo,
     vendor: Vendedor, admin: Usuario, mongo: Database,
@@ -552,6 +558,7 @@ def _approve_offer(
     return product_ref, offer.id
 
 
+# Aprueba la solicitud con bloqueo optimista (with_for_update); despacha a _approve_new_product o _approve_offer según el tipo
 @admin_router.post('/{request_id}/approve')
 def approve_request(
     request_id: int,
@@ -591,6 +598,7 @@ def approve_request(
     return _serialize_request(db, request, mongo)
 
 
+# Rechaza la solicitud; requiere observaciones obligatorias que se notifican al vendedor
 @admin_router.post('/{request_id}/reject')
 def reject_request(
     request_id: int,

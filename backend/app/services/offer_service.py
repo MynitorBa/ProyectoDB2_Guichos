@@ -79,6 +79,7 @@ def _stock_by_offer(db: Session, offer_ids: list[int]) -> dict[int, int]:
     return {offer_id: max(0, int(stock or 0)) for offer_id, stock in rows}
 
 
+# Carga en una sola query todas las ofertas de una lista de producto_refs y calcula el stock neto (disponible - reservado)
 def listar_ofertas_por_referencias(
     db: Session,
     producto_refs: list[str],
@@ -125,6 +126,7 @@ def listar_ofertas_por_referencias(
     return dict(grouped)
 
 
+# La oferta principal es siempre la primera de la lista (ya ordenada: disponible > precio > id)
 def oferta_principal(offers: list[dict]) -> dict | None:
     return offers[0] if offers else None
 
@@ -161,6 +163,7 @@ def enqueue_primary_offer_projection(
     )
 
 
+# Verifica que la oferta exista y esté en estado 'activa'; usada por carrito y checkout
 def resolver_oferta_comprable(
     db: Session,
     *,

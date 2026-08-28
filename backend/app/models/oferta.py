@@ -8,6 +8,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Vínculo vendedor-producto con precio; un mismo producto_ref puede tener ofertas de distintos vendedores
 class Oferta(Base):
     __tablename__ = 'ofertas'
 
@@ -30,6 +31,7 @@ class Oferta(Base):
     )
 
 
+# Historial SCD tipo 2 de precios; es_vigente identifica el precio actualmente en vigor
 class OfertaPrecioHistorial(Base):
     __tablename__ = 'oferta_precios_historial'
 

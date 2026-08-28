@@ -1,3 +1,4 @@
+// Botón con variantes (primary, secondary, ghost, jade, destructive, link), tamaños e indicador de carga integrado
 import { forwardRef } from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva } from 'class-variance-authority'

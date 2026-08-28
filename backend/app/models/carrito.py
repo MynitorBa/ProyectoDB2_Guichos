@@ -7,6 +7,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Un usuario puede tener solo un carrito activo; los estados "abandonado" y "convertido" son terminales
 class Carrito(Base):
     __tablename__ = 'carritos'
 
@@ -22,6 +23,7 @@ class Carrito(Base):
     items: Mapped[list['CarritoItem']] = relationship(back_populates='carrito', cascade='all, delete-orphan')
 
 
+# precio_al_agregar guarda el precio en el momento de añadir; puede diferir del precio actual de la oferta
 class CarritoItem(Base):
     __tablename__ = 'carrito_items'
 

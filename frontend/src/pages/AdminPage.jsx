@@ -1758,6 +1758,7 @@ function SalesSection() {
 }
 
 // ── AdminPage ──
+// Panel de administrador: estadísticas con gráficas, CRUD de productos y categorías, gestión de usuarios/roles/pedidos/ventas y solicitudes de catálogo
 export default function AdminPage() {
   const [activeSection, setActiveSection] = useState('stats')
 

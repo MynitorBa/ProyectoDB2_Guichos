@@ -40,6 +40,7 @@ const TRUST_SIGNALS = [
   { icon: Headphones,  title: 'Soporte en español',     desc: 'Atención 24/7 para resolver tus dudas' },
 ]
 
+// Página de inicio: hero, carrusel de categorías, productos destacados, señales de confianza y CTA de vendedores
 export default function HomePage() {
   const navigate = useNavigate()
   const carouselRef = useRef(null)
@@ -57,6 +58,7 @@ export default function HomePage() {
   const products = featuredData?.items || []
   const categories = categoriesData || []
 
+  // Desplaza el carrusel de categorías: dir = 1 (derecha) o -1 (izquierda)
   function scrollCarousel(dir) {
     if (!carouselRef.current) return
     carouselRef.current.scrollBy({ left: dir * 220, behavior: 'smooth' })

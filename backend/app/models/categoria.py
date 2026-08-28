@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db_mysql import Base
 
 
+# Árbol de categorías auto-referenciado; categoria_padre_id = NULL indica categoría raíz
 class Categoria(Base):
     __tablename__ = 'categorias'
 

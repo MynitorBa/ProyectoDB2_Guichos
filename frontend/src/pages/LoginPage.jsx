@@ -14,6 +14,7 @@ const schema = z.object({
   password: z.string().min(1, 'La contraseña es requerida'),
 })
 
+// Página de login: valida con Zod, llama a /auth/login y luego a /auth/me para obtener los datos del usuario
 export default function LoginPage() {
   const navigate = useNavigate()
   const { signIn } = useAuth()

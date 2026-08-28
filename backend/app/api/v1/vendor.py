@@ -43,6 +43,7 @@ def _get_vendedor(db: Session, user: Usuario) -> Vendedor:
     return v
 
 
+# Resumen financiero del vendedor: ingresos totales, pedidos totales y pendientes de despacho
 @router.get('/stats')
 def vendor_stats(
     current_user: Usuario = Depends(get_vendor_user),
@@ -84,6 +85,7 @@ def vendor_stats(
     }
 
 
+# Lista solo los subpedidos (PedidoVendedor) que corresponden a este vendedor con sus líneas de producto
 @router.get('/orders')
 def vendor_orders(
     page: int = Query(1, ge=1),
@@ -147,6 +149,7 @@ def vendor_orders(
     }
 
 
+# El vendedor solo puede cambiar su subpedido a los estados que no son exclusivos del admin
 @router.patch('/orders/{pedido_id}/status')
 def update_vendor_order_status(
     pedido_id: int,

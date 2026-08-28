@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+// Footer simple con logo y texto de copyright; el año se calcula dinámicamente
 export function Footer() {
   return (
     <footer className="border-t border-[var(--color-border)] bg-[var(--color-surface)] mt-16">

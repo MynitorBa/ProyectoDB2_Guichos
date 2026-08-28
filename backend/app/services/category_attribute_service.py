@@ -7,6 +7,7 @@ class AttributeValidationError(ValueError):
     pass
 
 
+# Valida y normaliza atributos contra los esquemas de todas las categorías seleccionadas; lanza AttributeValidationError si hay conflicto de tipos o campos faltantes
 def validate_category_attributes(
     mongo: Database,
     category_slugs: list[str],

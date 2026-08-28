@@ -1,3 +1,4 @@
+// Select con búsqueda integrada en el dropdown (normaliza acentos) y animaciones de apertura/cierre
 import React, { useEffect, useRef, useState } from 'react'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { ChevronDown, Check, Search } from 'lucide-react'

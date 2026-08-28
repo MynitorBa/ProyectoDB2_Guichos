@@ -42,6 +42,7 @@ const schema = z
     path: ['confirmPassword'],
   })
 
+// Muestra el progreso de cumplimiento de las reglas de contraseña en tiempo real
 function PasswordStrength({ value }) {
   if (!value) return null
   return (
@@ -69,6 +70,7 @@ function FieldError({ error }) {
   return <p className="mt-1 text-xs font-sans text-[var(--color-error)]">{error.message}</p>
 }
 
+// Registro en 4 pasos: crea cuenta → auto-login → guarda dirección inicial → establece sesión
 export default function RegisterPage() {
   const navigate = useNavigate()
   const { signIn } = useAuth()

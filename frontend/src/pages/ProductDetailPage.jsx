@@ -40,6 +40,7 @@ function DetailSkeleton() {
   )
 }
 
+// Detalle de producto: galería, selector de oferta (cuando hay varios vendedores), cantidad, atributos por categoría y reseñas
 export default function ProductDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()

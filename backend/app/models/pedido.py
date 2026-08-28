@@ -7,6 +7,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Pedido global del cliente; puede contener líneas de varios vendedores agrupadas en PedidoVendedor
 class Pedido(Base):
     __tablename__ = 'pedidos'
 
@@ -29,6 +30,7 @@ class Pedido(Base):
     pagos: Mapped[list['Pago']] = relationship(back_populates='pedido')
 
 
+# Cada línea guarda snapshots de nombre, SKU y precio para preservar el historial aunque el producto cambie
 class PedidoLinea(Base):
     __tablename__ = 'pedido_lineas'
 

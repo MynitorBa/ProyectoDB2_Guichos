@@ -6,6 +6,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Notificaciones en tiempo real para el usuario; pedido_id permite enlazar directamente al pedido relacionado
 class Notificacion(Base):
     __tablename__ = 'notificaciones'
 

@@ -49,6 +49,7 @@ function Input({ className, ...props }) {
   )
 }
 
+// Dialog reutilizable para crear o editar una dirección; detecta modo edición por la presencia de initial.id
 function AddressDialog({ open, onOpenChange, initial, onSave }) {
   const [form, setForm] = useState(initial || EMPTY_ADDRESS)
   const [saving, setSaving] = useState(false)
@@ -223,6 +224,7 @@ function AddressCard({ address, onEdit, onDelete }) {
   )
 }
 
+// Página de perfil: edición de datos personales (PUT /auth/me) y gestión CRUD de direcciones de envío/facturación
 export default function ProfilePage() {
   const { user, updateUser } = useAuth()
 

@@ -30,6 +30,7 @@ function StatCard({ label, value, sub }) {
   )
 }
 
+// Panel de vendedor: estadísticas, tabla de pedidos con cambio de estado en línea, solicitudes de catálogo y notificaciones
 export default function VendorPage() {
   const [tab, setTab] = useState('orders')
   const [page, setPage] = useState(1)

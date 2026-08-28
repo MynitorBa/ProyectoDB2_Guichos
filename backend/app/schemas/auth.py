@@ -2,6 +2,7 @@ import re
 from pydantic import BaseModel, EmailStr, field_validator
 
 
+# Valida la contraseña en el servidor (8+ chars, mayúscula, minúscula, número, especial)
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
@@ -38,6 +39,7 @@ class TokenResponse(BaseModel):
     token_type: str = 'bearer'
 
 
+# Devuelve los roles como lista de strings planos (no objetos Rol completos)
 class UserResponse(BaseModel):
     id: int
     email: str

@@ -14,6 +14,7 @@ import ProductHistoryPage from './pages/ProductHistoryPage'
 import ProfilePage from './pages/ProfilePage'
 import VendorPage from './pages/VendorPage'
 
+// Guarda de ruta: redirige al login si no hay sesión, o a "/" si el usuario no tiene el rol requerido
 function PrivateRoute({ children, roles }) {
   const { user, loading } = useAuth()
   if (loading) return <p>Cargando...</p>

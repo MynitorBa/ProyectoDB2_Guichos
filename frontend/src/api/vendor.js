@@ -1,5 +1,6 @@
 import api from './client'
 
+// Endpoints del panel de vendedor: estadísticas, pedidos propios, y gestión de solicitudes de catálogo con subida de imágenes
 export const getVendorStats = () => api.get('/vendor/stats')
 export const getVendorOrders = (page = 1, pageSize = 20) =>
   api.get('/vendor/orders', { params: { page, page_size: pageSize } })

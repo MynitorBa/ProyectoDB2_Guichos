@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db_mysql import Base
 
 
+# Solo puede haber una dirección predeterminada por usuario; activa=False la oculta sin borrarla
 class Direccion(Base):
     __tablename__ = 'direcciones'
 

@@ -25,6 +25,7 @@ const PROGRESS_STEPS = [
   { key: 'entregado', label: 'Entregado' },
 ]
 
+// Barra visual del progreso del pedido: Confirmado → Enviado → Entregado; muestra badge si fue cancelado/reembolsado
 function ProgressBar({ estado }) {
   const currentIdx = PROGRESS_STEPS.findIndex((s) => s.key === estado)
   const isCancelled = estado === 'cancelado' || estado === 'reembolsado'
@@ -85,6 +86,7 @@ function ProgressBar({ estado }) {
   )
 }
 
+// Detalle de un pedido: barra de progreso del envío, líneas de productos y resumen de pago
 export default function OrderDetailPage() {
   const { id } = useParams()
 

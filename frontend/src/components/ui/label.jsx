@@ -1,3 +1,4 @@
+// Etiqueta accesible para campos de formulario, con estilos del tema y soporte para estado deshabilitado del peer
 import * as LabelPrimitive from '@radix-ui/react-label'
 import { cn } from '../../lib/utils'
 

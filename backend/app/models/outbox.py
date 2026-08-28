@@ -7,6 +7,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Implementa el patrón Transactional Outbox: el worker lee eventos pendientes y los publica en Mongo
 class OutboxEvento(Base):
     __tablename__ = 'outbox_eventos'
 

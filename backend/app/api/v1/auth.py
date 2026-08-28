@@ -10,6 +10,7 @@ from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserR
 router = APIRouter(prefix='/auth', tags=['Auth'])
 
 
+# Registra un nuevo usuario y le asigna el rol 'comprador' por defecto
 @router.post('/register', response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(Usuario).filter_by(email=payload.email).first():
@@ -42,6 +43,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     )
 
 
+# Valida credenciales y devuelve un JWT; rechaza cuentas inactivas o suspendidas
 @router.post('/login', response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     usuario = db.query(Usuario).filter_by(email=payload.email).first()
@@ -54,6 +56,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
+# Devuelve el perfil completo del usuario autenticado incluyendo sus roles
 @router.get('/me', response_model=UserResponse)
 def me(current_user: Usuario = Depends(get_current_user)):
     return UserResponse(
@@ -67,6 +70,7 @@ def me(current_user: Usuario = Depends(get_current_user)):
     )
 
 
+# Actualiza nombre, apellido y teléfono del usuario autenticado (el email no cambia)
 @router.put('/me', response_model=UserResponse)
 def update_me(
     payload: ProfileUpdateRequest,

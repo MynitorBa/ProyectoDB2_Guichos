@@ -7,6 +7,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Catálogo de métodos de pago habilitados (ej: tarjeta, efectivo); se administra desde el panel admin
 class MetodoPago(Base):
     __tablename__ = 'metodos_pago'
 
@@ -15,6 +16,7 @@ class MetodoPago(Base):
     activo: Mapped[bool] = mapped_column(default=True)
 
 
+# Transacción de pago asociada a un pedido; referencia_transaccion almacena el ID del gateway externo
 class Pago(Base):
     __tablename__ = 'pagos'
 

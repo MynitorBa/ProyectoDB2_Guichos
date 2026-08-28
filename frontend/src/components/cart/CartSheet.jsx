@@ -7,6 +7,7 @@ import { ProductImage } from '../product/ProductImage'
 import { formatQ } from '../../lib/utils'
 import { useCart } from '../../context/CartContext'
 
+// Panel lateral deslizante del carrito: lista items, permite eliminarlos y muestra resumen con IVA para ir al checkout
 export function CartSheet({ open, onClose }) {
   const { cart, remove, loading } = useCart()
   const items = cart?.items || []

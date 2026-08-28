@@ -112,6 +112,7 @@ def _vigente_en(rows: Iterable, instante: datetime):
     return max(candidates, key=lambda row: row.vigente_desde, default=None)
 
 
+# Time-travel: reconstruye el estado de precio, estado e inventario de cada oferta en el instante dado
 def reconstruir_ofertas_en_fecha(
     db: Session, *, producto_ref: str, instante_utc: datetime
 ) -> list[dict]:
@@ -265,6 +266,7 @@ def historial_precios_diario(
     }
 
 
+# Convierte los registros temporales de precio, estado e inventario en eventos auditables con formato homogéneo
 def historial_operativo_unificado(
     db: Session,
     *,

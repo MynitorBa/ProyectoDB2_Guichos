@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 
+# Datos que el cliente envía para crear o actualizar una dirección de envío o facturación
 class DireccionCreate(BaseModel):
     tipo: str = 'envio'
     pais: str = 'Guatemala'

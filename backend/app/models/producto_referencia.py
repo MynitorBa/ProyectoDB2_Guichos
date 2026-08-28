@@ -7,6 +7,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Ancla SQL del producto; el detalle completo vive en MongoDB (producto_ref como clave compartida)
 class ProductoReferencia(Base):
     """Identidad SQL mínima para relaciones que pertenecen al producto."""
 

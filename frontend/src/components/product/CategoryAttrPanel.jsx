@@ -206,6 +206,7 @@ function GenericPanel({ atributos }) {
 const ELECTRONICS = ['computadoras', 'celulares', 'audio']
 const ROPA        = ['camisas', 'pantalones', 'calzado']
 
+// Enruta al panel especializado según la categoría del producto (electrónica, ropa, libros, alimentos o genérico)
 export function CategoryAttrPanel({ categoria, atributos }) {
   const slug = typeof categoria === 'object' ? categoria?.slug : categoria
   if (!atributos || !slug) return null

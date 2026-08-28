@@ -6,6 +6,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
+# Almacena los binarios de imagen en la BD (LONGBLOB); el campo orden define la galería del producto
 class ProductoImagen(Base):
     __tablename__ = 'producto_imagenes'
 

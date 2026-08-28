@@ -3,10 +3,12 @@ import { getCart, addItem, removeItem } from '../api/cart'
 
 const CartContext = createContext(null)
 
+// Contexto global del carrito: expone cart, loading, fetchCart, add y remove; llama a la API en cada operación
 export function CartProvider({ children }) {
   const [cart, setCart] = useState({ items: [], total: 0 })
   const [loading, setLoading] = useState(false)
 
+  // fetchCart está memoizado para usarse como dependencia en useEffect sin bucles infinitos
   const fetchCart = useCallback(async () => {
     try {
       const r = await getCart()

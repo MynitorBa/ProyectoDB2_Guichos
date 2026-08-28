@@ -11,6 +11,7 @@ from app.services import catalog_service
 router = APIRouter(prefix='/products', tags=['Productos'])
 
 
+# Catálogo público con filtros de categoría, precio, disponibilidad, búsqueda y paginación; los precios vienen de MySQL
 @router.get('/')
 def listar_productos(
     categoria: str | None = Query(None),
@@ -38,6 +39,7 @@ def listar_productos(
     )
 
 
+# Sirve imágenes almacenadas como BLOB en MySQL con caché de 24 horas
 @router.get('/images/{image_id}')
 def servir_imagen(
     image_id: int,
@@ -53,6 +55,7 @@ def servir_imagen(
     )
 
 
+# Detalle de un producto por su _id de MongoDB enriquecido con todas las ofertas activas de MySQL
 @router.get('/{producto_id}')
 def obtener_producto(
     producto_id: str,

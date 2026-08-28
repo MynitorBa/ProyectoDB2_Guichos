@@ -25,6 +25,7 @@ const STEPS = [
   { id: 3, label: 'Confirmación', icon: ClipboardList },
 ]
 
+// Barra de progreso visual de los 3 pasos del checkout: Dirección → Pago → Confirmación
 function StepIndicator({ current }) {
   return (
     <div className="flex items-center justify-center gap-0 mb-8">
@@ -120,6 +121,7 @@ function OrderSummary({ items, cart }) {
   )
 }
 
+// Proceso de compra en 3 pasos: selección de dirección, método de pago y confirmación final que llama a /orders/checkout
 export default function CheckoutPage() {
   const { fetchCart } = useCart()
   const [cart, setCart] = useState({ items: [], total: 0 })

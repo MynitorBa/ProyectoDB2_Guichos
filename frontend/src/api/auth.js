@@ -1,5 +1,6 @@
 import api from './client'
 
+// Endpoints de autenticación y perfil del usuario en sesión
 export const login = (email, password) =>
   api.post('/auth/login', { email, password })
 

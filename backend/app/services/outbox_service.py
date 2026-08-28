@@ -93,6 +93,7 @@ def project_event(event: OutboxEvento) -> None:
         _append_history_idempotent(mongo, event, history)
 
 
+# Toma un evento pendiente (o con error reintentable) con bloqueo skip_locked para evitar procesamiento doble
 def _claim_one() -> str | None:
     retry_before = _now() - timedelta(seconds=2)
     with SessionLocal() as db:
@@ -166,6 +167,7 @@ def process_batch(limit: int = 20) -> int:
     return processed
 
 
+# Devuelve a 'pendiente' los eventos que llevan más de 5 minutos en estado 'procesando' (crashes o reinicios)
 def _recover_stale_claims() -> None:
     threshold = _now() - timedelta(minutes=5)
     with SessionLocal() as db:
@@ -188,6 +190,7 @@ def _worker_loop() -> None:
             _stop_event.wait(POLL_SECONDS)
 
 
+# Arranca el hilo demonio del outbox al iniciar la app; no hace nada si ya está corriendo
 def start_outbox_worker() -> None:
     global _worker_thread
     if _worker_thread and _worker_thread.is_alive():

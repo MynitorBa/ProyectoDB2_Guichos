@@ -9,6 +9,7 @@ from app.models.categoria import Categoria
 router = APIRouter(prefix='/categories', tags=['Categorías'])
 
 
+# Lista categorías activas ordenadas por el campo 'orden' para respetar la jerarquía visual
 @router.get('/')
 def listar_categorias(db: Session = Depends(get_db)):
     categorias = db.query(Categoria).filter_by(activa=True).order_by(Categoria.orden).all()
@@ -25,6 +26,7 @@ def listar_categorias(db: Session = Depends(get_db)):
     ]
 
 
+# Devuelve la definición de atributos de una categoría desde MongoDB (usada por el frontend para renderizar formularios dinámicos)
 @router.get('/{slug}/schema')
 def esquema_categoria(slug: str, mongo_db: Database = Depends(get_mongo_db)):
     esquema = mongo_db.categoria_esquemas.find_one({'categoria_slug': slug})

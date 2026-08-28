@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+// Navbar básico (legado): solo se usa en entornos de prueba; el Header es el componente de navegación principal
 export default function Navbar() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
