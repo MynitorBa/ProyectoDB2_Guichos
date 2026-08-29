@@ -37,6 +37,8 @@ from app.services.outbox_service import enqueue_outbox
 from app.services.offer_service import (
     actualizar_precio_oferta,
     enqueue_primary_offer_projection,
+    listar_ofertas_por_referencias,
+    oferta_principal,
 )
 from app.services.offer_history_service import (
     historial_precios_diario,
@@ -178,6 +180,9 @@ def update_user_roles(
     current_user: Usuario = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
+    if not payload.roles:
+        raise HTTPException(400, 'El usuario debe tener al menos un rol.')
+
     if user_id == current_user.id and 'administrador' not in payload.roles:
         raise HTTPException(400, 'No puedes quitarte el rol de administrador a ti mismo.')
 
@@ -450,7 +455,45 @@ def actualizar_producto(
             cambios['vendedor_usuario_id'] = v_uid
             cambios['vendedor_nombre'] = f'{v_user.nombre} {v_user.apellido}' if v_user else f'Usuario #{v_uid}'
             v_rec = mysql_db.query(Vendedor).filter_by(usuario_id=v_uid).first()
-            nuevo_vendedor_id_sql = v_rec.id if v_rec else None
+            if not v_rec:
+                raise HTTPException(400, 'El usuario seleccionado no tiene perfil de vendedor.')
+            nuevo_vendedor_id_sql = v_rec.id
+
+    ofertas_producto = listar_ofertas_por_referencias(
+        mysql_db, [producto_id], solo_activas=True
+    ).get(producto_id, [])
+    oferta_principal_data = oferta_principal(ofertas_producto)
+    oferta = (
+        mysql_db.get(Oferta, oferta_principal_data['oferta_id'])
+        if oferta_principal_data else
+        mysql_db.query(Oferta).filter_by(producto_ref=producto_id).order_by(Oferta.id).first()
+    )
+    cambios_operativos = {
+        'precio', 'stock', 'estado', 'disponible', 'vendedor_usuario_id'
+    }
+    if any(key in payload.model_fields_set for key in cambios_operativos) and not oferta:
+        raise HTTPException(
+            status_code=409,
+            detail='El producto documental no tiene una oferta MySQL asociada.',
+        )
+
+    vendedor_actualizado = bool(
+        oferta
+        and nuevo_vendedor_id_sql is not None
+        and oferta.vendedor_id != nuevo_vendedor_id_sql
+    )
+    if vendedor_actualizado:
+        oferta_duplicada = mysql_db.query(Oferta).filter(
+            Oferta.producto_ref == producto_id,
+            Oferta.vendedor_id == nuevo_vendedor_id_sql,
+            Oferta.id != oferta.id,
+            Oferta.estado != 'descontinuada',
+        ).first()
+        if oferta_duplicada:
+            raise HTTPException(
+                409,
+                'El vendedor seleccionado ya tiene una oferta vigente para este producto.',
+            )
 
     nuevos_slugs = cambios.pop('categoria_slugs', None)
     if 'atributos' in cambios:
@@ -528,7 +571,8 @@ def actualizar_producto(
     # Mongo recibe solo datos documentales. Precio, stock y vendedor se
     # proyectan después desde el outbox transaccional MySQL.
     campos_transaccionales = {
-        'precio', 'stock', 'disponible', 'vendedor_id', 'vendedor_nombre'
+        'precio', 'stock', 'disponible', 'vendedor_id', 'vendedor_usuario_id',
+        'vendedor_nombre'
     }
     cambios_documentales = {
         key: value for key, value in cambios.items()
@@ -577,16 +621,6 @@ def actualizar_producto(
                         es_principal=(cat.slug == nuevos_slugs[0]),
                     ))
             needs_commit = True
-    oferta = mysql_db.query(Oferta).filter_by(producto_ref=producto_id).order_by(Oferta.id).first()
-    cambios_operativos = {
-        'precio', 'stock', 'estado', 'disponible', 'vendedor_usuario_id'
-    }
-    if any(key in payload.model_fields_set for key in cambios_operativos) and not oferta:
-        raise HTTPException(
-            status_code=409,
-            detail='El producto documental no tiene una oferta MySQL asociada.',
-        )
-
     if oferta and 'precio' in cambios:
         if actualizar_precio_oferta(
             mysql_db,
@@ -621,7 +655,7 @@ def actualizar_producto(
         )
         needs_commit = True
 
-    if oferta and nuevo_vendedor_id_sql is not None:
+    if vendedor_actualizado:
         oferta.vendedor_id = nuevo_vendedor_id_sql
         vendedor = mysql_db.get(Vendedor, nuevo_vendedor_id_sql)
         enqueue_outbox(
@@ -667,7 +701,7 @@ def actualizar_producto(
         needs_commit = True
 
     if oferta and (
-        nuevo_vendedor_id_sql is not None
+        vendedor_actualizado
         or 'estado' in cambios
         or 'disponible' in cambios
     ):

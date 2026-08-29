@@ -8,6 +8,7 @@ from typing import Any
 
 from pymongo.database import Database
 from bson import ObjectId
+from bson.decimal128 import Decimal128
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_now
@@ -15,14 +16,29 @@ from app.services.product_history_service import registrar_evento
 from app.services.offer_service import listar_ofertas_por_referencias, oferta_principal
 
 
+def _to_json(value):
+    """Convierte recursivamente valores BSON a tipos JSON sin tocar Pydantic global."""
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, Decimal128):
+        return float(value.to_decimal())
+    if isinstance(value, dict):
+        return {key: _to_json(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_to_json(item) for item in value]
+    if isinstance(value, tuple):
+        return [_to_json(item) for item in value]
+    return value
+
+
 def _serialize(doc: dict) -> dict:
-    """Convierte ObjectId a string para serialización JSON."""
-    doc['_id'] = str(doc['_id'])
+    """Serializa un documento del catálogo y normaliza sus imágenes públicas."""
+    doc = _to_json(doc)
     if 'imagenes' in doc:
         doc['imagenes'] = [
-            img['url'] if isinstance(img, dict) else img
+            img.get('url') if isinstance(img, dict) else img
             for img in doc['imagenes']
-            if img
+            if img and (not isinstance(img, dict) or img.get('url'))
         ]
     if 'categorias' not in doc and 'categoria' in doc:
         doc['categorias'] = [doc['categoria']]
