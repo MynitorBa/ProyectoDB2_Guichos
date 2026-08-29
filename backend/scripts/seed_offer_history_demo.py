@@ -119,8 +119,14 @@ def seed_existing_offer(db, *, offer_id: int, admin_id: int, days,
 def create_demo_offer(db, *, producto_ref: str, vendor_id: int, sku: str,
                       admin_id: int, created_at: datetime, prices, stocks,
                       states) -> Oferta:
+    variant_id = db.query(Oferta.producto_variante_id).filter_by(
+        producto_ref=producto_ref
+    ).limit(1).scalar()
+    if not variant_id:
+        raise RuntimeError(f'El producto {producto_ref} no tiene variante registrada.')
     offer = Oferta(
         producto_ref=producto_ref,
+        producto_variante_id=variant_id,
         vendedor_id=vendor_id,
         sku=sku,
         precio_actual=Decimal(prices[-1][1]),

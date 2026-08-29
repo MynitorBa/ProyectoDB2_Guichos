@@ -1,6 +1,6 @@
 # Modelo relacional definitivo — TiendaYa
 
-**Estado:** vigente después de la extensión de catálogo del 25 de agosto de 2026.
+**Estado:** vigente después de la extensión de variantes del 29 de agosto de 2026.
 
 ## Alcance de MySQL
 
@@ -11,12 +11,13 @@ contenido descriptivo del producto vive en MongoDB; MySQL conserva
 `producto_referencias` como identidad relacional, clasificación controlada y
 los binarios de imagen solicitados para la entrega.
 
-El esquema final contiene 27 tablas. Se reproduce aplicando el DDL base y las
-migraciones `05` a `13`; `10_phase6b_cutover.sql` retira las estructuras de
+El esquema final contiene 30 tablas. Se reproduce aplicando el DDL base y las
+migraciones `05` a `15`; `10_phase6b_cutover.sql` retira las estructuras de
 transición y `11_phase7_reference_integrity.sql` cierra las relaciones entre
 categorías, referencias y ofertas. `12_catalog_images_categories.sql` agrega
 imágenes BLOB y la clasificación N:M. `13_catalog_requests.sql` agrega el flujo
-de aprobación previa para productos y ofertas propuestos por vendedores.
+de aprobación previa para productos y ofertas propuestos por vendedores;
+`15_dynamic_variants.sql` incorpora la identidad mínima de variantes.
 
 ## Decisiones de normalización
 
@@ -36,8 +37,9 @@ precio y con cuánto inventario**:
 - `producto_referencias`: ObjectId documental y categoría SQL validada.
 - `producto_referencia_categorias`: categorías N:M y marca de la principal.
 - `producto_imagenes`: binario, MIME y orden bajo una FK a la referencia.
+- `producto_variante_referencias`: ancla mínima hacia la variante documental.
 - `ofertas`: vendedor, SKU, precio vigente, moneda, estado y versión; su
-  `producto_ref` referencia el registro anterior.
+  `producto_variante_id` referencia la combinación exacta vendida.
 - `oferta_precios_historial`: intervalos de vigencia del precio.
 - `oferta_estados_historial`: intervalos de estado, vendedor y SKU.
 - `inventario`: existencias por oferta y bodega.
@@ -47,7 +49,7 @@ precio y con cuánto inventario**:
 ### Solicitudes de catálogo
 
 `solicitudes_catalogo` registra si un vendedor propone un producto nuevo o una
-oferta sobre un producto existente, junto con precio, stock, SKU y el estado de
+oferta sobre una variante existente, junto con precio, stock, SKU y el estado de
 revisión. Las categorías e imágenes de una propuesta de producto se normalizan
 en `solicitud_catalogo_categorias` y `solicitud_catalogo_imagenes`. Una solicitud
 de oferta no acepta imágenes porque estas pertenecen al producto documental.
@@ -109,7 +111,7 @@ entrega confiable entre MySQL y MongoDB.
 | Área | Tablas | Responsabilidad |
 |---|---|---|
 | Identidad | `usuarios`, `roles`, `usuario_rol`, `direcciones` | Cuentas, permisos y libreta de direcciones |
-| Comercio | `vendedores`, `categorias`, `producto_referencias`, `producto_referencia_categorias`, `producto_imagenes`, `ofertas`, `oferta_precios_historial`, `oferta_estados_historial`, `solicitudes_catalogo`, `solicitud_catalogo_categorias`, `solicitud_catalogo_imagenes` | Perfil comercial, navegación, identidad mínima, imágenes, precio, estado temporal y aprobación previa |
+| Comercio | `vendedores`, `categorias`, `producto_referencias`, `producto_variante_referencias`, `producto_referencia_categorias`, `producto_imagenes`, `ofertas`, `oferta_precios_historial`, `oferta_estados_historial`, `solicitudes_catalogo`, `solicitud_catalogo_categorias`, `solicitud_catalogo_imagenes` | Perfil comercial, navegación, identidades mínimas de producto/variante, imágenes, precio, estado temporal y aprobación previa |
 | Inventario | `inventario`, `inventario_saldos_historial`, `movimientos_inventario` | Stock actual, saldos temporales y movimientos |
 | Pedidos | `pedidos`, `pedido_vendedores`, `pedido_direcciones`, `pedido_lineas` | Compra global, partes por vendedor y snapshots |
 | Pagos | `metodos_pago`, `pagos` | Medio, monto y resultado del pago |
@@ -127,6 +129,9 @@ entrega confiable entre MySQL y MongoDB.
 - No quedan FKs operativas hacia la tabla eliminada `productos`.
 - `producto_referencias.categoria_id` referencia `categorias.id` y
   `ofertas.producto_ref` referencia `producto_referencias.producto_ref`.
+- `ofertas.producto_variante_id` referencia
+  `producto_variante_referencias.id`; los atributos de esa variante permanecen
+  únicamente en MongoDB.
 - El único salto que MySQL no puede imponer es
   `producto_referencias.producto_ref` hacia `MongoDB.productos._id`; se valida
   desde la aplicación y con `backend/scripts/verify_setup.py`.

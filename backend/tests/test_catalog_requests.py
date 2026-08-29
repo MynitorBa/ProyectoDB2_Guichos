@@ -49,7 +49,12 @@ def test_catalog_request_schema_and_foreign_keys_are_installed():
 
 
 def test_offer_request_rejects_images_and_invalid_commercial_values():
-    valid = {'producto_ref': 'a' * 24, 'precio': 10, 'stock': 1}
+    valid = {
+        'producto_ref': 'a' * 24,
+        'producto_variante_id': 1,
+        'precio': 10,
+        'stock': 1,
+    }
     OfferProposalCreate(**valid)
     with pytest.raises(ValidationError):
         OfferProposalCreate(**valid, imagen_ids=[1])
@@ -82,7 +87,10 @@ def test_manual_sku_is_rejected_in_every_creation_contract():
             vendedor_usuario_id=1, sku='MANUAL-3',
         )
     with pytest.raises(ValidationError):
-        OfferCreate(vendedor_id=1, precio=10, stock=1, sku='MANUAL-4')
+        OfferCreate(
+            vendedor_id=1, producto_variante_id=1,
+            precio=10, stock=1, sku='MANUAL-4',
+        )
 
 
 def test_product_sku_uses_category_prefix_and_expected_format():

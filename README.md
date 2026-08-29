@@ -126,6 +126,11 @@ administrador aprueba o rechaza cada solicitud y el vendedor conserva historial
 y notificaciones. Consulte
 [`docs/21-solicitudes-catalogo-vendedores.md`](docs/21-solicitudes-catalogo-vendedores.md).
 
+La migración `15_dynamic_variants.sql` agrega variantes con atributos dinámicos
+en MongoDB y un registro relacional mínimo para que cada oferta tenga una FK a
+la combinación exacta que vende. Se instala automáticamente con `setup.ps1`.
+Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
+
 ## Documentación vigente
 
 - [Modelo relacional definitivo](docs/01-modelo-relacional.md)
@@ -140,6 +145,7 @@ y notificaciones. Consulte
 - [Correcciones del flujo de instalación](docs/19-correcciones-instalacion.md)
 - [Imágenes SQL, categorías múltiples y revisión de ofertas](docs/20-imagenes-categorias-ofertas.md)
 - [Solicitudes de catálogo de vendedores](docs/21-solicitudes-catalogo-vendedores.md)
+- [Variantes dinámicas de producto](docs/22-variantes-dinamicas.md)
 
 ## Entregas del proyecto
 

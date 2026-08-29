@@ -24,6 +24,9 @@ class SolicitudCatalogo(Base):
     producto_ref_solicitado: Mapped[str | None] = mapped_column(
         ForeignKey('producto_referencias.producto_ref'), nullable=True
     )
+    producto_variante_id_solicitado: Mapped[int | None] = mapped_column(
+        ForeignKey('producto_variante_referencias.id'), nullable=True
+    )
     nombre: Mapped[str | None] = mapped_column(String(200), nullable=True)
     descripcion: Mapped[str | None] = mapped_column(Text, nullable=True)
     atributos: Mapped[dict] = mapped_column(JSON, default=dict)

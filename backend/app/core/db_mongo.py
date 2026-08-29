@@ -65,6 +65,18 @@ def ensure_indexes(db: Database) -> None:
         sparse=True,
         background=True,
     )
+    db.producto_variantes.create_index(
+        [('producto_ref', ASCENDING), ('clave_variante', ASCENDING)],
+        name='uidx_variante_producto_clave',
+        unique=True,
+        background=True,
+    )
+    db.producto_variantes.create_index(
+        [('sku_catalogo', ASCENDING)],
+        name='uidx_variante_sku',
+        unique=True,
+        background=True,
+    )
 
 
 def close_mongo():

@@ -155,6 +155,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Falló la instalación del historial temporal de ofertas.'
 }
 
+& $python scripts\apply_dynamic_variants.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'Falló la instalación del registro de variantes dinámicas.'
+}
+
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
 & $python scripts\sync_mongo_projections.py

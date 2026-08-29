@@ -49,6 +49,7 @@ export default function ProductDetailPage() {
   const [selectedImg, setSelectedImg] = useState(0)
   const [cantidad, setCantidad] = useState(1)
   const [selectedOfferId, setSelectedOfferId] = useState(null)
+  const [selectedVariantId, setSelectedVariantId] = useState(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['product', id],
@@ -63,14 +64,19 @@ export default function ProductDetailPage() {
       navigate('/login')
       return
     }
-    const offer = (product.ofertas || []).find((item) => item.oferta_id === selectedOfferId)
-      || product.ofertas?.[0]
-    if (!offer?.oferta_id && !product.oferta_id) {
+    const variant = (product.variantes || []).find(
+      item => item.variante_id === selectedVariantId
+    ) || product.variantes?.[0]
+    const availableOffers = variant ? (variant.ofertas || []) : (product.ofertas || [])
+    const offer = availableOffers.find(
+      item => item.oferta_id === selectedOfferId
+    ) || availableOffers[0]
+    if (!offer?.oferta_id) {
       toast.error('Producto no disponible para compra')
       return
     }
     try {
-      await add(offer?.oferta_id || product.oferta_id, cantidad)
+      await add(offer.oferta_id, cantidad)
       toast.success(`${product.nombre} agregado al carrito`)
     } catch {
       toast.error('No se pudo agregar al carrito')
@@ -99,14 +105,17 @@ export default function ProductDetailPage() {
   const imagenes = product.imagenes || []
   const imgSrc = (typeof imagenes[selectedImg] === 'string' ? imagenes[selectedImg] : imagenes[selectedImg]?.url) || null
   const resenas = product.resumen_resenas || {}
-  const atributos = product.atributos || {}
-  const ofertas = product.ofertas || []
-  const selectedOffer = ofertas.find((item) => item.oferta_id === selectedOfferId)
-    || ofertas[0]
-  const displayPrice = selectedOffer?.precio ?? product.precio
-  const displayStock = selectedOffer?.stock ?? product.stock ?? 0
-  const displayAvailable = selectedOffer?.disponible ?? product.disponible
-  const displayVendor = selectedOffer?.vendedor_nombre ?? product.vendedor_nombre
+  const variantes = product.variantes || []
+  const selectedVariant = variantes.find(
+    item => item.variante_id === selectedVariantId
+  ) || variantes.find(item => item.ofertas?.some(offer => offer.oferta_id === selectedOfferId)) || variantes[0]
+  const ofertas = selectedVariant?.ofertas || product.ofertas || []
+  const selectedOffer = ofertas.find((item) => item.oferta_id === selectedOfferId) || ofertas[0]
+  const atributos = { ...(product.atributos || {}), ...(selectedVariant?.atributos || {}) }
+  const displayPrice = selectedOffer?.precio ?? (variantes.length ? null : product.precio)
+  const displayStock = selectedOffer?.stock ?? (variantes.length ? 0 : product.stock ?? 0)
+  const displayAvailable = selectedOffer?.disponible ?? (variantes.length ? false : product.disponible)
+  const displayVendor = selectedOffer?.vendedor_nombre ?? (variantes.length ? null : product.vendedor_nombre)
 
   const starCounts = [5, 4, 3, 2, 1].map((n) => ({
     stars: n,
@@ -188,7 +197,7 @@ export default function ProductDetailPage() {
 
             <div className="flex items-end gap-3">
               <span className="font-mono font-bold text-4xl text-[var(--color-text-primary)]">
-                {formatQ(displayPrice)}
+                {displayPrice == null ? 'Sin oferta disponible' : formatQ(displayPrice)}
               </span>
               {product.moneda && (
                 <span className="font-sans text-sm text-[var(--color-text-muted)] mb-1">
@@ -205,6 +214,30 @@ export default function ProductDetailPage() {
                   <p className="font-display font-semibold text-sm text-[var(--color-text-primary)]">
                     {displayVendor}
                   </p>
+                </div>
+              </div>
+            )}
+
+            {variantes.length > 1 && (
+              <div className="space-y-2">
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Variante</p>
+                <div className="flex flex-wrap gap-2">
+                  {variantes.map(variant => (
+                    <button
+                      key={variant.variante_id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedVariantId(variant.variante_id)
+                        setSelectedOfferId(variant.ofertas?.[0]?.oferta_id || null)
+                        setCantidad(1)
+                      }}
+                      className={`rounded-[var(--radius-md)] border px-3 py-2 text-sm ${selectedVariant?.variante_id === variant.variante_id ? 'border-[var(--color-action)] bg-[var(--color-action)]/5' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}
+                    >
+                      {Object.keys(variant.atributos || {}).length
+                        ? Object.entries(variant.atributos).map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value}`).join(' · ')
+                        : 'Predeterminada'}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -234,7 +267,7 @@ export default function ProductDetailPage() {
 
             <CategoryAttrPanel
               categoria={product.categoria}
-              atributos={product.atributos}
+              atributos={atributos}
             />
 
             <div className="flex items-center gap-3 pt-1">

@@ -54,6 +54,12 @@ export const setVendorProfile = (userId, data) =>
 export const getProductOffers = (productoRef) =>
   api.get(`/admin/products/${productoRef}/offers`)
 
+export const getProductVariants = (productoRef) =>
+  api.get(`/admin/products/${productoRef}/variants`)
+
+export const addProductVariant = (productoRef, data) =>
+  api.post(`/admin/products/${productoRef}/variants`, data)
+
 export const addProductOffer = (productoRef, data) =>
   api.post(`/admin/products/${productoRef}/offers`, data)
 

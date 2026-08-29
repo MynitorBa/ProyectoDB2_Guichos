@@ -7,7 +7,7 @@ import {
   cancelCatalogRequest, deleteRequestImage, getCatalogRequests,
   proposeOffer, proposeProduct, uploadRequestImage,
 } from '../../api/vendor'
-import { getCategories, getCategorySchema, getProducts } from '../../api/products'
+import { getCategories, getCategorySchema, getProduct, getProducts } from '../../api/products'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
@@ -129,23 +129,30 @@ function ProductProposalDialog({ open, onOpenChange }) {
 // Dialog para solicitar una oferta sobre un producto ya existente, con precio y stock propios del vendedor
 function OfferProposalDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({ producto_ref: '', precio: '', stock: '', observaciones: '' })
+  const [form, setForm] = useState({ producto_ref: '', producto_variante_id: '', precio: '', stock: '', observaciones: '' })
   const { data } = useQuery({
     queryKey: ['products-for-offer-request'],
     queryFn: () => getProducts({ page_size: 100, orden: 'nombre_asc' }).then(r => r.data),
     enabled: open,
   })
   const products = data?.items || []
+  const { data: selectedProduct } = useQuery({
+    queryKey: ['product-for-offer-request', form.producto_ref],
+    queryFn: () => getProduct(form.producto_ref).then(r => r.data),
+    enabled: open && !!form.producto_ref,
+  })
+  const variants = selectedProduct?.variantes || []
   const mutation = useMutation({
     mutationFn: proposeOffer,
-    onSuccess: () => { toast.success('Solicitud de oferta enviada.'); queryClient.invalidateQueries({ queryKey: ['vendor-catalog-requests'] }); onOpenChange(false); setForm({ producto_ref: '', precio: '', stock: '', observaciones: '' }) },
+    onSuccess: () => { toast.success('Solicitud de oferta enviada.'); queryClient.invalidateQueries({ queryKey: ['vendor-catalog-requests'] }); onOpenChange(false); setForm({ producto_ref: '', producto_variante_id: '', precio: '', stock: '', observaciones: '' }) },
     onError: err => toast.error(err?.response?.data?.detail || 'No se pudo enviar la solicitud.'),
   })
-  function submit(e) { e.preventDefault(); if (!form.producto_ref || !form.precio) return toast.error('Selecciona producto y precio.'); mutation.mutate({ producto_ref: form.producto_ref, precio: Number(form.precio), stock: Number(form.stock) || 0, observaciones: form.observaciones || null }) }
+  function submit(e) { e.preventDefault(); if (!form.producto_ref || !form.producto_variante_id || !form.precio) return toast.error('Selecciona producto, variante y precio.'); mutation.mutate({ producto_ref: form.producto_ref, producto_variante_id: Number(form.producto_variante_id), precio: Number(form.precio), stock: Number(form.stock) || 0, observaciones: form.observaciones || null }) }
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
     <DialogTitle>Solicitar una oferta</DialogTitle><DialogDescription>Publicarás tu propio precio e inventario sobre un producto existente. Las imágenes pertenecen al producto.</DialogDescription>
     <form onSubmit={submit} className="space-y-4">
-      <div><Label>Producto *</Label><Select value={form.producto_ref} onValueChange={v => setForm(p => ({ ...p, producto_ref: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar producto..." /></SelectTrigger><SelectContent>{products.map(p => <SelectItem key={p._id} value={p._id}>{p.nombre} · {p.sku}</SelectItem>)}</SelectContent></Select></div>
+      <div><Label>Producto *</Label><Select value={form.producto_ref} onValueChange={v => setForm(p => ({ ...p, producto_ref: v, producto_variante_id: '' }))}><SelectTrigger><SelectValue placeholder="Seleccionar producto..." /></SelectTrigger><SelectContent>{products.map(p => <SelectItem key={p._id} value={p._id}>{p.nombre} · {p.sku}</SelectItem>)}</SelectContent></Select></div>
+      {form.producto_ref && <div><Label>Variante *</Label><Select value={form.producto_variante_id} onValueChange={v => setForm(p => ({ ...p, producto_variante_id: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar variante..." /></SelectTrigger><SelectContent>{variants.map(variant => <SelectItem key={variant.variante_id} value={String(variant.variante_id)}>{Object.keys(variant.atributos || {}).length ? Object.entries(variant.atributos).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'Predeterminada'}</SelectItem>)}</SelectContent></Select></div>}
       <div className="grid grid-cols-2 gap-3"><div><Label>Tu precio *</Label><Input type="number" min="0.01" step="0.01" value={form.precio} onChange={e => setForm(p => ({ ...p, precio: e.target.value }))} /></div><div><Label>Tu stock *</Label><Input type="number" min="0" value={form.stock} onChange={e => setForm(p => ({ ...p, stock: e.target.value }))} /></div></div>
       <p className="text-xs text-[var(--color-text-muted)]">El SKU de la oferta se generará automáticamente al aprobar.</p>
       <div><Label>Comentario</Label><textarea rows={3} value={form.observaciones} onChange={e => setForm(p => ({ ...p, observaciones: e.target.value }))} className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm" /></div>

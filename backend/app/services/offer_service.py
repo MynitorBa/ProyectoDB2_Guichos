@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.inventario import Inventario
 from app.models.oferta import Oferta, OfertaPrecioHistorial
+from app.models.producto_variante_referencia import ProductoVarianteReferencia
 from app.models.vendedor import Vendedor
 from app.core.time import utc_now
 from app.services.outbox_service import enqueue_outbox
@@ -90,23 +91,29 @@ def listar_ofertas_por_referencias(
         return {}
 
     query = (
-        db.query(Oferta, Vendedor)
+        db.query(Oferta, Vendedor, ProductoVarianteReferencia)
         .join(Vendedor, Vendedor.id == Oferta.vendedor_id)
+        .join(
+            ProductoVarianteReferencia,
+            ProductoVarianteReferencia.id == Oferta.producto_variante_id,
+        )
         .filter(Oferta.producto_ref.in_(producto_refs))
     )
     if solo_activas:
         query = query.filter(Oferta.estado == 'activa')
 
     rows = query.all()
-    offer_ids = [offer.id for offer, _ in rows]
+    offer_ids = [offer.id for offer, _, _ in rows]
     stock = _stock_by_offer(db, offer_ids)
     grouped = defaultdict(list)
-    for offer, vendor in rows:
+    for offer, vendor, variant in rows:
         available = stock.get(offer.id, 0)
         grouped[offer.producto_ref].append({
             'id': offer.id,
             'oferta_id': offer.id,
             'producto_ref': offer.producto_ref,
+            'producto_variante_id': offer.producto_variante_id,
+            'variante_ref': variant.variante_ref,
             'sku': offer.sku,
             'precio': float(offer.precio_actual),
             'moneda': offer.moneda,

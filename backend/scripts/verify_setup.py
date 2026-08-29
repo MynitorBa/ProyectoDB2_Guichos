@@ -23,6 +23,7 @@ def main():
     ok = True
     offer_projections = []
     registry_refs = []
+    variant_registry_refs = []
 
     # ── MySQL ─────────────────────────────────────────────────────────────────
     try:
@@ -427,6 +428,79 @@ def main():
             else:
                 print('MySQL historial temporal: ofertas e inventarios completos')
 
+            variant_errors = []
+            if 'producto_variante_referencias' not in installed_tables:
+                variant_errors.append('falta tabla producto_variante_referencias')
+            if ('ofertas', 'producto_variante_id') not in installed_columns:
+                variant_errors.append('falta ofertas.producto_variante_id')
+            if (
+                'solicitudes_catalogo', 'producto_variante_id_solicitado'
+            ) not in installed_columns:
+                variant_errors.append(
+                    'falta solicitudes_catalogo.producto_variante_id_solicitado'
+                )
+            missing_variant_fks = sorted(
+                {
+                    'fk_pvr_producto', 'fk_oferta_variante',
+                    'fk_sc_variante_solicitada',
+                } - installed_fks
+            )
+            if missing_variant_fks:
+                variant_errors.append(f'FKs faltantes: {missing_variant_fks}')
+            cur.execute("""
+                SELECT COUNT(*) AS n
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ofertas'
+                  AND INDEX_NAME = 'uq_oferta_vendedor_variante'
+                  AND NON_UNIQUE = 0
+            """)
+            if not cur.fetchone()['n']:
+                variant_errors.append('falta único uq_oferta_vendedor_variante')
+            if not variant_errors:
+                checks = {
+                    'ofertas sin variante': """
+                        SELECT COUNT(*) AS n FROM ofertas
+                        WHERE producto_variante_id IS NULL
+                    """,
+                    'ofertas enlazadas a variante de otro producto': """
+                        SELECT COUNT(*) AS n
+                        FROM ofertas o
+                        JOIN producto_variante_referencias pvr
+                          ON pvr.id = o.producto_variante_id
+                        JOIN producto_referencias pr
+                          ON pr.id = pvr.producto_referencia_id
+                        WHERE pr.producto_ref <> o.producto_ref
+                    """,
+                    'productos sin variante registrada': """
+                        SELECT COUNT(*) AS n
+                        FROM producto_referencias pr
+                        LEFT JOIN producto_variante_referencias pvr
+                          ON pvr.producto_referencia_id = pr.id
+                        WHERE pvr.id IS NULL
+                    """,
+                }
+                for label, query in checks.items():
+                    cur.execute(query)
+                    count = cur.fetchone()['n']
+                    if count:
+                        variant_errors.append(f'{label}: {count}')
+                cur.execute("""
+                    SELECT pvr.id, pvr.variante_ref, pr.producto_ref
+                    FROM producto_variante_referencias pvr
+                    JOIN producto_referencias pr
+                      ON pr.id = pvr.producto_referencia_id
+                    ORDER BY pvr.id
+                """)
+                variant_registry_refs = cur.fetchall()
+            if variant_errors:
+                print(f'MySQL variantes dinámicas: {"; ".join(variant_errors)}')
+                ok = False
+            else:
+                print(
+                    'MySQL variantes dinámicas: registro y ofertas enlazados '
+                    f'({len(variant_registry_refs)} variantes)'
+                )
+
             legacy_tables = {'productos'} & installed_tables
             legacy_columns = {
                 ('carrito_items', 'producto_id'),
@@ -523,6 +597,7 @@ def main():
         ok = False
         refs = []
         registry_refs = []
+        variant_registry_refs = []
 
     # ── MongoDB ───────────────────────────────────────────────────────────────
     try:
@@ -645,6 +720,38 @@ def main():
             ok = False
         else:
             print('MongoDB Fase 7: categorías sincronizadas con MySQL')
+
+        variant_indexes = mongo.producto_variantes.index_information()
+        expected_variant_indexes = {
+            'uidx_variante_producto_clave', 'uidx_variante_sku',
+        }
+        invalid_variant_indexes = sorted(
+            name for name in expected_variant_indexes
+            if not variant_indexes.get(name, {}).get('unique')
+        )
+        variant_orphans = []
+        for ref in variant_registry_refs:
+            try:
+                document = mongo.producto_variantes.find_one(
+                    {'_id': ObjectId(ref['variante_ref'])},
+                    {'producto_ref': 1},
+                )
+            except Exception:
+                document = None
+            if not document or document.get('producto_ref') != ref['producto_ref']:
+                variant_orphans.append(ref['id'])
+        if invalid_variant_indexes or variant_orphans:
+            print(
+                'MongoDB variantes dinámicas: '
+                f'índices inválidos={invalid_variant_indexes}, '
+                f'referencias divergentes={len(variant_orphans)}'
+            )
+            ok = False
+        else:
+            print(
+                'MongoDB variantes dinámicas: índices únicos y '
+                'referencias sincronizadas'
+            )
 
         client.close()
     except Exception as e:

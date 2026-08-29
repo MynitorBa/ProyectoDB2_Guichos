@@ -24,6 +24,7 @@ from app.models.pago import Pago
 from app.models.pedido import Pedido
 from app.models.pedido_vendedor import PedidoVendedor
 from app.models.producto_referencia import ProductoReferencia
+from app.models.producto_variante_referencia import ProductoVarianteReferencia
 from app.models.producto_referencia_categoria import ProductoReferenciaCategoria
 from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.models.vendedor import Vendedor
@@ -54,6 +55,7 @@ from app.services.category_attribute_service import (
     validate_category_attributes,
 )
 from app.services.sku_service import generate_offer_sku, generate_product_sku
+from app.services.variant_service import create_variant, list_variants
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
 
@@ -73,6 +75,7 @@ class VendorProfilePayload(BaseModel):
 class OfferCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     vendedor_id: int
+    producto_variante_id: int
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
 
@@ -81,6 +84,11 @@ class OfferUpdate(BaseModel):
     precio: Decimal | None = Field(default=None, gt=0)
     stock: int | None = Field(default=None, ge=0)
     estado: str | None = None
+
+
+class VariantCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    atributos: dict
 
 
 class AtributoEsquema(BaseModel):
@@ -314,6 +322,14 @@ def crear_producto(
         )
         mysql_db.add(ref)
         mysql_db.flush()
+        variant_registry, _ = create_variant(
+            db,
+            mysql_db,
+            producto_ref=producto_mongo['_id'],
+            attributes={},
+            product_sku=sku,
+            default=True,
+        )
         for category in todas_categorias:
             mysql_db.add(ProductoReferenciaCategoria(
                 producto_referencia_id=ref.id,
@@ -333,6 +349,7 @@ def crear_producto(
 
         oferta = Oferta(
             producto_ref=producto_mongo['_id'],
+            producto_variante_id=variant_registry.id,
             vendedor_id=v_rec.id,
             sku=sku,
             precio_actual=payload.precio,
@@ -372,6 +389,7 @@ def crear_producto(
         # Compensación: no dejar un documento comprable sin identidad/oferta SQL.
         db.productos.delete_one({'_id': ObjectId(producto_mongo['_id'])})
         db.producto_eventos.delete_many({'producto_id': producto_mongo['_id']})
+        db.producto_variantes.delete_many({'producto_ref': producto_mongo['_id']})
         raise
 
     return producto_mongo
@@ -1327,12 +1345,63 @@ def update_admin_order_status(
 
 # ── Gestión de ofertas por producto ──────────────────────────────────────────
 
+@router.get('/products/{producto_ref}/variants')
+def get_product_variants(
+    producto_ref: str,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    return list_variants(mongo, db, producto_ref)
+
+
+@router.post('/products/{producto_ref}/variants', status_code=201)
+def add_product_variant(
+    producto_ref: str,
+    payload: VariantCreate,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    try:
+        product = mongo.productos.find_one(
+            {'_id': ObjectId(producto_ref)}, {'sku': 1}
+        )
+    except Exception:
+        product = None
+    if not product:
+        raise HTTPException(404, 'Producto no encontrado.')
+    try:
+        registry, _ = create_variant(
+            mongo,
+            db,
+            producto_ref=producto_ref,
+            attributes=payload.atributos,
+            product_sku=product.get('sku', producto_ref[:8]),
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return next(
+        variant for variant in list_variants(mongo, db, producto_ref)
+        if variant['variante_id'] == registry.id
+    )
+
 @router.get('/products/{producto_ref}/offers')
 def list_product_offers(
     producto_ref: str,
     _: Usuario = Depends(get_admin_user),
     db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
 ):
+    variants = {
+        variant['variante_id']: variant
+        for variant in list_variants(mongo, db, producto_ref)
+    }
     rows = (
         db.query(Oferta, Vendedor)
         .join(Vendedor, Vendedor.id == Oferta.vendedor_id)
@@ -1349,6 +1418,13 @@ def list_product_offers(
             'oferta_id': oferta.id,
             'vendedor_id': oferta.vendedor_id,
             'vendedor_nombre': vendedor.nombre_comercial,
+            'producto_variante_id': oferta.producto_variante_id,
+            'variante_ref': variants.get(
+                oferta.producto_variante_id, {}
+            ).get('variante_ref'),
+            'variante_atributos': variants.get(
+                oferta.producto_variante_id, {}
+            ).get('atributos', {}),
             'sku': oferta.sku,
             'precio': float(oferta.precio_actual),
             'moneda': oferta.moneda,
@@ -1380,19 +1456,41 @@ def add_product_offer(
     if not vendedor:
         raise HTTPException(404, 'Vendedor no encontrado.')
 
+    product_reference = db.query(ProductoReferencia).filter_by(
+        producto_ref=producto_ref
+    ).first()
+    variant = db.get(ProductoVarianteReferencia, payload.producto_variante_id)
+    if not product_reference or not variant or (
+        variant.producto_referencia_id != product_reference.id
+    ):
+        raise HTTPException(400, 'La variante no pertenece al producto seleccionado.')
+    variant_doc = mongo.producto_variantes.find_one(
+        {'_id': ObjectId(variant.variante_ref)}
+    )
+    if not variant_doc or variant_doc.get('estado') != 'activa':
+        raise HTTPException(400, 'La variante seleccionada no está activa.')
+
     existing = (
         db.query(Oferta)
-        .filter_by(producto_ref=producto_ref, vendedor_id=payload.vendedor_id)
-        .filter(Oferta.estado != 'descontinuada')
+        .filter_by(
+            producto_variante_id=variant.id,
+            vendedor_id=payload.vendedor_id,
+        )
         .first()
     )
     if existing:
-        raise HTTPException(400, 'Este vendedor ya tiene una oferta activa para este producto.')
+        raise HTTPException(
+            400,
+            'Este vendedor ya tiene una oferta para la variante; '
+            'actualiza o reactiva la existente.',
+        )
 
     try:
         sku = generate_offer_sku(
             db,
-            product_sku=doc.get('sku', producto_ref[:8]),
+            product_sku=variant_doc.get(
+                'sku_catalogo', doc.get('sku', producto_ref[:8])
+            ),
             vendor_id=vendedor.id,
         )
     except ValueError as exc:
@@ -1400,6 +1498,7 @@ def add_product_offer(
 
     oferta = Oferta(
         producto_ref=producto_ref,
+        producto_variante_id=variant.id,
         vendedor_id=payload.vendedor_id,
         sku=sku,
         precio_actual=payload.precio,
@@ -1440,6 +1539,8 @@ def add_product_offer(
         'oferta_id': oferta.id,
         'vendedor_id': oferta.vendedor_id,
         'vendedor_nombre': vendedor.nombre_comercial,
+        'producto_variante_id': variant.id,
+        'variante_atributos': variant_doc.get('atributos', {}),
         'sku': oferta.sku,
         'precio': float(oferta.precio_actual),
         'estado': oferta.estado,

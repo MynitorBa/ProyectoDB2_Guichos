@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
-import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, addProductOffer, updateProductOffer } from '../api/admin'
+import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, getProductVariants, addProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -486,7 +486,7 @@ function ProductFormModal({ open, onOpenChange, product }) {
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl">
         <DialogTitle>{isEdit ? 'Editar producto' : 'Nuevo producto'}</DialogTitle>
         <DialogDescription>{isEdit ? `SKU: ${product?.sku}` : 'Los campos con * son obligatorios.'}</DialogDescription>
 
@@ -652,8 +652,10 @@ function ProductFormModal({ open, onOpenChange, product }) {
 function OffersModal({ product, open, onOpenChange }) {
   const queryClient = useQueryClient()
   const [newVendorId, setNewVendorId] = useState('')
+  const [newVariantId, setNewVariantId] = useState('')
   const [newPrecio, setNewPrecio] = useState('')
   const [newStock, setNewStock] = useState('')
+  const [variantAttrs, setVariantAttrs] = useState([{ key: '', value: '' }])
   const [editingId, setEditingId] = useState(null)
   const [editPrecio, setEditPrecio] = useState('')
   const [editStock, setEditStock] = useState('')
@@ -664,19 +666,29 @@ function OffersModal({ product, open, onOpenChange }) {
     enabled: open && !!product,
   })
 
+  const { data: variants = [] } = useQuery({
+    queryKey: ['product-variants', product?._id],
+    queryFn: () => getProductVariants(product._id).then((r) => r.data),
+    enabled: open && !!product,
+  })
+
   const { data: vendorsData = [] } = useQuery({
     queryKey: ['admin-vendors'],
     queryFn: () => getAdminVendors().then((r) => r.data),
     enabled: open,
   })
 
-  const existingVendorIds = new Set(offers.filter(o => o.estado !== 'descontinuada').map(o => o.vendedor_id))
+  const selectedVariant = newVariantId || String(variants[0]?.variante_id || '')
+  const existingVendorIds = new Set(offers.filter(
+    o => o.estado !== 'descontinuada' && String(o.producto_variante_id) === selectedVariant
+  ).map(o => o.vendedor_id))
   const availableVendors = vendorsData.filter(
     v => v.vendedor_id && !existingVendorIds.has(v.vendedor_id)
   )
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['product-offers', product?._id] })
+    queryClient.invalidateQueries({ queryKey: ['product-variants', product?._id] })
     queryClient.invalidateQueries({ queryKey: ['admin-products'] })
     queryClient.invalidateQueries({ queryKey: ['products'] })
   }
@@ -689,6 +701,17 @@ function OffersModal({ product, open, onOpenChange }) {
       invalidate()
     },
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al añadir oferta.'),
+  })
+
+  const variantMutation = useMutation({
+    mutationFn: (data) => addProductVariant(product._id, data),
+    onSuccess: ({ data }) => {
+      toast.success('Variante creada.')
+      setNewVariantId(String(data.variante_id))
+      setVariantAttrs([{ key: '', value: '' }])
+      invalidate()
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'No se pudo crear la variante.'),
   })
 
   const updateMutation = useMutation({
@@ -704,7 +727,16 @@ function OffersModal({ product, open, onOpenChange }) {
   function handleAdd(e) {
     e.preventDefault()
     if (!newVendorId) return
-    addMutation.mutate({ vendedor_id: Number(newVendorId), precio: Number(newPrecio), stock: Number(newStock) })
+    addMutation.mutate({ vendedor_id: Number(newVendorId), producto_variante_id: Number(selectedVariant), precio: Number(newPrecio), stock: Number(newStock) })
+  }
+
+  function handleCreateVariant() {
+    const atributos = Object.fromEntries(
+      variantAttrs.filter(row => row.key.trim() && row.value.trim())
+        .map(row => [row.key.trim(), row.value.trim()])
+    )
+    if (!Object.keys(atributos).length) return toast.error('Agrega al menos un atributo diferenciador.')
+    variantMutation.mutate({ atributos })
   }
 
   function startEdit(offer) {
@@ -731,7 +763,7 @@ function OffersModal({ product, open, onOpenChange }) {
           <Layers size={16} /> Ofertas — {product?.nombre}
         </DialogTitle>
         <DialogDescription>
-          Cada oferta pertenece a un vendedor distinto con su propio precio e inventario.
+          Las variantes describen combinaciones dinámicas; cada vendedor puede publicar una oferta por variante.
         </DialogDescription>
 
         {isLoading ? (
@@ -741,18 +773,23 @@ function OffersModal({ product, open, onOpenChange }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[var(--color-background)]">
-                  {['Vendedor', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
+                  {['Vendedor', 'Variante', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {offers.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin ofertas registradas</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin ofertas registradas</td></tr>
                 )}
                 {offers.map((offer) => (
                   <tr key={offer.oferta_id} className="border-b border-[var(--color-border)] last:border-0">
                     <td className="px-3 py-2 font-sans font-semibold text-[var(--color-text-primary)]">{offer.vendedor_nombre}</td>
+                    <td className="px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                      {Object.keys(offer.variante_atributos || {}).length
+                        ? Object.entries(offer.variante_atributos).map(([key, value]) => `${key}: ${value}`).join(' · ')
+                        : 'Predeterminada'}
+                    </td>
                     <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{offer.sku}</td>
                     <td className="px-3 py-2">
                       {editingId === offer.oferta_id ? (
@@ -793,10 +830,33 @@ function OffersModal({ product, open, onOpenChange }) {
           </div>
         )}
 
+        <div className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3">
+          <p className="font-sans text-sm font-semibold">Crear variante dinámica</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Agrega únicamente los atributos que distinguen esta combinación, por ejemplo RAM, color o capacidad.</p>
+          {variantAttrs.map((row, index) => (
+            <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <Input placeholder="Atributo (ej. ram)" value={row.key} onChange={e => setVariantAttrs(rows => rows.map((item, i) => i === index ? { ...item, key: e.target.value } : item))} />
+              <Input placeholder="Valor (ej. 32 GB)" value={row.value} onChange={e => setVariantAttrs(rows => rows.map((item, i) => i === index ? { ...item, value: e.target.value } : item))} />
+              <Button type="button" variant="ghost" onClick={() => setVariantAttrs(rows => rows.filter((_, i) => i !== index))}><XIcon size={13} /></Button>
+            </div>
+          ))}
+          <div className="flex justify-between">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setVariantAttrs(rows => [...rows, { key: '', value: '' }])}><Plus size={13} /> Atributo</Button>
+            <Button type="button" size="sm" onClick={handleCreateVariant} loading={variantMutation.isPending}>Crear variante</Button>
+          </div>
+        </div>
+
         {availableVendors.length > 0 && (
           <form onSubmit={handleAdd} className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3 bg-[var(--color-background)]">
             <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)]">Añadir oferta de otro vendedor</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
+              <div>
+                <Label className="text-xs">Variante *</Label>
+                <Select value={selectedVariant} onValueChange={setNewVariantId}>
+                  <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent>{variants.map(variant => <SelectItem key={variant.variante_id} value={String(variant.variante_id)}>{Object.keys(variant.atributos || {}).length ? Object.entries(variant.atributos).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'Predeterminada'}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label className="text-xs">Vendedor *</Label>
                 <Select value={newVendorId} onValueChange={setNewVendorId}>
@@ -822,13 +882,13 @@ function OffersModal({ product, open, onOpenChange }) {
               </div>
             </div>
             <div className="flex justify-end">
-              <Button type="submit" size="sm" loading={addMutation.isPending} disabled={!newVendorId}><Plus size={13} /> Añadir oferta</Button>
+              <Button type="submit" size="sm" loading={addMutation.isPending} disabled={!newVendorId || !selectedVariant}><Plus size={13} /> Añadir oferta</Button>
             </div>
           </form>
         )}
 
         {availableVendors.length === 0 && offers.length > 0 && (
-          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-2">Todos los vendedores registrados ya tienen una oferta para este producto.</p>
+          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-2">Todos los vendedores registrados ya tienen una oferta para la variante seleccionada.</p>
         )}
 
         <div className="flex justify-end pt-1">

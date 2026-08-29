@@ -16,6 +16,7 @@ from app.models.notificacion import Notificacion
 from app.models.oferta import Oferta, OfertaPrecioHistorial
 from app.models.producto_imagen import ProductoImagen
 from app.models.producto_referencia import ProductoReferencia
+from app.models.producto_variante_referencia import ProductoVarianteReferencia
 from app.models.producto_referencia_categoria import ProductoReferenciaCategoria
 from app.models.solicitud_catalogo import (
     SolicitudCatalogo,
@@ -39,6 +40,7 @@ from app.services.offer_history_service import (
     registrar_saldo_inventario,
 )
 from app.services.sku_service import generate_offer_sku, generate_product_sku
+from app.services.variant_service import create_variant, list_variants
 
 
 vendor_router = APIRouter(prefix='/vendor/catalog-requests', tags=['Solicitudes vendedor'])
@@ -61,6 +63,7 @@ class ProductProposalCreate(BaseModel):
 class OfferProposalCreate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     producto_ref: str = Field(min_length=24, max_length=24)
+    producto_variante_id: int
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
     observaciones: str | None = Field(default=None, max_length=2000)
@@ -149,6 +152,7 @@ def _serialize_request(
         for link, image in _image_rows(db, request.id)
     ]
     requested_name = request.nombre
+    variant_attributes = {}
     if request.producto_ref_solicitado:
         try:
             doc = mongo.productos.find_one(
@@ -157,6 +161,16 @@ def _serialize_request(
         except Exception:
             doc = None
         requested_name = (doc or {}).get('nombre', 'Producto no disponible')
+    if request.producto_variante_id_solicitado:
+        variant = db.get(
+            ProductoVarianteReferencia,
+            request.producto_variante_id_solicitado,
+        )
+        if variant:
+            variant_doc = mongo.producto_variantes.find_one(
+                {'_id': ObjectId(variant.variante_ref)}, {'atributos': 1}
+            )
+            variant_attributes = (variant_doc or {}).get('atributos', {})
     return {
         'id': request.id,
         'tipo': request.tipo,
@@ -164,6 +178,8 @@ def _serialize_request(
         'vendedor_id': request.vendedor_id,
         'vendedor_nombre': vendor.nombre_comercial if vendor else None,
         'producto_ref_solicitado': request.producto_ref_solicitado,
+        'producto_variante_id_solicitado': request.producto_variante_id_solicitado,
+        'variante_atributos': variant_attributes,
         'producto_nombre': requested_name,
         'nombre': request.nombre,
         'descripcion': request.descripcion,
@@ -295,22 +311,27 @@ def propose_offer(
     ).first()
     if not doc or not reference:
         raise HTTPException(404, 'El producto solicitado no existe.')
+    variant = db.get(ProductoVarianteReferencia, payload.producto_variante_id)
+    if not variant or variant.producto_referencia_id != reference.id:
+        raise HTTPException(400, 'La variante no pertenece al producto seleccionado.')
     existing_offer = db.query(Oferta).filter(
-        Oferta.producto_ref == payload.producto_ref,
+        Oferta.producto_variante_id == variant.id,
         Oferta.vendedor_id == vendor.id,
         Oferta.estado != 'descontinuada',
     ).first()
     if existing_offer:
-        raise HTTPException(409, 'Ya tienes una oferta vigente para este producto.')
+        raise HTTPException(409, 'Ya tienes una oferta vigente para esta variante.')
     pending = db.query(SolicitudCatalogo).filter_by(
         vendedor_id=vendor.id, tipo='oferta_existente', estado='pendiente',
         producto_ref_solicitado=payload.producto_ref,
+        producto_variante_id_solicitado=variant.id,
     ).first()
     if pending:
         raise HTTPException(409, 'Ya existe una solicitud pendiente para este producto.')
     request = SolicitudCatalogo(
         vendedor_id=vendor.id, tipo='oferta_existente', estado='pendiente',
         producto_ref_solicitado=payload.producto_ref,
+        producto_variante_id_solicitado=variant.id,
         precio_propuesto=payload.precio,
         stock_propuesto=payload.stock,
         observaciones_vendedor=payload.observaciones,
@@ -439,6 +460,14 @@ def _approve_new_product(
         )
         db.add(reference)
         db.flush()
+        variant_registry, _ = create_variant(
+            mongo,
+            db,
+            producto_ref=product['_id'],
+            attributes={},
+            product_sku=sku,
+            default=True,
+        )
         for order, (_, category) in enumerate(category_rows):
             db.add(ProductoReferenciaCategoria(
                 producto_referencia_id=reference.id,
@@ -449,7 +478,9 @@ def _approve_new_product(
             image.producto_referencia_id = reference.id
             image.orden = order
         offer = Oferta(
-            producto_ref=product['_id'], vendedor_id=vendor.id, sku=sku,
+            producto_ref=product['_id'],
+            producto_variante_id=variant_registry.id,
+            vendedor_id=vendor.id, sku=sku,
             precio_actual=request.precio_propuesto, moneda='GTQ',
             estado='activa', version=1,
         )
@@ -481,6 +512,7 @@ def _approve_new_product(
     except Exception:
         mongo.productos.delete_one({'_id': ObjectId(product['_id'])})
         mongo.producto_eventos.delete_many({'producto_id': product['_id']})
+        mongo.producto_variantes.delete_many({'producto_ref': product['_id']})
         raise
 
 
@@ -494,19 +526,33 @@ def _approve_offer(
         doc = mongo.productos.find_one({'_id': ObjectId(product_ref)}, {'sku': 1})
     except Exception:
         doc = None
-    if not doc or not db.query(ProductoReferencia).filter_by(
+    product_reference = db.query(ProductoReferencia).filter_by(
         producto_ref=product_ref
-    ).first():
+    ).first()
+    variant = db.get(
+        ProductoVarianteReferencia, request.producto_variante_id_solicitado
+    )
+    if (
+        not doc or not product_reference or not variant
+        or variant.producto_referencia_id != product_reference.id
+    ):
         raise HTTPException(409, 'El producto dejó de estar disponible.')
+    variant_doc = mongo.producto_variantes.find_one(
+        {'_id': ObjectId(variant.variante_ref)}
+    )
+    if not variant_doc or variant_doc.get('estado') != 'activa':
+        raise HTTPException(409, 'La variante dejó de estar disponible.')
     offer = db.query(Oferta).filter_by(
-        producto_ref=product_ref, vendedor_id=vendor.id
+        producto_variante_id=variant.id, vendedor_id=vendor.id
     ).first()
     if offer and offer.estado != 'descontinuada':
-        raise HTTPException(409, 'El vendedor ya tiene una oferta vigente.')
+        raise HTTPException(409, 'El vendedor ya tiene una oferta vigente para esta variante.')
     try:
         sku = generate_offer_sku(
             db,
-            product_sku=doc.get('sku', product_ref[:8]),
+            product_sku=variant_doc.get(
+                'sku_catalogo', doc.get('sku', product_ref[:8])
+            ),
             vendor_id=vendor.id,
             exclude_offer_id=offer.id if offer else None,
         )
@@ -522,7 +568,9 @@ def _approve_offer(
         )
     else:
         offer = Oferta(
-            producto_ref=product_ref, vendedor_id=vendor.id, sku=sku,
+            producto_ref=product_ref,
+            producto_variante_id=variant.id,
+            vendedor_id=vendor.id, sku=sku,
             precio_actual=request.precio_propuesto, moneda='GTQ',
             estado='activa', version=1,
         )

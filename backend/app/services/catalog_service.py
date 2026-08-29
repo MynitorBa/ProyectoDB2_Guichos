@@ -210,9 +210,26 @@ def obtener_producto(
     if 'categorias' not in item and 'categoria' in item:
         item['categorias'] = [item['categoria']]
     if mysql_db is not None:
+        from app.services.variant_service import list_variants
+
+        variants = list_variants(db, mysql_db, item['_id'])
+        variants_by_id = {variant['variante_id']: variant for variant in variants}
         offers = listar_ofertas_por_referencias(mysql_db, [item['_id']]).get(
             item['_id'], []
         )
+        for offer in offers:
+            variant = variants_by_id.get(offer['producto_variante_id'], {})
+            offer['variante_atributos'] = variant.get('atributos', {})
+            offer['variante_sku'] = variant.get('sku_catalogo')
+        for variant in variants:
+            variant['ofertas'] = [
+                offer for offer in offers
+                if offer['producto_variante_id'] == variant['variante_id']
+            ]
+            variant['disponible'] = any(
+                offer['disponible'] for offer in variant['ofertas']
+            )
+        item['variantes'] = variants
         primary = oferta_principal(offers)
         item['ofertas'] = offers
         item['ofertas_count'] = len(offers)

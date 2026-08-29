@@ -16,6 +16,9 @@ class Oferta(Base):
     producto_ref: Mapped[str] = mapped_column(
         ForeignKey('producto_referencias.producto_ref')
     )
+    producto_variante_id: Mapped[int] = mapped_column(
+        ForeignKey('producto_variante_referencias.id')
+    )
     vendedor_id: Mapped[int] = mapped_column(ForeignKey('vendedores.id'))
     sku: Mapped[str] = mapped_column(String(50))
     precio_actual: Mapped[Decimal] = mapped_column(DECIMAL(12, 2))

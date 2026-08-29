@@ -81,9 +81,16 @@ erDiagram
         SMALLINT orden
         DATETIME fecha_creacion
     }
+    producto_variante_referencias {
+        INT id PK
+        INT producto_referencia_id FK
+        CHAR variante_ref UK
+        DATETIME fecha_registro
+    }
     ofertas {
         INT id PK
         CHAR producto_ref FK
+        INT producto_variante_id FK
         INT vendedor_id FK
         VARCHAR sku
         DECIMAL precio_actual
@@ -292,8 +299,10 @@ erDiagram
     categorias ||--o{ producto_referencia_categorias : agrupa
     producto_referencias ||--o{ producto_referencia_categorias : categoriza
     producto_referencias ||--o{ producto_imagenes : almacena
+    producto_referencias ||--o{ producto_variante_referencias : registra
+    producto_variante_referencias ||--o{ ofertas : habilita
     usuarios |o--o{ producto_imagenes : carga
-    producto_referencias ||--o{ ofertas : habilita
+    producto_referencias ||--o{ ofertas : compatibilidad
     vendedores ||--o{ ofertas : publica
     ofertas ||--o{ oferta_precios_historial : historiza
     usuarios |o--o{ oferta_precios_historial : cambia
