@@ -9,11 +9,11 @@ import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
   TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
-  Inbox,
+  Inbox, GitBranch,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
-import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, getProductVariants, addProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
+import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, getProductVariants, addProductVariant, updateProductVariant, deleteProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -648,6 +648,215 @@ function ProductFormModal({ open, onOpenChange, product }) {
 }
 
 // ── ProductsSection ──
+// ── VariantsModal ──
+function VariantsModal({ product, open, onOpenChange }) {
+  const queryClient = useQueryClient()
+  const [variantAttrs, setVariantAttrs] = useState([{ id: 1, key: '', value: '' }])
+  const [nextId, setNextId] = useState(2)
+  const [editingVariantId, setEditingVariantId] = useState(null)
+  const [editAttrs, setEditAttrs] = useState([])
+
+  const { data: variants = [], isLoading } = useQuery({
+    queryKey: ['product-variants', product?._id],
+    queryFn: () => getProductVariants(product._id).then(r => r.data),
+    enabled: open && !!product,
+  })
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ['product-variants', product?._id] })
+    queryClient.invalidateQueries({ queryKey: ['product-offers', product?._id] })
+    queryClient.invalidateQueries({ queryKey: ['admin-products'] })
+    queryClient.invalidateQueries({ queryKey: ['products'] })
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (data) => addProductVariant(product._id, data),
+    onSuccess: () => {
+      toast.success('Variante creada.')
+      setVariantAttrs([{ id: 1, key: '', value: '' }])
+      setNextId(2)
+      invalidate()
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'No se pudo crear la variante.'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ varianteId, data }) => updateProductVariant(varianteId, data),
+    onSuccess: () => {
+      toast.success('Variante actualizada.')
+      setEditingVariantId(null)
+      invalidate()
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al actualizar variante.'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (varianteId) => deleteProductVariant(varianteId),
+    onSuccess: () => { toast.success('Variante eliminada.'); invalidate() },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'No se pudo eliminar la variante.'),
+  })
+
+  function handleCreate() {
+    const atributos = Object.fromEntries(
+      variantAttrs.filter(r => r.key.trim() && r.value.trim()).map(r => [r.key.trim(), r.value.trim()])
+    )
+    if (!Object.keys(atributos).length) return toast.error('Agrega al menos un atributo.')
+    createMutation.mutate({ atributos })
+  }
+
+  function startEdit(v) {
+    setEditingVariantId(v.variante_id)
+    setEditAttrs(Object.entries(v.atributos || {}).map(([k, val]) => ({ id: k, key: k, value: String(val) })))
+  }
+
+  function handleSave(v) {
+    const atributos = Object.fromEntries(
+      editAttrs.filter(r => r.key.trim() && r.value.trim()).map(r => [r.key.trim(), r.value.trim()])
+    )
+    if (!Object.keys(atributos).length) return toast.error('Agrega al menos un atributo.')
+    updateMutation.mutate({ varianteId: v.variante_id, data: { atributos } })
+  }
+
+  function handleDelete(v) {
+    const label = Object.entries(v.atributos || {}).map(([k, val]) => `${k}: ${val}`).join(', ') || 'Predeterminada'
+    if (!window.confirm(`¿Eliminar la variante "${label}"? Solo es posible si no tiene ofertas activas.`)) return
+    deleteMutation.mutate(v.variante_id)
+  }
+
+  function addEditRow() {
+    setEditAttrs(rows => [...rows, { id: Date.now(), key: '', value: '' }])
+  }
+
+  function addCreateRow() {
+    setVariantAttrs(rows => [...rows, { id: nextId, key: '', value: '' }])
+    setNextId(n => n + 1)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogTitle className="flex items-center gap-2">
+          <GitBranch size={16} /> Variantes — {product?.nombre}
+        </DialogTitle>
+        <DialogDescription>
+          Cada variante es una combinación única de atributos (ej. color + talla). Los vendedores crean ofertas por variante.
+        </DialogDescription>
+
+        {/* Lista de variantes */}
+        <div className="space-y-1.5">
+          <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Variantes registradas
+          </p>
+          {isLoading ? (
+            <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : variants.length === 0 ? (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">
+              Sin variantes. Crea la primera abajo.
+            </div>
+          ) : (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="bg-[var(--color-background)] border-b border-[var(--color-border)]">
+                      {['Atributos', 'SKU catálogo', 'Estado', ''].map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {variants.map(v => (
+                      <tr key={v.variante_id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-background)] transition-colors">
+                        <td className="px-3 py-2.5">
+                          {editingVariantId === v.variante_id ? (
+                            <div className="space-y-1.5">
+                              {editAttrs.map((row, i) => (
+                                <div key={row.id} className="grid grid-cols-[1fr_1fr_auto] gap-1.5">
+                                  <Input placeholder="Atributo" value={row.key} onChange={e => setEditAttrs(rows => rows.map((r, ri) => ri === i ? { ...r, key: e.target.value } : r))} className="h-7 text-xs" />
+                                  <Input placeholder="Valor" value={row.value} onChange={e => setEditAttrs(rows => rows.map((r, ri) => ri === i ? { ...r, value: e.target.value } : r))} className="h-7 text-xs" />
+                                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => setEditAttrs(rows => rows.filter((_, ri) => ri !== i))}><XIcon size={11} /></Button>
+                                </div>
+                              ))}
+                              <Button type="button" size="sm" variant="secondary" onClick={addEditRow} className="mt-1"><Plus size={11} /> Atributo</Button>
+                            </div>
+                          ) : (
+                            <span className="inline-flex flex-wrap gap-1">
+                              {Object.entries(v.atributos || {}).length ? (
+                                Object.entries(v.atributos).map(([k, val]) => (
+                                  <span key={k} className="inline-block rounded bg-[var(--color-border)] px-1.5 py-0.5 text-[11px] font-sans text-[var(--color-text-secondary)]">
+                                    {k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}: {val}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-[var(--color-text-muted)] italic">Predeterminada</span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-[var(--color-text-muted)] whitespace-nowrap">{v.sku_catalogo}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <Badge variant={v.estado === 'activa' ? 'success' : 'secondary'}>{v.estado}</Badge>
+                            {v.es_predeterminada && <Badge variant="action">Default</Badge>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            {editingVariantId === v.variante_id ? (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => handleSave(v)} disabled={updateMutation.isPending}>Guardar</Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingVariantId(null)}>Cancelar</Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => startEdit(v)} title="Editar atributos"><Edit size={12} /></Button>
+                                <Button size="sm" variant="ghost" className="text-[var(--color-error)] hover:text-[var(--color-error)] hover:bg-[var(--color-error)]/10" onClick={() => handleDelete(v)} disabled={deleteMutation.isPending} title="Eliminar variante">
+                                  <Trash2 size={12} />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Crear variante */}
+        <div className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3">
+          <div>
+            <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)]">Nueva variante</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              Define los atributos que la distinguen (ej. color + talla). Cada combinación genera un SKU único.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {variantAttrs.map((row, index) => (
+              <div key={row.id} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                <Input placeholder="Atributo (ej. color)" value={row.key} onChange={e => setVariantAttrs(rows => rows.map((r, i) => i === index ? { ...r, key: e.target.value } : r))} />
+                <Input placeholder="Valor (ej. azul)" value={row.value} onChange={e => setVariantAttrs(rows => rows.map((r, i) => i === index ? { ...r, value: e.target.value } : r))} />
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => setVariantAttrs(rows => rows.filter((_, i) => i !== index))}><XIcon size={13} /></Button>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between">
+            <Button type="button" size="sm" variant="secondary" onClick={addCreateRow}><Plus size={13} /> Atributo</Button>
+            <Button type="button" size="sm" onClick={handleCreate} loading={createMutation.isPending}>Crear variante</Button>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-1">
+          <DialogClose asChild><Button variant="secondary" size="sm">Cerrar</Button></DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── OffersModal ──
 function OffersModal({ product, open, onOpenChange }) {
   const queryClient = useQueryClient()
@@ -655,7 +864,6 @@ function OffersModal({ product, open, onOpenChange }) {
   const [newVariantId, setNewVariantId] = useState('')
   const [newPrecio, setNewPrecio] = useState('')
   const [newStock, setNewStock] = useState('')
-  const [variantAttrs, setVariantAttrs] = useState([{ key: '', value: '' }])
   const [editingId, setEditingId] = useState(null)
   const [editPrecio, setEditPrecio] = useState('')
   const [editStock, setEditStock] = useState('')
@@ -703,17 +911,6 @@ function OffersModal({ product, open, onOpenChange }) {
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al añadir oferta.'),
   })
 
-  const variantMutation = useMutation({
-    mutationFn: (data) => addProductVariant(product._id, data),
-    onSuccess: ({ data }) => {
-      toast.success('Variante creada.')
-      setNewVariantId(String(data.variante_id))
-      setVariantAttrs([{ key: '', value: '' }])
-      invalidate()
-    },
-    onError: (err) => toast.error(err?.response?.data?.detail || 'No se pudo crear la variante.'),
-  })
-
   const updateMutation = useMutation({
     mutationFn: ({ ofertaId, data }) => updateProductOffer(ofertaId, data),
     onSuccess: () => {
@@ -728,15 +925,6 @@ function OffersModal({ product, open, onOpenChange }) {
     e.preventDefault()
     if (!newVendorId) return
     addMutation.mutate({ vendedor_id: Number(newVendorId), producto_variante_id: Number(selectedVariant), precio: Number(newPrecio), stock: Number(newStock) })
-  }
-
-  function handleCreateVariant() {
-    const atributos = Object.fromEntries(
-      variantAttrs.filter(row => row.key.trim() && row.value.trim())
-        .map(row => [row.key.trim(), row.value.trim()])
-    )
-    if (!Object.keys(atributos).length) return toast.error('Agrega al menos un atributo diferenciador.')
-    variantMutation.mutate({ atributos })
   }
 
   function startEdit(offer) {
@@ -756,113 +944,129 @@ function OffersModal({ product, open, onOpenChange }) {
 
   const estadoBadge = { activa: 'success', pausada: 'secondary', descontinuada: 'error', borrador: 'secondary' }
 
+  function fmtVariant(atributos) {
+    const entries = Object.entries(atributos || {})
+    if (!entries.length) return 'Predeterminada'
+    return entries.map(([k, v]) => `${k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}: ${v}`).join(' · ')
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogTitle className="flex items-center gap-2">
           <Layers size={16} /> Ofertas — {product?.nombre}
         </DialogTitle>
         <DialogDescription>
-          Las variantes describen combinaciones dinámicas; cada vendedor puede publicar una oferta por variante.
+          Las variantes describen combinaciones dinámicas de atributos. Cada vendedor puede tener una oferta por variante.
         </DialogDescription>
 
-        {isLoading ? (
-          <div className="space-y-2">{[1,2].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
-        ) : (
-          <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)]">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--color-background)]">
-                  {['Vendedor', 'Variante', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
-                    <th key={h} className="px-3 py-2 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {offers.length === 0 && (
-                  <tr><td colSpan={7} className="px-3 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin ofertas registradas</td></tr>
-                )}
-                {offers.map((offer) => (
-                  <tr key={offer.oferta_id} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="px-3 py-2 font-sans font-semibold text-[var(--color-text-primary)]">{offer.vendedor_nombre}</td>
-                    <td className="px-3 py-2 text-xs text-[var(--color-text-secondary)]">
-                      {Object.keys(offer.variante_atributos || {}).length
-                        ? Object.entries(offer.variante_atributos).map(([key, value]) => `${key}: ${value}`).join(' · ')
-                        : 'Predeterminada'}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-muted)]">{offer.sku}</td>
-                    <td className="px-3 py-2">
-                      {editingId === offer.oferta_id ? (
-                        <Input type="number" value={editPrecio} onChange={e => setEditPrecio(e.target.value)} className="w-24 h-7 text-xs font-mono" step="0.01" min="0" />
-                      ) : (
-                        <span className="font-mono font-semibold">{formatQ(offer.precio)}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      {editingId === offer.oferta_id ? (
-                        <Input type="number" value={editStock} onChange={e => setEditStock(e.target.value)} className="w-20 h-7 text-xs font-mono" min="0" />
-                      ) : (
-                        <span className={`font-mono ${offer.stock === 0 ? 'text-[var(--color-error)]' : offer.stock <= 5 ? 'text-amber-500' : 'text-[var(--color-text-primary)]'}`}>{offer.stock}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2"><Badge variant={estadoBadge[offer.estado] || 'secondary'}>{offer.estado}</Badge></td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        {editingId === offer.oferta_id ? (
-                          <>
-                            <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(offer)} disabled={updateMutation.isPending}>Guardar</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button size="sm" variant="ghost" onClick={() => startEdit(offer)}><Edit size={12} /></Button>
-                            <Button size="sm" variant="ghost" onClick={() => toggleEstado(offer)} disabled={updateMutation.isPending}>
-                              {offer.estado === 'activa' ? 'Pausar' : 'Activar'}
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3">
-          <p className="font-sans text-sm font-semibold">Crear variante dinámica</p>
-          <p className="text-xs text-[var(--color-text-muted)]">Agrega únicamente los atributos que distinguen esta combinación, por ejemplo RAM, color o capacidad.</p>
-          {variantAttrs.map((row, index) => (
-            <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2">
-              <Input placeholder="Atributo (ej. ram)" value={row.key} onChange={e => setVariantAttrs(rows => rows.map((item, i) => i === index ? { ...item, key: e.target.value } : item))} />
-              <Input placeholder="Valor (ej. 32 GB)" value={row.value} onChange={e => setVariantAttrs(rows => rows.map((item, i) => i === index ? { ...item, value: e.target.value } : item))} />
-              <Button type="button" variant="ghost" onClick={() => setVariantAttrs(rows => rows.filter((_, i) => i !== index))}><XIcon size={13} /></Button>
+        {/* ── Ofertas existentes ── */}
+        <div className="space-y-1.5">
+          <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Ofertas registradas
+          </p>
+          {isLoading ? (
+            <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : offers.length === 0 ? (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-4 py-6 text-center font-sans text-sm text-[var(--color-text-muted)]">
+              Sin ofertas registradas
             </div>
-          ))}
-          <div className="flex justify-between">
-            <Button type="button" size="sm" variant="secondary" onClick={() => setVariantAttrs(rows => [...rows, { key: '', value: '' }])}><Plus size={13} /> Atributo</Button>
-            <Button type="button" size="sm" onClick={handleCreateVariant} loading={variantMutation.isPending}>Crear variante</Button>
-          </div>
+          ) : (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[640px]">
+                  <thead>
+                    <tr className="bg-[var(--color-background)] border-b border-[var(--color-border)]">
+                      {['Vendedor', 'Variante', 'SKU', 'Precio', 'Stock', 'Estado', ''].map(h => (
+                        <th key={h} className="px-3 py-2 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {offers.map((offer) => (
+                      <tr key={offer.oferta_id} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-background)] transition-colors">
+                        <td className="px-3 py-2.5 font-sans font-semibold text-[var(--color-text-primary)] whitespace-nowrap">{offer.vendedor_nombre}</td>
+                        <td className="px-3 py-2.5">
+                          {Object.keys(offer.variante_atributos || {}).length ? (
+                            <span className="inline-flex flex-wrap gap-1">
+                              {Object.entries(offer.variante_atributos).map(([k, v]) => (
+                                <span key={k} className="inline-block rounded bg-[var(--color-border)] px-1.5 py-0.5 text-[11px] font-sans text-[var(--color-text-secondary)]">
+                                  {k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}: {v}
+                                </span>
+                              ))}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-[var(--color-text-muted)] italic">Predeterminada</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-[var(--color-text-muted)] whitespace-nowrap">{offer.sku}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {editingId === offer.oferta_id ? (
+                            <Input type="number" value={editPrecio} onChange={e => setEditPrecio(e.target.value)} className="w-24 h-7 text-xs font-mono" step="0.01" min="0" />
+                          ) : (
+                            <span className="font-mono font-semibold">{formatQ(offer.precio)}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {editingId === offer.oferta_id ? (
+                            <Input type="number" value={editStock} onChange={e => setEditStock(e.target.value)} className="w-20 h-7 text-xs font-mono" min="0" />
+                          ) : (
+                            <span className={`font-mono font-semibold ${(offer.stock ?? 0) === 0 ? 'text-[var(--color-error)]' : (offer.stock ?? 0) <= 5 ? 'text-amber-500' : 'text-[var(--color-text-primary)]'}`}>
+                              {offer.stock ?? offer.stock_disponible ?? 0}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <Badge variant={estadoBadge[offer.estado] || 'secondary'}>{offer.estado}</Badge>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            {editingId === offer.oferta_id ? (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => handleSaveEdit(offer)} disabled={updateMutation.isPending}>Guardar</Button>
+                                <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancelar</Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => startEdit(offer)} title="Editar precio y stock"><Edit size={12} /></Button>
+                                <Button size="sm" variant="ghost" onClick={() => toggleEstado(offer)} disabled={updateMutation.isPending}>
+                                  {offer.estado === 'activa' ? 'Pausar' : 'Activar'}
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
-        {availableVendors.length > 0 && (
+        {/* ── Añadir oferta ── */}
+        {availableVendors.length > 0 ? (
           <form onSubmit={handleAdd} className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-4 space-y-3 bg-[var(--color-background)]">
             <p className="font-sans text-sm font-semibold text-[var(--color-text-primary)]">Añadir oferta de otro vendedor</p>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
                 <Label className="text-xs">Variante *</Label>
                 <Select value={selectedVariant} onValueChange={setNewVariantId}>
                   <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                  <SelectContent>{variants.map(variant => <SelectItem key={variant.variante_id} value={String(variant.variante_id)}>{Object.keys(variant.atributos || {}).length ? Object.entries(variant.atributos).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'Predeterminada'}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    {variants.map(v => (
+                      <SelectItem key={v.variante_id} value={String(v.variante_id)}>
+                        {fmtVariant(v.atributos)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label className="text-xs">Vendedor *</Label>
                 <Select value={newVendorId} onValueChange={setNewVendorId}>
-                  <SelectTrigger className="h-8 text-xs mt-1">
-                    <SelectValue placeholder="Seleccionar..." />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs mt-1"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                   <SelectContent>
                     {availableVendors.map(v => (
                       <SelectItem key={v.vendedor_id} value={String(v.vendedor_id)}>
@@ -882,14 +1086,16 @@ function OffersModal({ product, open, onOpenChange }) {
               </div>
             </div>
             <div className="flex justify-end">
-              <Button type="submit" size="sm" loading={addMutation.isPending} disabled={!newVendorId || !selectedVariant}><Plus size={13} /> Añadir oferta</Button>
+              <Button type="submit" size="sm" loading={addMutation.isPending} disabled={!newVendorId || !selectedVariant}>
+                <Plus size={13} /> Añadir oferta
+              </Button>
             </div>
           </form>
-        )}
-
-        {availableVendors.length === 0 && offers.length > 0 && (
-          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-2">Todos los vendedores registrados ya tienen una oferta para la variante seleccionada.</p>
-        )}
+        ) : offers.length > 0 ? (
+          <p className="font-sans text-xs text-[var(--color-text-muted)] text-center py-1">
+            Todos los vendedores registrados ya tienen una oferta para la variante seleccionada.
+          </p>
+        ) : null}
 
         <div className="flex justify-end pt-1">
           <DialogClose asChild><Button variant="secondary" size="sm">Cerrar</Button></DialogClose>
@@ -908,6 +1114,8 @@ function ProductsSection() {
   const [editProduct, setEditProduct] = useState(null)
   const [offersOpen, setOffersOpen] = useState(false)
   const [offersProduct, setOffersProduct] = useState(null)
+  const [variantsOpen, setVariantsOpen] = useState(false)
+  const [variantsProduct, setVariantsProduct] = useState(null)
   const PAGE_SIZE = 15
   const queryClient = useQueryClient()
 
@@ -1052,6 +1260,9 @@ function ProductsSection() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openEdit(prod)}><Edit size={13} /> Editar</Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setVariantsProduct(prod); setVariantsOpen(true) }}>
+                          <GitBranch size={13} /> Variantes
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => { setOffersProduct(prod); setOffersOpen(true) }}>
                           <Layers size={13} /> Ofertas{prod.ofertas_count > 1 ? ` (${prod.ofertas_count})` : ''}
                         </Button>
@@ -1080,6 +1291,7 @@ function ProductsSection() {
       )}
 
       <ProductFormModal open={modalOpen} onOpenChange={setModalOpen} product={editProduct} />
+      <VariantsModal open={variantsOpen} onOpenChange={setVariantsOpen} product={variantsProduct} />
       <OffersModal open={offersOpen} onOpenChange={setOffersOpen} product={offersProduct} />
     </div>
   )

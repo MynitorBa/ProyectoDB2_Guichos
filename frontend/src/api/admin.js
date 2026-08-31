@@ -60,6 +60,12 @@ export const getProductVariants = (productoRef) =>
 export const addProductVariant = (productoRef, data) =>
   api.post(`/admin/products/${productoRef}/variants`, data)
 
+export const updateProductVariant = (varianteId, data) =>
+  api.patch(`/admin/variants/${varianteId}`, data)
+
+export const deleteProductVariant = (varianteId) =>
+  api.delete(`/admin/variants/${varianteId}`)
+
 export const addProductOffer = (productoRef, data) =>
   api.post(`/admin/products/${productoRef}/offers`, data)
 

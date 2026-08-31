@@ -64,19 +64,12 @@ export default function ProductDetailPage() {
       navigate('/login')
       return
     }
-    const variant = (product.variantes || []).find(
-      item => item.variante_id === selectedVariantId
-    ) || product.variantes?.[0]
-    const availableOffers = variant ? (variant.ofertas || []) : (product.ofertas || [])
-    const offer = availableOffers.find(
-      item => item.oferta_id === selectedOfferId
-    ) || availableOffers[0]
-    if (!offer?.oferta_id) {
+    if (!selectedOffer?.oferta_id) {
       toast.error('Producto no disponible para compra')
       return
     }
     try {
-      await add(offer.oferta_id, cantidad)
+      await add(selectedOffer.oferta_id, cantidad)
       toast.success(`${product.nombre} agregado al carrito`)
     } catch {
       toast.error('No se pudo agregar al carrito')
@@ -105,17 +98,43 @@ export default function ProductDetailPage() {
   const imagenes = product.imagenes || []
   const imgSrc = (typeof imagenes[selectedImg] === 'string' ? imagenes[selectedImg] : imagenes[selectedImg]?.url) || null
   const resenas = product.resumen_resenas || {}
-  const variantes = product.variantes || []
-  const selectedVariant = variantes.find(
-    item => item.variante_id === selectedVariantId
-  ) || variantes.find(item => item.ofertas?.some(offer => offer.oferta_id === selectedOfferId)) || variantes[0]
-  const ofertas = selectedVariant?.ofertas || product.ofertas || []
-  const selectedOffer = ofertas.find((item) => item.oferta_id === selectedOfferId) || ofertas[0]
+
+  // Agrupamos las ofertas por variante (cada oferta trae producto_variante_id + variante_atributos)
+  const rawOfertas = product.ofertas || []
+  const variantMap = new Map()
+  rawOfertas.forEach(offer => {
+    const vid = offer.producto_variante_id
+    if (!variantMap.has(vid)) {
+      variantMap.set(vid, {
+        variante_id: vid,
+        atributos: offer.variante_atributos || {},
+        ofertas: [],
+      })
+    }
+    variantMap.get(vid).ofertas.push(offer)
+  })
+  const variantesAgrupadas = Array.from(variantMap.values())
+  // Mostramos el selector solo cuando hay 2 o más configuraciones distintas
+  const mostrarSelector = variantesAgrupadas.length >= 2
+  // Todas comparten la misma única clave → mostrar solo el valor como etiqueta
+  const unicaClave = mostrarSelector &&
+    variantesAgrupadas.every(v => {
+      const keys = Object.keys(v.atributos)
+      return keys.length === 1 && keys[0] === Object.keys(variantesAgrupadas[0].atributos)[0]
+    })
+      ? Object.keys(variantesAgrupadas[0].atributos)[0]
+      : null
+
+  const selectedVariant = variantesAgrupadas.find(v => v.variante_id === selectedVariantId) ?? variantesAgrupadas[0]
+  const ofertasVariante = selectedVariant?.ofertas ?? rawOfertas
+  const selectedOffer = ofertasVariante.find(o => o.oferta_id === selectedOfferId) ?? ofertasVariante[0]
   const atributos = { ...(product.atributos || {}), ...(selectedVariant?.atributos || {}) }
-  const displayPrice = selectedOffer?.precio ?? (variantes.length ? null : product.precio)
-  const displayStock = selectedOffer?.stock ?? (variantes.length ? 0 : product.stock ?? 0)
-  const displayAvailable = selectedOffer?.disponible ?? (variantes.length ? false : product.disponible)
-  const displayVendor = selectedOffer?.vendedor_nombre ?? (variantes.length ? null : product.vendedor_nombre)
+  const displayPrice = selectedOffer?.precio ?? product.precio
+  const displayStock = selectedOffer?.stock ?? 0
+  const displayAvailable = selectedOffer != null
+    ? ((selectedOffer.disponible ?? false) || (selectedOffer.stock ?? 0) > 0)
+    : (product.disponible ?? false)
+  const displayVendor = selectedOffer?.vendedor_nombre ?? null
 
   const starCounts = [5, 4, 3, 2, 1].map((n) => ({
     stars: n,
@@ -218,50 +237,82 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {variantes.length > 1 && (
+            {mostrarSelector && (
               <div className="space-y-2">
-                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Variante</p>
+                <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                  {unicaClave
+                    ? unicaClave.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                    : 'Variante'}
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  {variantes.map(variant => (
-                    <button
-                      key={variant.variante_id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedVariantId(variant.variante_id)
-                        setSelectedOfferId(variant.ofertas?.[0]?.oferta_id || null)
-                        setCantidad(1)
-                      }}
-                      className={`rounded-[var(--radius-md)] border px-3 py-2 text-sm ${selectedVariant?.variante_id === variant.variante_id ? 'border-[var(--color-action)] bg-[var(--color-action)]/5' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}
-                    >
-                      {Object.keys(variant.atributos || {}).length
-                        ? Object.entries(variant.atributos).map(([key, value]) => `${key.replace(/_/g, ' ')}: ${value}`).join(' · ')
-                        : 'Predeterminada'}
-                    </button>
-                  ))}
+                  {variantesAgrupadas.map(variant => {
+                    const isSelected = selectedVariant?.variante_id === variant.variante_id
+                    const attrs = Object.entries(variant.atributos)
+                    const label = attrs.length === 0
+                      ? 'Estándar'
+                      : unicaClave
+                        ? String(variant.atributos[unicaClave])
+                        : attrs.map(([k, v]) => `${k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}: ${v}`).join(' · ')
+                    const hasStock = variant.ofertas.some(o => (o.stock ?? 0) > 0)
+                    return (
+                      <button
+                        key={variant.variante_id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedVariantId(variant.variante_id)
+                          setSelectedOfferId(variant.ofertas[0]?.oferta_id ?? null)
+                          setCantidad(1)
+                        }}
+                        disabled={!hasStock}
+                        className={`relative rounded-[var(--radius-md)] border px-3 py-2 text-sm font-sans transition-colors
+                          ${isSelected
+                            ? 'border-[var(--color-action)] bg-[var(--color-action)]/5 text-[var(--color-action)] font-semibold'
+                            : hasStock
+                              ? 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]'
+                              : 'border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)] opacity-50 cursor-not-allowed'
+                          }`}
+                      >
+                        {label}
+                        {!hasStock && <span className="ml-1.5 text-[10px] text-[var(--color-error)]">Sin stock</span>}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
 
-            {ofertas.length > 1 && (
-              <div className="space-y-2">
+            {ofertasVariante.length > 1 && (
+              <div className="space-y-1.5">
                 <p className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-                  Otras ofertas
+                  Vendedor
                 </p>
-                {ofertas.map((offer) => (
-                  <button
-                    key={offer.oferta_id}
-                    type="button"
-                    onClick={() => { setSelectedOfferId(offer.oferta_id); setCantidad(1) }}
-                    className={`w-full flex items-center justify-between rounded-[var(--radius-md)] border px-3 py-2 text-left ${
-                      selectedOffer?.oferta_id === offer.oferta_id
-                        ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
-                        : 'border-[var(--color-border)] bg-[var(--color-surface)]'
-                    }`}
-                  >
-                    <span className="font-sans text-sm">{offer.vendedor_nombre}</span>
-                    <span className="font-mono text-sm font-bold">{formatQ(offer.precio)} · {offer.stock} disponibles</span>
-                  </button>
-                ))}
+                {ofertasVariante.map((offer) => {
+                  const isSelected = selectedOffer?.oferta_id === offer.oferta_id
+                  return (
+                    <button
+                      key={offer.oferta_id}
+                      type="button"
+                      onClick={() => { setSelectedOfferId(offer.oferta_id); setCantidad(1) }}
+                      className={`w-full flex items-center justify-between rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors ${
+                        isSelected
+                          ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
+                          : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Store size={13} className={isSelected ? 'text-[var(--color-action)]' : 'text-[var(--color-text-muted)]'} strokeWidth={1.5} />
+                        <span className="font-sans text-sm font-medium">{offer.vendedor_nombre}</span>
+                        {(offer.stock ?? 0) > 0 && (offer.stock ?? 0) <= 5 && (
+                          <span className="text-[10px] text-amber-500 font-medium">¡Últimas {offer.stock}!</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold">{formatQ(offer.precio)}</span>
+                        <span className="font-sans text-xs text-[var(--color-text-muted)]">{offer.stock} disp.</span>
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             )}
 

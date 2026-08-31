@@ -141,7 +141,17 @@ function OfferProposalDialog({ open, onOpenChange }) {
     queryFn: () => getProduct(form.producto_ref).then(r => r.data),
     enabled: open && !!form.producto_ref,
   })
-  const variants = selectedProduct?.variantes || []
+  // Derivar variantes desde las ofertas del producto (mismo patrón que ProductDetailPage)
+  const variantSet = new Map()
+  ;(selectedProduct?.ofertas || []).forEach(o => {
+    if (o.producto_variante_id && !variantSet.has(o.producto_variante_id)) {
+      variantSet.set(o.producto_variante_id, {
+        variante_id: o.producto_variante_id,
+        atributos: o.variante_atributos || {},
+      })
+    }
+  })
+  const variants = Array.from(variantSet.values())
   const mutation = useMutation({
     mutationFn: proposeOffer,
     onSuccess: () => { toast.success('Solicitud de oferta enviada.'); queryClient.invalidateQueries({ queryKey: ['vendor-catalog-requests'] }); onOpenChange(false); setForm({ producto_ref: '', producto_variante_id: '', precio: '', stock: '', observaciones: '' }) },
@@ -152,7 +162,30 @@ function OfferProposalDialog({ open, onOpenChange }) {
     <DialogTitle>Solicitar una oferta</DialogTitle><DialogDescription>Publicarás tu propio precio e inventario sobre un producto existente. Las imágenes pertenecen al producto.</DialogDescription>
     <form onSubmit={submit} className="space-y-4">
       <div><Label>Producto *</Label><Select value={form.producto_ref} onValueChange={v => setForm(p => ({ ...p, producto_ref: v, producto_variante_id: '' }))}><SelectTrigger><SelectValue placeholder="Seleccionar producto..." /></SelectTrigger><SelectContent>{products.map(p => <SelectItem key={p._id} value={p._id}>{p.nombre} · {p.sku}</SelectItem>)}</SelectContent></Select></div>
-      {form.producto_ref && <div><Label>Variante *</Label><Select value={form.producto_variante_id} onValueChange={v => setForm(p => ({ ...p, producto_variante_id: v }))}><SelectTrigger><SelectValue placeholder="Seleccionar variante..." /></SelectTrigger><SelectContent>{variants.map(variant => <SelectItem key={variant.variante_id} value={String(variant.variante_id)}>{Object.keys(variant.atributos || {}).length ? Object.entries(variant.atributos).map(([key, value]) => `${key}: ${value}`).join(' · ') : 'Predeterminada'}</SelectItem>)}</SelectContent></Select></div>}
+      {form.producto_ref && (
+        <div>
+          <Label>Variante *</Label>
+          <Select value={form.producto_variante_id} onValueChange={v => setForm(p => ({ ...p, producto_variante_id: v }))}>
+            <SelectTrigger><SelectValue placeholder={variants.length === 0 ? 'Sin variantes disponibles' : 'Seleccionar variante...'} /></SelectTrigger>
+            <SelectContent>
+              {variants.map(variant => {
+                const attrs = Object.entries(variant.atributos || {})
+                const label = attrs.length === 0
+                  ? 'Predeterminada'
+                  : attrs.map(([k, v]) => `${k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}: ${v}`).join(' · ')
+                return (
+                  <SelectItem key={variant.variante_id} value={String(variant.variante_id)}>
+                    {label}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+          {variants.length === 0 && form.producto_ref && (
+            <p className="text-xs text-[var(--color-text-muted)] mt-1">Este producto aún no tiene ofertas publicadas con variantes asignadas.</p>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3"><div><Label>Tu precio *</Label><Input type="number" min="0.01" step="0.01" value={form.precio} onChange={e => setForm(p => ({ ...p, precio: e.target.value }))} /></div><div><Label>Tu stock *</Label><Input type="number" min="0" value={form.stock} onChange={e => setForm(p => ({ ...p, stock: e.target.value }))} /></div></div>
       <p className="text-xs text-[var(--color-text-muted)]">El SKU de la oferta se generará automáticamente al aprobar.</p>
       <div><Label>Comentario</Label><textarea rows={3} value={form.observaciones} onChange={e => setForm(p => ({ ...p, observaciones: e.target.value }))} className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm" /></div>

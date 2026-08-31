@@ -55,7 +55,7 @@ from app.services.category_attribute_service import (
     validate_category_attributes,
 )
 from app.services.sku_service import generate_offer_sku, generate_product_sku
-from app.services.variant_service import create_variant, list_variants
+from app.services.variant_service import create_variant, list_variants, delete_variant, update_variant_attributes
 
 router = APIRouter(prefix='/admin', tags=['Admin'])
 
@@ -87,6 +87,11 @@ class OfferUpdate(BaseModel):
 
 
 class VariantCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    atributos: dict
+
+
+class VariantUpdate(BaseModel):
     model_config = ConfigDict(extra='forbid')
     atributos: dict
 
@@ -1390,6 +1395,38 @@ def add_product_variant(
         variant for variant in list_variants(mongo, db, producto_ref)
         if variant['variante_id'] == registry.id
     )
+
+@router.patch('/variants/{variante_id}')
+def patch_variant(
+    variante_id: int,
+    payload: VariantUpdate,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    try:
+        result = update_variant_attributes(mongo, db, variante_id, payload.atributos)
+        db.commit()
+        return result
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
+
+
+@router.delete('/variants/{variante_id}', status_code=204)
+def delete_variant_endpoint(
+    variante_id: int,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db),
+):
+    try:
+        delete_variant(mongo, db, variante_id)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(400, str(e))
+
 
 @router.get('/products/{producto_ref}/offers')
 def list_product_offers(

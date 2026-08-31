@@ -101,6 +101,73 @@ def create_variant(
     return registry, document
 
 
+def delete_variant(mongo: Database, db: Session, variante_id: int) -> None:
+    from app.models.oferta import Oferta  # inline to avoid circular import
+    registry = db.get(ProductoVarianteReferencia, variante_id)
+    if not registry:
+        raise ValueError('Variante no encontrada.')
+    active = (
+        db.query(Oferta)
+        .filter(
+            Oferta.producto_variante_id == variante_id,
+            Oferta.estado.notin_(['descontinuada']),
+        )
+        .count()
+    )
+    if active:
+        raise ValueError(
+            'No se puede eliminar: la variante tiene ofertas activas. '
+            'Descontinúalas primero.'
+        )
+    mongo.producto_variantes.delete_one({'_id': ObjectId(registry.variante_ref)})
+    db.delete(registry)
+    db.flush()
+
+
+def update_variant_attributes(
+    mongo: Database, db: Session, variante_id: int, attributes: dict
+) -> dict:
+    registry = db.get(ProductoVarianteReferencia, variante_id)
+    if not registry:
+        raise ValueError('Variante no encontrada.')
+    doc = mongo.producto_variantes.find_one({'_id': ObjectId(registry.variante_ref)})
+    if not doc:
+        raise ValueError('Documento de variante no encontrado en MongoDB.')
+    normalized = normalize_variant_attributes(attributes)
+    key = variant_key(normalized)
+    duplicate = mongo.producto_variantes.find_one({
+        'producto_ref': doc['producto_ref'],
+        'clave_variante': key,
+        '_id': {'$ne': ObjectId(registry.variante_ref)},
+    })
+    if duplicate:
+        raise ValueError('Ya existe una variante con esa combinación de atributos.')
+    try:
+        product_doc = mongo.productos.find_one({'_id': ObjectId(doc['producto_ref'])})
+        product_sku = product_doc.get('sku', doc['producto_ref'][:8]) if product_doc else doc['producto_ref'][:8]
+    except Exception:
+        product_sku = doc['producto_ref'][:8]
+    new_sku = generate_variant_sku(product_sku, normalized)
+    mongo.producto_variantes.update_one(
+        {'_id': ObjectId(registry.variante_ref)},
+        {'$set': {
+            'atributos': normalized,
+            'clave_variante': key,
+            'sku_catalogo': new_sku,
+            'fecha_actualizacion': datetime.now(timezone.utc),
+        }},
+    )
+    return {
+        'variante_id': registry.id,
+        'variante_ref': registry.variante_ref,
+        'producto_ref': doc['producto_ref'],
+        'sku_catalogo': new_sku,
+        'atributos': normalized,
+        'estado': doc.get('estado', 'activa'),
+        'es_predeterminada': bool(doc.get('es_predeterminada')),
+    }
+
+
 def list_variants(mongo: Database, db: Session, producto_ref: str) -> list[dict]:
     reference = db.query(ProductoReferencia).filter_by(producto_ref=producto_ref).first()
     if not reference:
