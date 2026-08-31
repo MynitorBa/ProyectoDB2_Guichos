@@ -11,9 +11,9 @@ import { useCart } from '../../context/CartContext'
 export function CartSheet({ open, onClose }) {
   const { cart, remove, loading } = useCart()
   const items = cart?.items || []
-  const subtotal = items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0)
-  const iva = subtotal * 0.12
-  const total = subtotal + iva
+  const total = items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0)
+  const subtotal = total / 1.12
+  const iva = total - subtotal
 
   return (
     <Sheet open={open} onOpenChange={onClose}>

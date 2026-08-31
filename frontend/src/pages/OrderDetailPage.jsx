@@ -123,9 +123,9 @@ export default function OrderDetailPage() {
   }
 
   const lineas = pedido.lineas || []
-  const subtotal = pedido.subtotal ?? lineas.reduce((acc, l) => acc + (l.subtotal ?? l.precio_unitario * l.cantidad), 0)
-  const iva = pedido.impuestos ?? subtotal * 0.12
-  const total = pedido.total ?? subtotal + iva
+  const total = pedido.total ?? lineas.reduce((acc, l) => acc + (l.subtotal ?? l.precio_unitario * l.cantidad), 0)
+  const subtotal = pedido.subtotal ?? total / 1.12
+  const iva = pedido.impuestos ?? total - subtotal
 
   return (
     <div className="min-h-screen bg-[var(--color-background)]">

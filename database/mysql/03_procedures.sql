@@ -148,9 +148,10 @@ proc_block: BEGIN
     SET v_i = v_i + 1;
   END WHILE;
 
-  -- 7. Calcular impuestos (12% IVA guatemalteco) y actualizar totales del pedido
-  SET v_impuestos = ROUND(v_subtotal * 0.12, 2);
-  SET v_total     = v_subtotal + v_impuestos;
+  -- 7. IVA ya incluido en el precio; se extrae la base imponible para el desglose
+  SET v_total     = v_subtotal;
+  SET v_subtotal  = ROUND(v_total / 1.12, 2);
+  SET v_impuestos = v_total - v_subtotal;
 
   UPDATE pedidos
   SET subtotal = v_subtotal, impuestos = v_impuestos, total = v_total

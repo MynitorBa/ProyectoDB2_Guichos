@@ -77,12 +77,12 @@ function StepIndicator({ current }) {
 }
 
 function OrderSummary({ items, cart }) {
-  const subtotal = items.reduce(
+  const total = items.reduce(
     (acc, item) => acc + (item.subtotal ?? item.precio * item.cantidad),
     0
   )
-  const iva = subtotal * IVA_RATE
-  const total = subtotal + iva
+  const subtotal = total / (1 + IVA_RATE)
+  const iva = total - subtotal
 
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5 sticky top-20">

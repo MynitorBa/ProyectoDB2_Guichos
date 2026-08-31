@@ -19,9 +19,9 @@ export default function CartPage() {
   }, [fetchCart])
 
   const items = cart?.items || []
-  const subtotal = items.reduce((acc, item) => acc + (item.subtotal || item.precio * item.cantidad || 0), 0)
-  const iva = subtotal * IVA_RATE
-  const total = subtotal + iva
+  const total = items.reduce((acc, item) => acc + (item.subtotal || item.precio * item.cantidad || 0), 0)
+  const subtotal = total / (1 + IVA_RATE)
+  const iva = total - subtotal
 
   if (loading && items.length === 0) {
     return (

@@ -121,13 +121,15 @@ def procesar_checkout(
         subtotal += line_subtotal
         subtotal_by_vendor[offer.vendedor_id] += line_subtotal
 
-    impuestos = (subtotal * IVA).quantize(Decimal('0.01'))
-    total = subtotal + impuestos
+    # Los precios ya incluyen IVA; se extrae la base imponible para el desglose contable
+    total = subtotal
+    base = (total / (Decimal('1') + IVA)).quantize(Decimal('0.01'))
+    impuestos = total - base
     pedido = Pedido(
         usuario_id=usuario_id,
         direccion_id=direccion_id,
         estado='confirmado',
-        subtotal=subtotal,
+        subtotal=base,
         impuestos=impuestos,
         total=total,
     )
