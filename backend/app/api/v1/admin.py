@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, time, timezone, timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -180,9 +181,32 @@ def list_vendors(
             'nombre_comercial': vendedores[u.id].nombre_comercial if u.id in vendedores else None,
             'nit': vendedores[u.id].nit if u.id in vendedores else None,
             'estado_verificacion': vendedores[u.id].estado_verificacion if u.id in vendedores else None,
+            'es_tiendaya': bool(vendedores[u.id].es_tiendaya) if u.id in vendedores else False,
         }
         for u in usuarios
     ]
+
+
+# Asigna el flag es_tiendaya a un único vendedor; quita el flag de todos los demás (asignación exclusiva)
+@router.patch('/vendors/{vendedor_id}/tiendaya')
+def set_tiendaya_vendor(
+    vendedor_id: int,
+    _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    vendedor = db.get(Vendedor, vendedor_id)
+    if not vendedor:
+        raise HTTPException(404, 'Vendedor no encontrado.')
+    # Si ya era TiendaYa, des-asignar (toggle off)
+    if vendedor.es_tiendaya:
+        vendedor.es_tiendaya = False
+        db.commit()
+        return {'vendedor_id': vendedor_id, 'es_tiendaya': False}
+    # Quitar flag de cualquier otro vendedor que lo tenga
+    db.query(Vendedor).filter(Vendedor.es_tiendaya == True).update({'es_tiendaya': False})  # noqa: E712
+    vendedor.es_tiendaya = True
+    db.commit()
+    return {'vendedor_id': vendedor_id, 'es_tiendaya': True}
 
 
 # Reemplaza completamente los roles de un usuario; impide que el admin se quite su propio rol
@@ -285,6 +309,21 @@ def crear_producto(
     ).first()
     if not v_user or not v_rec:
         raise HTTPException(400, 'El usuario seleccionado no tiene perfil de vendedor.')
+
+    # Verificar nombre duplicado antes de crear (case-insensitive)
+    existing_doc = db.productos.find_one(
+        {'nombre': {'$regex': f'^{re.escape(payload.nombre.strip())}$', '$options': 'i'}},
+        {'_id': 1, 'nombre': 1},
+    )
+    if existing_doc:
+        raise HTTPException(
+            409,
+            detail={
+                'message': f'Ya existe un producto con el nombre "{existing_doc.get("nombre", payload.nombre)}".',
+                'existing_id': str(existing_doc['_id']),
+                'existing_nombre': existing_doc.get('nombre', payload.nombre),
+            },
+        )
 
     sku_prefix = categoria.sku_prefix or primary_slug[:3].upper()
     try:
@@ -991,6 +1030,21 @@ def crear_categoria(
     """
     if db.query(Categoria).filter_by(slug=payload.slug).first():
         raise HTTPException(400, f'Ya existe una categoría con slug "{payload.slug}".')
+
+    # Verificar nombre duplicado (case-insensitive)
+    existing_cat = db.query(Categoria).filter(
+        Categoria.nombre.ilike(payload.nombre.strip())
+    ).first()
+    if existing_cat:
+        raise HTTPException(
+            409,
+            detail={
+                'message': f'Ya existe una categoría con el nombre "{existing_cat.nombre}".',
+                'existing_slug': existing_cat.slug,
+                'existing_nombre': existing_cat.nombre,
+            },
+        )
+
     if payload.sku_prefix:
         prefix = payload.sku_prefix[:3].upper()
         conflict = db.query(Categoria).filter_by(sku_prefix=prefix).first()

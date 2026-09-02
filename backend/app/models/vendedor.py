@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Enum, ForeignKey, DateTime, Text
+from sqlalchemy import Boolean, String, Enum, ForeignKey, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
@@ -19,4 +19,6 @@ class Vendedor(Base):
     estado_verificacion: Mapped[str] = mapped_column(
         Enum('pendiente', 'verificado', 'rechazado'), default='pendiente'
     )
+    # Marca al vendedor propio de TiendaYa; sus ofertas tienen prioridad de presentación
+    es_tiendaya: Mapped[bool] = mapped_column(Boolean, default=False)
     fecha_registro: Mapped[datetime] = mapped_column(DateTime, default=utc_now)

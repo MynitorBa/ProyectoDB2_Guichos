@@ -28,7 +28,7 @@ PRIMARY_OFFERS_SQL = """
     WITH oferta_stock AS (
       SELECT o.id AS oferta_id, o.producto_ref, o.precio_actual, o.moneda,
              o.vendedor_id, v.usuario_id AS vendedor_usuario_id,
-             v.nombre_comercial,
+             v.nombre_comercial, v.es_tiendaya,
              GREATEST(0, COALESCE(SUM(
                i.cantidad_disponible - i.cantidad_reservada
              ), 0)) AS stock
@@ -37,19 +37,31 @@ PRIMARY_OFFERS_SQL = """
       LEFT JOIN inventario i ON i.oferta_id = o.id
       WHERE o.estado = 'activa'
       GROUP BY o.id, o.producto_ref, o.precio_actual, o.moneda,
-               o.vendedor_id, v.usuario_id, v.nombre_comercial
+               o.vendedor_id, v.usuario_id, v.nombre_comercial, v.es_tiendaya
+    ), totals AS (
+      SELECT producto_ref,
+             SUM(stock) AS stock_total,
+             COUNT(*) AS ofertas_count
+      FROM oferta_stock
+      GROUP BY producto_ref
     ), ranked AS (
       SELECT oferta_stock.*,
-             COUNT(*) OVER (PARTITION BY producto_ref) AS ofertas_count,
+             totals.stock_total,
+             totals.ofertas_count,
              ROW_NUMBER() OVER (
-               PARTITION BY producto_ref
-               ORDER BY (stock > 0) DESC, precio_actual, oferta_id
+               PARTITION BY oferta_stock.producto_ref
+               ORDER BY
+                 (es_tiendaya = 1 AND stock > 0) DESC,
+                 (stock > 0) DESC,
+                 precio_actual,
+                 oferta_id
              ) AS rn
       FROM oferta_stock
+      JOIN totals ON totals.producto_ref = oferta_stock.producto_ref
     )
     SELECT oferta_id, producto_ref, precio_actual, moneda, vendedor_id,
-           vendedor_usuario_id,
-           nombre_comercial, stock, ofertas_count
+           vendedor_usuario_id, nombre_comercial, es_tiendaya,
+           stock, stock_total, ofertas_count
     FROM ranked
     WHERE rn = 1
     ORDER BY producto_ref
@@ -57,16 +69,18 @@ PRIMARY_OFFERS_SQL = """
 
 
 def projection_from_row(row: dict) -> dict:
-    stock = max(0, int(row['stock'] or 0))
+    stock_primary = max(0, int(row['stock'] or 0))
+    stock_total = max(0, int(row['stock_total'] or 0))
     return {
         'oferta_id': int(row['oferta_id']),
         'precio': float(row['precio_actual']),
         'moneda': row['moneda'],
-        'stock': stock,
-        'disponible': stock > 0,
+        'stock': stock_total,
+        'disponible': stock_total > 0,
         'vendedor_id': int(row['vendedor_id']),
         'vendedor_usuario_id': int(row['vendedor_usuario_id']),
         'vendedor_nombre': row['nombre_comercial'],
+        'es_tiendaya': bool(row['es_tiendaya']),
         'ofertas_count': int(row['ofertas_count']),
     }
 

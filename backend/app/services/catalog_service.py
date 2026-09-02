@@ -102,21 +102,23 @@ def listar_productos(
             }
             offers = offers_by_ref.get(item['_id'], [])
             primary = oferta_principal(offers)
+            stock_total = sum(o['stock'] for o in offers)
             if primary:
                 item.update({
                     'oferta_id': primary['oferta_id'],
                     'precio': primary['precio'],
                     'moneda': primary['moneda'],
-                    'stock': primary['stock'],
+                    'stock': stock_total,
                     'disponible': primary['disponible'],
                     'vendedor_id': primary['vendedor_id'],
                     'vendedor_usuario_id': primary['vendedor_usuario_id'],
                     'vendedor_nombre': primary['vendedor_nombre'],
                     'ofertas_count': len(offers),
+                    'es_tiendaya': primary.get('es_tiendaya', False),
                 })
                 if (
                     float(legacy['precio'] or 0) != primary['precio']
-                    or int(legacy['stock'] or 0) != primary['stock']
+                    or int(legacy['stock'] or 0) != stock_total
                     or legacy['vendedor_nombre'] != primary['vendedor_nombre']
                 ):
                     mismatches += 1
@@ -231,6 +233,7 @@ def obtener_producto(
             )
         item['variantes'] = variants
         primary = oferta_principal(offers)
+        stock_total = sum(o['stock'] for o in offers)
         item['ofertas'] = offers
         item['ofertas_count'] = len(offers)
         if primary:
@@ -238,11 +241,12 @@ def obtener_producto(
                 'oferta_id': primary['oferta_id'],
                 'precio': primary['precio'],
                 'moneda': primary['moneda'],
-                'stock': primary['stock'],
+                'stock': stock_total,
                 'disponible': primary['disponible'],
                 'vendedor_id': primary['vendedor_id'],
                 'vendedor_usuario_id': primary['vendedor_usuario_id'],
                 'vendedor_nombre': primary['vendedor_nombre'],
+                'es_tiendaya': primary.get('es_tiendaya', False),
             })
         else:
             item.update({'oferta_id': None, 'stock': 0, 'disponible': False})

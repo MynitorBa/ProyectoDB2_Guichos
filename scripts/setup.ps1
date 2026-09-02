@@ -160,6 +160,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Falló la instalación del registro de variantes dinámicas.'
 }
 
+& $python scripts\apply_unique_nombre_tiendaya.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'Falló la migración de unicidad de nombre y columna es_tiendaya.'
+}
+
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
 & $python scripts\sync_mongo_projections.py

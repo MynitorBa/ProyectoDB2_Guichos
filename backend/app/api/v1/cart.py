@@ -11,7 +11,7 @@ from app.core.deps import get_current_user
 from app.models.usuario import Usuario
 from app.models.carrito import Carrito, CarritoItem
 from app.models.oferta import Oferta
-from app.services.offer_service import resolver_oferta_comprable
+from app.services.offer_service import resolver_oferta_comprable, stock_by_offer
 
 router = APIRouter(prefix='/cart', tags=['Carrito'])
 
@@ -31,7 +31,8 @@ def _get_or_create_cart(db: Session, usuario_id: int) -> Carrito:
     return carrito
 
 
-# Lee el carrito activo enriqueciendo cada ítem con el precio actual de la oferta y el nombre desde MongoDB
+# Lee el carrito activo enriqueciendo cada ítem con precio y stock actuales
+# Detecta cambios de precio (precio_cambio) y agotamiento de stock (sin_stock)
 @router.get('/')
 def ver_carrito(
     current_user: Usuario = Depends(get_current_user),
@@ -40,13 +41,23 @@ def ver_carrito(
 ):
     carrito = db.query(Carrito).filter_by(usuario_id=current_user.id, estado='activo').first()
     if not carrito:
-        return {'items': [], 'total': 0}
+        return {'items': [], 'total': 0, 'tiene_alertas': False}
+
+    offer_ids = [i.oferta_id for i in carrito.items if i.oferta_id]
+    stocks = stock_by_offer(db, offer_ids) if offer_ids else {}
 
     items = []
     total = Decimal('0')
+    tiene_alertas = False
     for item in carrito.items:
         offer = db.get(Oferta, item.oferta_id) if item.oferta_id else None
         current_price = offer.precio_actual if offer else item.precio_al_agregar
+        available_stock = stocks.get(item.oferta_id, 0) if offer else 0
+        sin_stock = (offer is None or offer.estado != 'activa' or available_stock == 0)
+        precio_cambio = (current_price != item.precio_al_agregar)
+        if sin_stock or precio_cambio:
+            tiene_alertas = True
+
         product_ref = item.producto_ref or (offer.producto_ref if offer else None)
         product_doc = None
         if product_ref:
@@ -57,7 +68,8 @@ def ver_carrito(
             except Exception:
                 product_doc = None
         subtotal = current_price * item.cantidad
-        total += subtotal
+        if not sin_stock:
+            total += subtotal
         items.append({
             'id': item.id,
             'oferta_id': item.oferta_id,
@@ -69,12 +81,14 @@ def ver_carrito(
             ),
             'precio': float(current_price),
             'precio_al_agregar': float(item.precio_al_agregar),
-            'precio_cambio': current_price != item.precio_al_agregar,
+            'precio_cambio': precio_cambio,
+            'sin_stock': sin_stock,
+            'stock_disponible': available_stock,
             'cantidad': item.cantidad,
-            'subtotal': float(subtotal),
+            'subtotal': float(subtotal) if not sin_stock else 0.0,
         })
 
-    return {'items': items, 'total': float(total)}
+    return {'items': items, 'total': float(total), 'tiene_alertas': tiene_alertas}
 
 
 # Agrega una oferta al carrito; si ya existe el mismo oferta_id acumula la cantidad

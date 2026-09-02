@@ -9,11 +9,11 @@ import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
   TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
-  Inbox, GitBranch,
+  Inbox, GitBranch, Star,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
-import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, getProductOffers, getProductVariants, addProductVariant, updateProductVariant, deleteProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
+import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, setTiendayaVendor, getProductOffers, getProductVariants, addProductVariant, updateProductVariant, deleteProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -327,7 +327,7 @@ function StatsSection() {
 }
 
 // ── ProductFormModal ──
-function ProductFormModal({ open, onOpenChange, product }) {
+function ProductFormModal({ open, onOpenChange, product, onDuplicateFound }) {
   const isEdit = !!product
   const queryClient = useQueryClient()
 
@@ -385,6 +385,18 @@ function ProductFormModal({ open, onOpenChange, product }) {
     },
     onError: (err) => {
       const detail = err?.response?.data?.detail
+      if (err?.response?.status === 409 && detail?.existing_id) {
+        toast.error(`Ya existe: "${detail.existing_nombre}". ¿Quieres editarlo?`, {
+          action: {
+            label: 'Ir a editar',
+            onClick: () => {
+              onOpenChange(false)
+              onDuplicateFound?.(detail.existing_id)
+            },
+          },
+        })
+        return
+      }
       toast.error(typeof detail === 'string' ? detail : 'Error al guardar el producto.')
     },
   })
@@ -1290,7 +1302,12 @@ function ProductsSection() {
         </div>
       )}
 
-      <ProductFormModal open={modalOpen} onOpenChange={setModalOpen} product={editProduct} />
+      <ProductFormModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        product={editProduct}
+        onDuplicateFound={(id) => { setModalOpen(false); openEdit({ _id: id }) }}
+      />
       <VariantsModal open={variantsOpen} onOpenChange={setVariantsOpen} product={variantsProduct} />
       <OffersModal open={offersOpen} onOpenChange={setOffersOpen} product={offersProduct} />
     </div>
@@ -1328,7 +1345,20 @@ function CategoriesSection() {
       setCreateOpen(false)
       setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewSkuPrefix(''); setNewAttrs([])
     },
-    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al crear categoría.'),
+    onError: (err) => {
+      const detail = err?.response?.data?.detail
+      if (err?.response?.status === 409 && detail?.existing_slug) {
+        const existingCat = cats.find((c) => c.slug === detail.existing_slug)
+        toast.error(detail.message || `Ya existe la categoría "${detail.existing_nombre}".`, {
+          action: existingCat ? {
+            label: 'Ir a editar',
+            onClick: () => { setCreateOpen(false); openEdit(existingCat) },
+          } : undefined,
+        })
+        return
+      }
+      toast.error(typeof detail === 'string' ? detail : 'Error al crear categoría.')
+    },
   })
 
   const schemaMut = useMutation({
@@ -1700,6 +1730,23 @@ function UsersSection() {
     onError: (err) => toast.error(err?.response?.data?.detail || 'Error al guardar perfil.'),
   })
 
+  const tiendayaMutation = useMutation({
+    mutationFn: (vendedorId) => setTiendayaVendor(vendedorId),
+    onSuccess: (res) => {
+      const { vendedor_id, es_tiendaya } = res.data
+      queryClient.setQueryData(['admin-vendors'], (old) =>
+        old?.map((v) =>
+          v.vendedor_id === vendedor_id
+            ? { ...v, es_tiendaya }
+            : { ...v, es_tiendaya: es_tiendaya ? false : v.es_tiendaya }
+        )
+      )
+      toast.success(es_tiendaya ? 'Vendedor marcado como TiendaYa.' : 'Marca TiendaYa removida.')
+      queryClient.invalidateQueries({ queryKey: ['admin-vendors'], refetchType: 'none' })
+    },
+    onError: (err) => toast.error(err?.response?.data?.detail || 'Error al actualizar TiendaYa.'),
+  })
+
   function toggleRole(user, role) {
     const current = new Set(user.roles)
     if (current.has(role)) current.delete(role)
@@ -1759,15 +1806,34 @@ function UsersSection() {
                   </td>
                   <td className="px-4 py-3">
                     {user.roles.includes('vendedor') && (
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        const vp = vendorByUserId[user.id]
-                        setVpUser(user)
-                        setVpNombre(vp?.nombre_comercial || '')
-                        setVpNit(vp?.nit || '')
-                        setVpOpen(true)
-                      }}>
-                        <Store size={13} /> Perfil vendedor
-                      </Button>
+                      <div className="flex flex-col gap-1.5 items-start">
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          const vp = vendorByUserId[user.id]
+                          setVpUser(user)
+                          setVpNombre(vp?.nombre_comercial || '')
+                          setVpNit(vp?.nit || '')
+                          setVpOpen(true)
+                        }}>
+                          <Store size={13} /> Perfil vendedor
+                        </Button>
+                        {vendorByUserId[user.id]?.vendedor_id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={tiendayaMutation.isPending}
+                            onClick={() => tiendayaMutation.mutate(vendorByUserId[user.id].vendedor_id)}
+                            className={cn(
+                              vendorByUserId[user.id]?.es_tiendaya
+                                ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50'
+                                : 'text-[var(--color-text-muted)] hover:text-amber-500 hover:bg-amber-50'
+                            )}
+                            title={vendorByUserId[user.id]?.es_tiendaya ? 'Quitar marca TiendaYa' : 'Marcar como vendedor TiendaYa'}
+                          >
+                            <Star size={13} fill={vendorByUserId[user.id]?.es_tiendaya ? 'currentColor' : 'none'} />
+                            {vendorByUserId[user.id]?.es_tiendaya ? 'TiendaYa' : 'Marcar TiendaYa'}
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>

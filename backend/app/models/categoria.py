@@ -1,4 +1,4 @@
-from sqlalchemy import String, ForeignKey, Text, SmallInteger, Boolean
+from sqlalchemy import String, ForeignKey, Text, SmallInteger, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
@@ -7,6 +7,7 @@ from app.core.db_mysql import Base
 # Árbol de categorías auto-referenciado; categoria_padre_id = NULL indica categoría raíz
 class Categoria(Base):
     __tablename__ = 'categorias'
+    __table_args__ = (UniqueConstraint('nombre', name='uq_categorias_nombre'),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     categoria_padre_id: Mapped[int | None] = mapped_column(ForeignKey('categorias.id'))

@@ -63,7 +63,8 @@ def actualizar_precio_oferta(
     return True
 
 
-def _stock_by_offer(db: Session, offer_ids: list[int]) -> dict[int, int]:
+def stock_by_offer(db: Session, offer_ids: list[int]) -> dict[int, int]:
+    """Stock neto (disponible - reservado) por oferta_id."""
     if not offer_ids:
         return {}
     rows = (
@@ -80,7 +81,7 @@ def _stock_by_offer(db: Session, offer_ids: list[int]) -> dict[int, int]:
     return {offer_id: max(0, int(stock or 0)) for offer_id, stock in rows}
 
 
-# Carga en una sola query todas las ofertas de una lista de producto_refs y calcula el stock neto (disponible - reservado)
+# Carga en una sola query todas las ofertas de una lista de producto_refs y calcula el stock neto
 def listar_ofertas_por_referencias(
     db: Session,
     producto_refs: list[str],
@@ -104,10 +105,10 @@ def listar_ofertas_por_referencias(
 
     rows = query.all()
     offer_ids = [offer.id for offer, _, _ in rows]
-    stock = _stock_by_offer(db, offer_ids)
+    stocks = stock_by_offer(db, offer_ids)
     grouped = defaultdict(list)
     for offer, vendor, variant in rows:
-        available = stock.get(offer.id, 0)
+        available = stocks.get(offer.id, 0)
         grouped[offer.producto_ref].append({
             'id': offer.id,
             'oferta_id': offer.id,
@@ -122,18 +123,23 @@ def listar_ofertas_por_referencias(
             'vendedor_id': offer.vendedor_id,
             'vendedor_usuario_id': vendor.usuario_id,
             'vendedor_nombre': vendor.nombre_comercial,
+            'es_tiendaya': vendor.es_tiendaya,
             'stock': available,
             'disponible': offer.estado == 'activa' and available > 0,
         })
 
     for offers in grouped.values():
-        offers.sort(key=lambda item: (
-            not item['disponible'], item['precio'], item['oferta_id']
+        # TiendaYa disponible primero → demás disponibles por precio → no disponibles
+        offers.sort(key=lambda o: (
+            not (o['es_tiendaya'] and o['disponible']),
+            not o['disponible'],
+            o['precio'],
+            o['oferta_id'],
         ))
     return dict(grouped)
 
 
-# La oferta principal es siempre la primera de la lista (ya ordenada: disponible > precio > id)
+# La oferta principal sigue siendo el primer elemento de la lista (ya ordenada con TiendaYa primero)
 def oferta_principal(offers: list[dict]) -> dict | None:
     return offers[0] if offers else None
 
@@ -141,16 +147,18 @@ def oferta_principal(offers: list[dict]) -> dict | None:
 def enqueue_primary_offer_projection(
     db: Session, producto_ref: str, agregado_id: int
 ) -> None:
-    """Proyecta en Mongo únicamente la oferta activa que gana la lectura."""
+    """Proyecta en Mongo la oferta líder (TiendaYa o más barata) y el stock total."""
     offers = listar_ofertas_por_referencias(db, [producto_ref]).get(
         producto_ref, []
     )
     primary = oferta_principal(offers)
+    # Stock total = suma de todas las ofertas activas, no solo la principal
+    stock_total = sum(o['stock'] for o in offers)
     projection = {
         'ofertas_count': len(offers),
         'oferta_id': primary['oferta_id'] if primary else None,
         'disponible': bool(primary and primary['disponible']),
-        'stock': primary['stock'] if primary else 0,
+        'stock': stock_total,
     }
     if primary:
         projection.update({
