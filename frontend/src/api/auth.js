@@ -12,3 +12,6 @@ export const me = () =>
 
 export const updateProfile = (data) =>
   api.put('/auth/me', data)
+
+export const refreshToken = () =>
+  api.post('/auth/refresh')

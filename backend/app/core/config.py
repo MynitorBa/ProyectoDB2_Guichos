@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str = 'CAMBIA_ESTO_EN_PRODUCCION_clave_secreta_muy_larga'
     ALGORITHM: str = 'HS256'
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     # CORS
     FRONTEND_URL: str = 'http://localhost:5173'

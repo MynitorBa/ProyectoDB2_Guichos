@@ -70,6 +70,13 @@ def me(current_user: Usuario = Depends(get_current_user)):
     )
 
 
+# Emite un nuevo token con fecha de expiración renovada sin necesidad de re-autenticar
+@router.post('/refresh', response_model=TokenResponse)
+def refresh(current_user: Usuario = Depends(get_current_user)):
+    token = create_access_token({'sub': str(current_user.id)})
+    return TokenResponse(access_token=token)
+
+
 # Actualiza nombre, apellido y teléfono del usuario autenticado (el email no cambia)
 @router.put('/me', response_model=UserResponse)
 def update_me(
