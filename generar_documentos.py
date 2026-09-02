@@ -116,7 +116,7 @@ def crear_doc1():
     separador(doc)
 
     h3(doc, "admin.js — Panel de administración")
-    body(doc, "El módulo más grande. Contiene docenas de funciones exclusivas para administradores que cubren la gestión completa de usuarios, productos, categorías, pedidos, ventas y solicitudes de catálogo. Permite exportar reportes de ventas a Excel, cambiar roles de usuarios, aprobar o rechazar propuestas de vendedores, y consultar estadísticas globales del sistema.")
+    body(doc, "El módulo más grande. Contiene funciones exclusivas para administradores que cubren la gestión completa de usuarios, productos, categorías, pedidos, ventas y solicitudes de catálogo. Permite exportar reportes de ventas a Excel, cambiar roles de usuarios, aprobar o rechazar propuestas de vendedores, y consultar estadísticas globales del sistema. Las funciones de variantes incluyen getProductVariants para listar las variantes de un producto, addProductVariant para crear una nueva variante con atributos dinámicos, updateProductVariant para editar los atributos de una variante existente y deleteProductVariant para eliminar una variante (solo si no tiene ofertas activas). Las funciones de ofertas incluyen getProductOffers, addProductOffer y updateProductOffer para gestionar los vendedores que ofrecen cada variante.")
     separador(doc)
 
     # ── Contextos ──
@@ -262,7 +262,9 @@ def crear_doc1():
     separador(doc)
 
     h3(doc, "AdminPage.jsx — Panel de administración")
-    body(doc, "El panel central de gestión del sistema con seis secciones. Estadísticas muestra KPIs del catálogo y gráficas de precios. Productos permite el CRUD completo de productos con gestión de imágenes. Categorías permite definir las categorías y sus esquemas de atributos dinámicos. Usuarios permite ver y cambiar los roles de los usuarios del sistema. Pedidos permite ver y cambiar el estado de todos los pedidos. Ventas muestra reportes de ingresos con gráfica de tendencia y opción de exportar a Excel. Solicitudes muestra el flujo de aprobación de propuestas de vendedores.")
+    body(doc, "El panel central de gestión del sistema con siete secciones. Estadísticas muestra KPIs del catálogo y gráficas de precios. Productos permite el CRUD completo de productos con gestión de imágenes y acceso a dos modales dedicados: VariantsModal y OffersModal. Categorías permite definir las categorías y sus esquemas de atributos dinámicos. Usuarios permite ver y cambiar los roles de los usuarios del sistema. Pedidos permite ver y cambiar el estado de todos los pedidos. Ventas muestra reportes de ingresos con gráfica de tendencia y opción de exportar a Excel. Solicitudes muestra el flujo de aprobación de propuestas de vendedores.")
+    separador(doc)
+    body(doc, "La sección de Productos tiene por cada producto tres botones de acción además de Editar e Historial. El botón Variantes abre el VariantsModal, que lista todas las variantes del producto con sus atributos en chips visuales, SKU de catálogo y estado. Desde ese modal se pueden crear nuevas variantes con cualquier combinación de atributos clave-valor (por ejemplo color='azul' y talla='L'), editar los atributos de variantes existentes de forma inline y eliminar variantes que no tengan ofertas activas. El botón Ofertas abre el OffersModal, que gestiona exclusivamente los vendedores y precios por variante, permitiendo agregar nuevos oferentes, editar precio y stock de una oferta existente, y pausar o activar ofertas. La separación entre variantes y ofertas refleja la arquitectura del marketplace: las variantes definen el QUÉ (combinaciones de producto), mientras las ofertas definen el QUIÉN y a QUÉ PRECIO.")
     separador(doc)
 
     doc.add_page_break()
@@ -403,6 +405,8 @@ def crear_doc1():
     h3(doc, "admin.py — Endpoints de administración")
     body(doc, "El router más extenso. Todos los endpoints requieren rol de administrador. Incluye CRUD completo de productos (con subida de imágenes y creación de ofertas iniciales), gestión de categorías y sus esquemas de atributos, gestión de usuarios y roles, visualización de todos los pedidos, reportes de ventas por vendedor y por producto, y exportación de datos a Excel. La creación de un producto nuevo es la operación más compleja: crea el documento en MongoDB, registra la referencia en MySQL, crea una oferta inicial y registra el inventario inicial, todo en una sola operación compensada.")
     separador(doc)
+    body(doc, "Los endpoints de variantes permiten gestionar el ciclo completo: GET /admin/products/{ref}/variants lista todas las variantes de un producto cruzando MySQL y MongoDB. POST /admin/products/{ref}/variants crea una nueva variante con el conjunto de atributos enviados. PATCH /admin/variants/{id} edita los atributos de una variante existente, regenerando su clave de deduplicación y SKU. DELETE /admin/variants/{id} elimina una variante, rechazando la operación si tiene ofertas activas. Los endpoints de ofertas GET /admin/products/{ref}/offers, POST /admin/products/{ref}/offers y PATCH /admin/offers/{id} gestionan los vendedores y precios asociados a cada variante.")
+    separador(doc)
 
     h3(doc, "catalog_requests.py — Flujo de solicitudes de catálogo")
     body(doc, "Dos routers: uno para vendedores y otro para administradores. Los vendedores pueden proponer productos nuevos con imágenes y atributos, o solicitar ser oferentes de un producto existente. Los administradores pueden ver todas las solicitudes pendientes y aprobar o rechazar cada una. Al aprobar una solicitud de producto nuevo, el sistema crea automáticamente el producto en MongoDB y MySQL, la oferta y el inventario inicial. Ambas partes reciben notificaciones con el resultado.")
@@ -436,7 +440,7 @@ def crear_doc1():
     separador(doc)
 
     h3(doc, "variant_service.py — Variantes dinámicas")
-    body(doc, "Gestiona las variantes de producto. Crea variantes en MongoDB con sus atributos específicos (por ejemplo, un laptop con 32GB de RAM y 1TB de almacenamiento) y registra su ancla de referencia en MySQL. Genera una clave única para cada combinación de atributos para detectar duplicados. Normaliza los nombres de los atributos a snake_case para consistencia.")
+    body(doc, "Gestiona el ciclo de vida completo de las variantes de producto. La función create_variant crea una variante en MongoDB con sus atributos específicos (por ejemplo, un laptop con color='negro' y almacenamiento='1TB') y registra su ancla de referencia en MySQL. Genera una clave de deduplicación normalizada para evitar variantes duplicadas. La función update_variant_attributes permite editar los atributos de una variante existente: normaliza los nuevos atributos, verifica que la nueva combinación no exista ya en otra variante del mismo producto, regenera el SKU de catálogo y actualiza el documento en MongoDB. La función delete_variant elimina una variante de MongoDB y su referencia en MySQL, rechazando la operación si la variante tiene ofertas activas (para proteger la integridad referencial). La función list_variants cruza MySQL y MongoDB para devolver la lista completa de variantes de un producto con todos sus detalles.")
     separador(doc)
 
     h3(doc, "sku_service.py — Generación de SKUs")
@@ -835,9 +839,13 @@ def crear_doc3():
     body(doc, "Si algo falla en los pasos de MongoDB (paso 2 o 3), se intenta revertir. Si algo falla en MySQL (paso 4 en adelante), la transacción se revierte automáticamente y se elimina el documento de MongoDB para compensar. Este patrón se llama compensación y es necesario porque MongoDB y MySQL no pueden participar en la misma transacción ACID.")
     separador(doc)
 
-    h2(doc, "Variantes dinámicas — Creación")
-    h3(doc, "Archivo: app/services/variant_service.py — función create_variant")
-    body(doc, "La creación de una variante también combina ambas bases de datos. Primero inserta el documento de la variante en la colección producto_variantes de MongoDB, obteniendo su ObjectId. Luego, en MySQL, inserta una fila en producto_variante_referencias con ese ObjectId como variante_ref. La clave de deduplicación (clave_variante) garantiza que no se creen dos variantes idénticas en MongoDB gracias al índice único.")
+    h2(doc, "Variantes dinámicas — Creación, edición y eliminación")
+    h3(doc, "Archivo: app/services/variant_service.py")
+    body(doc, "La función create_variant combina ambas bases de datos. Normaliza los atributos a snake_case y genera una clave de deduplicación. Primero verifica en MongoDB que no exista otra variante del mismo producto con la misma combinación de atributos. Si no existe, inserta el documento en la colección producto_variantes obteniendo un ObjectId. Luego, en MySQL, inserta una fila en producto_variante_referencias con ese ObjectId como variante_ref y la referencia al producto padre.")
+    separador(doc)
+    body(doc, "La función update_variant_attributes edita una variante existente. En MySQL busca el registro en producto_variante_referencias por el id de variante para obtener el variante_ref. En MongoDB recupera el documento, valida que la nueva combinación de atributos no colisione con otra variante del mismo producto (consulta con $ne sobre el _id propio), luego hace $set para actualizar atributos, clave_variante, sku_catalogo y fecha_actualizacion.")
+    separador(doc)
+    body(doc, "La función delete_variant primero consulta MySQL para verificar que no haya ofertas activas vinculadas a esa variante (SELECT COUNT en ofertas WHERE estado != 'descontinuada'). Si hay ofertas activas, rechaza la operación con un error descriptivo. Si no las hay, elimina el documento de MongoDB con delete_one y luego elimina la fila de producto_variante_referencias en MySQL. Todo dentro de una sola sesión de base de datos para que el commit final sea atómico en MySQL.")
     separador(doc)
 
     h2(doc, "Solicitudes de catálogo — Aprobación")
@@ -903,7 +911,7 @@ def crear_doc3():
     bullet(doc, "app/api/v1/cart.py — LECTURA: MySQL para el carrito, MongoDB para nombres e imágenes")
     bullet(doc, "app/services/checkout_service.py — ESCRITURA: solo MySQL directamente; MongoDB se actualiza por Outbox")
     bullet(doc, "app/services/outbox_service.py — SINCRONIZACIÓN: lee MySQL (outbox_eventos), escribe en MongoDB")
-    bullet(doc, "app/services/variant_service.py — ESCRITURA: MongoDB para la variante, MySQL para la referencia")
+    bullet(doc, "app/services/variant_service.py — CRUD COMPLETO: create_variant (inserta en MongoDB y MySQL), update_variant_attributes (actualiza MongoDB, lee MySQL), delete_variant (verifica en MySQL, elimina en MongoDB y MySQL), list_variants (cruza ambas bases)")
     bullet(doc, "app/core/db_mongo.py — CONFIGURACIÓN: crea índices en MongoDB al arrancar")
     bullet(doc, "backend/scripts/apply_dynamic_variants.py — MIGRACIÓN: lee de ambas, escribe en ambas")
     separador(doc)
