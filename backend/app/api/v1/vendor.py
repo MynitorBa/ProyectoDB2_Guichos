@@ -1,6 +1,16 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+from decimal import Decimal
+from typing import Literal
+from bson import ObjectId
+from pymongo.database import Database
+from app.core.db_mongo import get_mongo_db
+from app.models.oferta import Oferta
+from app.models.inventario import Inventario
+from app.services.offer_service import editar_oferta
+from app.services.variant_service import list_variants
+from app.services.fulfillment_service import prepare_part
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -24,7 +34,7 @@ def _estados_vendedor() -> list[str]:
     all_estados: list[str] = list(
         PedidoVendedor.__table__.c['estado'].type.enums
     )
-    return [e for e in all_estados if e not in _ESTADOS_ADMIN_ONLY]
+    return ['preparando']  # Enviado/entregado se calculan desde envíos por cantidad.
 
 
 class StatusUpdate(BaseModel):
@@ -72,7 +82,7 @@ def vendor_stats(
         db.query(func.count(PedidoVendedor.id))
         .filter(
             PedidoVendedor.vendedor_id == v.id,
-            PedidoVendedor.estado == 'confirmado',
+            PedidoVendedor.estado.in_(['confirmado', 'preparando', 'enviado_parcial', 'entregado_parcial']),
         )
         .scalar() or 0
     )
@@ -178,10 +188,70 @@ def update_vendor_order_status(
     if not pedido:
         raise HTTPException(404, 'Pedido no encontrado.')
 
-    part.estado = payload.estado
-    db.commit()
+    prepare_part(db, pedido_id, part.id, current_user)
     return {
         'id': pedido_id,
         'pedido_vendedor_id': part.id,
         'estado': payload.estado,
     }
+
+
+class VendorOfferUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    version: int = Field(ge=1)
+    precio: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    stock: int | None = Field(default=None, ge=0, le=2147483647, strict=True)
+    estado: Literal['activa', 'pausada'] | None = None
+
+
+@router.get('/offers')
+def own_offers(q: str = '', estado: str | None = None, oferta_id: int | None = None, page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100), user: Usuario = Depends(get_vendor_user),
+    db: Session = Depends(get_db), mongo: Database = Depends(get_mongo_db)):
+    vendor = _get_vendedor(db, user)
+    query = db.query(Oferta).filter_by(vendedor_id=vendor.id)
+    if oferta_id is not None:
+        query = query.filter_by(id=oferta_id)
+    if estado:
+        query = query.filter_by(estado=estado)
+    if q.strip():
+        import re
+        refs = [str(d['_id']) for d in mongo.productos.find(
+            {'nombre': {'$regex': re.escape(q.strip()), '$options': 'i'}}, {'_id': 1})]
+        query = query.filter((Oferta.producto_ref.in_(refs)) | (Oferta.sku.contains(q.strip())))
+    total = query.count()
+    rows = query.order_by(Oferta.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    result = []
+    for offer in rows:
+        product = mongo.productos.find_one({'_id': ObjectId(offer.producto_ref)}) or {}
+        variant = next((v for v in list_variants(mongo, db, offer.producto_ref)
+            if v['variante_id'] == offer.producto_variante_id), {})
+        inventory = db.query(Inventario).filter_by(oferta_id=offer.id, bodega='principal').first()
+        physical = inventory.cantidad_disponible if inventory else 0
+        reserved = inventory.cantidad_reservada if inventory else 0
+        images = product.get('imagenes', [])
+        images = [image.get('url') if isinstance(image, dict) else image for image in images if image]
+        images = [image for image in images if image]
+        result.append({'id': offer.id, 'producto_ref': offer.producto_ref,
+            'producto_nombre': product.get('nombre', offer.sku), 'imagen': images[0] if images else None,
+            'producto_estado': product.get('estado'), 'atributos': variant.get('atributos', {}),
+            'sku': offer.sku, 'precio': float(offer.precio_actual), 'estado': offer.estado,
+            'stock': max(0, physical-reserved), 'existencias': physical, 'reservado': reserved,
+            'version': offer.version})
+    return {'items': result, 'total': total, 'page': page, 'total_pages': max(1, -(-total//page_size))}
+
+
+@router.patch('/offers/{offer_id}')
+def change_own_offer(offer_id: int, payload: VendorOfferUpdate,
+    user: Usuario = Depends(get_vendor_user), db: Session = Depends(get_db)):
+    vendor = _get_vendedor(db, user)
+    if vendor.estado_verificacion != 'verificado':
+        raise HTTPException(403, 'El vendedor no está verificado.')
+    offer = db.query(Oferta).filter_by(id=offer_id, vendedor_id=vendor.id).with_for_update().first()
+    if not offer:
+        raise HTTPException(404, 'Oferta no encontrada.')
+    if offer.estado not in {'activa', 'pausada'}:
+        raise HTTPException(409, 'Solo puedes editar ofertas aprobadas activas o pausadas.')
+    editar_oferta(db, oferta=offer, usuario_id=user.id, **payload.model_dump(), motivo='Edición del vendedor')
+    db.commit()
+    return {'id': offer.id, 'version': offer.version}

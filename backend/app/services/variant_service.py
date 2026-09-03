@@ -22,6 +22,8 @@ def normalize_variant_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
         key = re.sub(r'[^a-z0-9_]+', '_', str(raw_key).strip().lower()).strip('_')
         if not key:
             raise ValueError('Cada atributo de variante necesita un nombre válido.')
+        if key in normalized:
+            raise ValueError(f'El atributo {key} está repetido.')
         if isinstance(value, str):
             value = value.strip()
         if value in (None, '') or isinstance(value, (dict, list)):
@@ -106,22 +108,28 @@ def delete_variant(mongo: Database, db: Session, variante_id: int) -> None:
     registry = db.get(ProductoVarianteReferencia, variante_id)
     if not registry:
         raise ValueError('Variante no encontrada.')
-    active = (
+    offers = (
         db.query(Oferta)
-        .filter(
-            Oferta.producto_variante_id == variante_id,
-            Oferta.estado.notin_(['descontinuada']),
-        )
+        .filter(Oferta.producto_variante_id == variante_id)
         .count()
     )
-    if active:
+    if offers:
         raise ValueError(
-            'No se puede eliminar: la variante tiene ofertas activas. '
-            'Descontinúalas primero.'
+            'No se puede eliminar: la variante tiene ofertas o historial '
+            'comercial relacionado.'
         )
-    mongo.producto_variantes.delete_one({'_id': ObjectId(registry.variante_ref)})
+    variants = db.query(ProductoVarianteReferencia).filter_by(
+        producto_referencia_id=registry.producto_referencia_id
+    ).count()
+    if variants <= 1:
+        raise ValueError('El producto debe conservar al menos una variante.')
     db.delete(registry)
     db.flush()
+    result = mongo.producto_variantes.delete_one(
+        {'_id': ObjectId(registry.variante_ref)}
+    )
+    if result.deleted_count != 1:
+        raise ValueError('No se pudo eliminar el documento de variante.')
 
 
 def update_variant_attributes(
@@ -133,6 +141,12 @@ def update_variant_attributes(
     doc = mongo.producto_variantes.find_one({'_id': ObjectId(registry.variante_ref)})
     if not doc:
         raise ValueError('Documento de variante no encontrado en MongoDB.')
+    from app.models.oferta import Oferta  # inline to avoid circular import
+    if db.query(Oferta).filter_by(producto_variante_id=variante_id).count():
+        raise ValueError(
+            'No se pueden cambiar los atributos de una variante con ofertas; '
+            'crea otra variante para preservar el historial comercial.'
+        )
     normalized = normalize_variant_attributes(attributes)
     key = variant_key(normalized)
     duplicate = mongo.producto_variantes.find_one({

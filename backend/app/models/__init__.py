@@ -16,6 +16,7 @@ from app.models.resena import Resena
 from app.models.notificacion import Notificacion
 from app.models.oferta import Oferta, OfertaPrecioHistorial, OfertaEstadoHistorial
 from app.models.pedido_vendedor import PedidoVendedor, PedidoDireccion
+from app.models.pedido_envio import PedidoEnvio, PedidoEnvioLinea
 from app.models.outbox import OutboxEvento
 from app.models.solicitud_catalogo import (
     SolicitudCatalogo, SolicitudCatalogoCategoria, SolicitudCatalogoImagen,

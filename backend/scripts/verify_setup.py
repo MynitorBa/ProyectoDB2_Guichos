@@ -501,7 +501,78 @@ def main():
                     f'({len(variant_registry_refs)} variantes)'
                 )
 
+            marketplace_errors = []
+            if ('vendedores', 'es_tiendaya') not in installed_columns:
+                marketplace_errors.append('falta vendedores.es_tiendaya')
+            cur.execute("""
+                SELECT COUNT(*) AS n
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'categorias'
+                  AND INDEX_NAME = 'uq_categorias_nombre'
+                  AND NON_UNIQUE = 0
+            """)
+            if not cur.fetchone()['n']:
+                marketplace_errors.append('falta único uq_categorias_nombre')
+            if ('vendedores', 'es_tiendaya') in installed_columns:
+                cur.execute(
+                    'SELECT COUNT(*) AS n FROM vendedores WHERE es_tiendaya = 1'
+                )
+                own_vendor_count = cur.fetchone()['n']
+                if own_vendor_count > 1:
+                    marketplace_errors.append(
+                        f'hay {own_vendor_count} vendedores marcados como TiendaYa'
+                    )
+            if marketplace_errors:
+                print(f'MySQL reglas de catálogo: {"; ".join(marketplace_errors)}')
+                ok = False
+            else:
+                print('MySQL reglas de catálogo: nombres únicos y prioridad TiendaYa')
+
             legacy_tables = {'productos'} & installed_tables
+            fulfillment_errors = []
+            if not {'pedido_envios', 'pedido_envio_lineas'} <= installed_tables:
+                fulfillment_errors.append('faltan tablas de envíos; ejecuta apply_fulfillment.py')
+            for fk in ('fk_pe_subpedido', 'fk_pe_creador', 'fk_pe_receptor', 'fk_pel_envio', 'fk_pel_linea'):
+                if fk not in installed_fks:
+                    fulfillment_errors.append(f'falta FK {fk}')
+            cur.execute("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='solicitudes_catalogo' AND COLUMN_NAME='tipo'")
+            if 'variante_nueva' not in cur.fetchone()['COLUMN_TYPE']:
+                fulfillment_errors.append('falta tipo de solicitud variante_nueva')
+            for table in ('pedidos', 'pedido_vendedores'):
+                cur.execute("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND COLUMN_NAME='estado'", (table,))
+                enum = cur.fetchone()['COLUMN_TYPE']
+                if 'enviado_parcial' not in enum or 'entregado_parcial' not in enum:
+                    fulfillment_errors.append(f'faltan estados parciales en {table}')
+            if not fulfillment_errors:
+                cur.execute('''
+                    SELECT COUNT(*) n FROM pedido_envio_lineas el
+                    JOIN pedido_envios e ON e.id=el.envio_id
+                    JOIN pedido_lineas l ON l.id=el.pedido_linea_id
+                    WHERE e.pedido_vendedor_id <> l.pedido_vendedor_id
+                ''')
+                if cur.fetchone()['n']:
+                    fulfillment_errors.append('envíos enlazados a líneas de otro vendedor')
+                cur.execute('''
+                    SELECT COUNT(*) n FROM (
+                        SELECT l.id FROM pedido_lineas l
+                        JOIN pedido_envio_lineas el ON el.pedido_linea_id=l.id
+                        GROUP BY l.id,l.cantidad HAVING SUM(el.cantidad)>l.cantidad
+                    ) excedidas
+                ''')
+                if cur.fetchone()['n']:
+                    fulfillment_errors.append('cantidades enviadas mayores que las compradas')
+                cur.execute('''
+                    SELECT COUNT(*) n FROM pedido_vendedores pv
+                    JOIN pedidos p ON p.id=pv.pedido_id
+                    WHERE p.estado IN ('cancelado','reembolsado') AND pv.estado<>p.estado
+                ''')
+                if cur.fetchone()['n']:
+                    fulfillment_errors.append('subpedidos desalineados de un pedido cancelado/reembolsado')
+            if fulfillment_errors:
+                print('MySQL envíos parciales: ' + '; '.join(fulfillment_errors))
+                ok = False
+            else:
+                print('MySQL envíos parciales y solicitudes de variante: estructura e integridad OK')
             legacy_columns = {
                 ('carrito_items', 'producto_id'),
                 ('inventario', 'producto_id'),
@@ -529,7 +600,7 @@ def main():
             cur.execute("""
                 WITH oferta_stock AS (
                   SELECT o.id, o.producto_ref, o.precio_actual,
-                         v.nombre_comercial,
+                         v.nombre_comercial, v.es_tiendaya,
                          COALESCE(SUM(
                            i.cantidad_disponible - i.cantidad_reservada
                          ), 0) AS stock
@@ -538,18 +609,27 @@ def main():
                   LEFT JOIN inventario i ON i.oferta_id = o.id
                   WHERE o.estado = 'activa'
                   GROUP BY o.id, o.producto_ref, o.precio_actual,
-                           v.nombre_comercial
+                           v.nombre_comercial, v.es_tiendaya
+                ), totals AS (
+                  SELECT producto_ref, SUM(GREATEST(0, stock)) AS stock_total,
+                         COUNT(*) AS ofertas_count
+                  FROM oferta_stock
+                  GROUP BY producto_ref
                 ), ranked AS (
                   SELECT oferta_stock.*,
-                         COUNT(*) OVER (PARTITION BY producto_ref) AS ofertas_count,
+                         totals.stock_total, totals.ofertas_count,
                          ROW_NUMBER() OVER (
-                           PARTITION BY producto_ref
-                           ORDER BY (stock > 0) DESC, precio_actual, id
+                           PARTITION BY oferta_stock.producto_ref
+                           ORDER BY
+                             (es_tiendaya = 1 AND stock > 0) DESC,
+                             (stock > 0) DESC, precio_actual, id
                          ) AS rn
                   FROM oferta_stock
+                  JOIN totals ON totals.producto_ref = oferta_stock.producto_ref
                 )
                 SELECT producto_ref, id AS oferta_id, precio_actual,
-                       nombre_comercial, stock, ofertas_count
+                       nombre_comercial, es_tiendaya,
+                       stock_total AS stock, ofertas_count
                 FROM ranked WHERE rn = 1
             """)
             offer_projections = cur.fetchall()
@@ -647,7 +727,7 @@ def main():
                 doc = mongo.productos.find_one(
                     {'_id': ObjectId(offer['producto_ref'])},
                     {'precio': 1, 'stock': 1, 'vendedor_nombre': 1,
-                     'oferta_id': 1, 'ofertas_count': 1},
+                     'es_tiendaya': 1, 'oferta_id': 1, 'ofertas_count': 1},
                 )
             except Exception:
                 doc = None
@@ -656,6 +736,7 @@ def main():
                 or float(doc.get('precio', 0)) != float(offer['precio_actual'])
                 or int(doc.get('stock', 0)) != int(offer['stock'])
                 or doc.get('vendedor_nombre') != offer['nombre_comercial']
+                or bool(doc.get('es_tiendaya')) != bool(offer['es_tiendaya'])
                 or int(doc.get('oferta_id', 0)) != int(offer['oferta_id'])
                 or int(doc.get('ofertas_count', 0)) != int(offer['ofertas_count'])
             ):

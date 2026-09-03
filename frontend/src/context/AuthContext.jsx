@@ -8,7 +8,10 @@ const REFRESH_BEFORE_MS = 5 * 60 * 1000 // renovar 5 min antes de expirar
 
 function getTokenExpiry(token) {
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
+    const encoded = token.split('.')[1]
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+      .padEnd(Math.ceil(encoded.length / 4) * 4, '=')
+    const payload = JSON.parse(atob(base64))
     return payload.exp * 1000
   } catch {
     return null
@@ -25,8 +28,7 @@ export function AuthProvider({ children }) {
     clearTimeout(refreshTimer.current)
     const expiry = getTokenExpiry(token)
     if (!expiry) return
-    const delay = expiry - Date.now() - REFRESH_BEFORE_MS
-    if (delay <= 0) return
+    const delay = Math.max(0, expiry - Date.now() - REFRESH_BEFORE_MS)
     refreshTimer.current = setTimeout(async () => {
       try {
         const res = await refreshToken()

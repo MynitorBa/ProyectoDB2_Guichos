@@ -40,7 +40,7 @@ from app.services.offer_history_service import (
     registrar_saldo_inventario,
 )
 from app.services.sku_service import generate_offer_sku, generate_product_sku
-from app.services.variant_service import create_variant, list_variants
+from app.services.variant_service import create_variant, list_variants, normalize_variant_attributes, variant_key
 
 
 vendor_router = APIRouter(prefix='/vendor/catalog-requests', tags=['Solicitudes vendedor'])
@@ -71,6 +71,15 @@ class OfferProposalCreate(BaseModel):
 
 class ReviewPayload(BaseModel):
     model_config = ConfigDict(extra='forbid')
+    observaciones: str | None = Field(default=None, max_length=2000)
+
+
+class VariantProposalCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    producto_ref: str = Field(min_length=24, max_length=24)
+    atributos: dict
+    precio: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    stock: int = Field(ge=0, le=2147483647)
     observaciones: str | None = Field(default=None, max_length=2000)
 
 
@@ -152,7 +161,7 @@ def _serialize_request(
         for link, image in _image_rows(db, request.id)
     ]
     requested_name = request.nombre
-    variant_attributes = {}
+    variant_attributes = request.atributos if request.tipo == 'variante_nueva' else {}
     if request.producto_ref_solicitado:
         try:
             doc = mongo.productos.find_one(
@@ -363,6 +372,59 @@ def list_own_requests(
         'total': total, 'page': page, 'page_size': page_size,
         'total_pages': max(1, -(-total // page_size)),
     }
+
+
+@vendor_router.post('/variants', status_code=201)
+def propose_variant(payload: VariantProposalCreate,
+    current_user: Usuario = Depends(get_vendor_user), db: Session = Depends(get_db),
+    mongo: Database = Depends(get_mongo_db)):
+    vendor = _get_vendor(db, current_user)
+    reference = db.query(ProductoReferencia).filter_by(producto_ref=payload.producto_ref).with_for_update().first()
+    if not ObjectId.is_valid(payload.producto_ref) or not reference:
+        raise HTTPException(404, 'Producto no encontrado.')
+    product = mongo.productos.find_one({'_id': ObjectId(payload.producto_ref), 'estado': 'activo'})
+    if not product:
+        raise HTTPException(409, 'El producto no está activo.')
+    try:
+        attrs = normalize_variant_attributes(payload.atributos)
+        if not attrs:
+            raise ValueError('Indica los atributos que identifican la nueva variante.')
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if mongo.producto_variantes.find_one({'producto_ref': payload.producto_ref, 'clave_variante': variant_key(attrs)}):
+        raise HTTPException(409, 'Esa variante ya existe. Utiliza Solicitar oferta.')
+    pending = db.query(SolicitudCatalogo).filter_by(vendedor_id=vendor.id,
+        producto_ref_solicitado=payload.producto_ref, tipo='variante_nueva', estado='pendiente').all()
+    if any(variant_key(row.atributos) == variant_key(attrs) for row in pending):
+        raise HTTPException(409, 'Ya tienes una solicitud pendiente para esa variante.')
+    request = SolicitudCatalogo(vendedor_id=vendor.id, tipo='variante_nueva', estado='pendiente',
+        producto_ref_solicitado=payload.producto_ref, atributos=attrs,
+        precio_propuesto=payload.precio, stock_propuesto=payload.stock,
+        observaciones_vendedor=payload.observaciones)
+    db.add(request)
+    db.flush()
+    _notify_admins(db, request.id, vendor)
+    db.commit()
+    return _serialize_request(db, request, mongo)
+
+
+@vendor_router.get('/{request_id}')
+def own_request_detail(request_id: int, current_user: Usuario = Depends(get_vendor_user),
+    db: Session = Depends(get_db), mongo: Database = Depends(get_mongo_db)):
+    vendor = _get_vendor(db, current_user)
+    request = db.query(SolicitudCatalogo).filter_by(id=request_id, vendedor_id=vendor.id).first()
+    if not request:
+        raise HTTPException(404, 'Solicitud no encontrada.')
+    return _serialize_request(db, request, mongo)
+
+
+@admin_router.get('/{request_id}')
+def admin_request_detail(request_id: int, _: Usuario = Depends(get_admin_user),
+    db: Session = Depends(get_db), mongo: Database = Depends(get_mongo_db)):
+    request = db.get(SolicitudCatalogo, request_id)
+    if not request:
+        raise HTTPException(404, 'Solicitud no encontrada.')
+    return _serialize_request(db, request, mongo)
 
 
 @vendor_router.patch('/{request_id}/cancel')
@@ -623,10 +685,27 @@ def approve_request(
     vendor = db.get(Vendedor, request.vendedor_id)
     if not vendor or vendor.estado_verificacion != 'verificado':
         raise HTTPException(409, 'El vendedor ya no está verificado.')
+    created_variant = None
     try:
         if request.tipo == 'producto_nuevo':
             product_ref, offer_id = _approve_new_product(db, mongo, request, vendor, admin)
         else:
+            if request.tipo == 'variante_nueva':
+                # Serializa aprobaciones distintas del mismo producto.
+                reference = db.query(ProductoReferencia).filter_by(
+                    producto_ref=request.producto_ref_solicitado).with_for_update().first()
+                product = mongo.productos.find_one({'_id': ObjectId(request.producto_ref_solicitado), 'estado': 'activo'})
+                if not reference or not product:
+                    raise HTTPException(409, 'El producto ya no está activo.')
+                attrs = normalize_variant_attributes(request.atributos)
+                existing = mongo.producto_variantes.find_one({
+                    'producto_ref': request.producto_ref_solicitado, 'clave_variante': variant_key(attrs)})
+                registry, document = create_variant(mongo, db,
+                    producto_ref=request.producto_ref_solicitado, attributes=attrs,
+                    product_sku=product.get('sku', request.producto_ref_solicitado[:8]))
+                if not existing:
+                    created_variant = document['_id']
+                request.producto_variante_id_solicitado = registry.id
             product_ref, offer_id = _approve_offer(db, request, vendor, admin, mongo)
         request.estado = 'aprobada'
         request.observaciones_admin = payload.observaciones
@@ -638,9 +717,13 @@ def approve_request(
         db.commit()
     except HTTPException:
         db.rollback()
+        if created_variant is not None:
+            mongo.producto_variantes.delete_one({'_id': created_variant})
         raise
     except Exception:
         db.rollback()
+        if created_variant is not None:
+            mongo.producto_variantes.delete_one({'_id': created_variant})
         raise
     db.refresh(request)
     return _serialize_request(db, request, mongo)

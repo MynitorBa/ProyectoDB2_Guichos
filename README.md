@@ -146,6 +146,7 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Imágenes SQL, categorías múltiples y revisión de ofertas](docs/20-imagenes-categorias-ofertas.md)
 - [Solicitudes de catálogo de vendedores](docs/21-solicitudes-catalogo-vendedores.md)
 - [Variantes dinámicas de producto](docs/22-variantes-dinamicas.md)
+- [Paneles, envíos parciales y solicitudes de variantes: instalación y pruebas](docs/23-paneles-envios-solicitudes-variantes.md)
 
 ## Entregas del proyecto
 

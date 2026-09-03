@@ -69,7 +69,6 @@ PRIMARY_OFFERS_SQL = """
 
 
 def projection_from_row(row: dict) -> dict:
-    stock_primary = max(0, int(row['stock'] or 0))
     stock_total = max(0, int(row['stock_total'] or 0))
     return {
         'oferta_id': int(row['oferta_id']),

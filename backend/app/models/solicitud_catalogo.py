@@ -15,7 +15,7 @@ class SolicitudCatalogo(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     vendedor_id: Mapped[int] = mapped_column(ForeignKey('vendedores.id'))
     tipo: Mapped[str] = mapped_column(
-        Enum('producto_nuevo', 'oferta_existente')
+        Enum('producto_nuevo', 'oferta_existente', 'variante_nueva')
     )
     estado: Mapped[str] = mapped_column(
         Enum('pendiente', 'aprobada', 'rechazada', 'cancelada'),

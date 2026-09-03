@@ -13,6 +13,13 @@ import AdminPage from './pages/AdminPage'
 import ProductHistoryPage from './pages/ProductHistoryPage'
 import ProfilePage from './pages/ProfilePage'
 import VendorPage from './pages/VendorPage'
+import OrderWorkspacePage from './pages/OrderWorkspacePage'
+import VendorOfferPage from './components/vendor/VendorOffers'
+import CatalogRequestPage from './pages/CatalogRequestPage'
+import AdminProductPage from './pages/AdminProductPage'
+import AdminCategoryPage from './pages/AdminCategoryPage'
+import AdminVendorPage from './pages/AdminVendorPage'
+import AdminUserPage from './pages/AdminUserPage'
 
 // Guarda de ruta: redirige al login si no hay sesión, o a "/" si el usuario no tiene el rol requerido
 function PrivateRoute({ children, roles }) {
@@ -26,6 +33,16 @@ function PrivateRoute({ children, roles }) {
 export default function Router() {
   return (
     <Routes>
+      <Route path="/vendor/orders/:id" element={<PrivateRoute roles={['vendedor','administrador']}><OrderWorkspacePage/></PrivateRoute>} />
+      <Route path="/vendor/offers/:id" element={<PrivateRoute roles={['vendedor','administrador']}><VendorOfferPage/></PrivateRoute>} />
+      <Route path="/vendor/requests/:id" element={<PrivateRoute roles={['vendedor','administrador']}><CatalogRequestPage/></PrivateRoute>} />
+      <Route path="/admin/orders/:id" element={<PrivateRoute roles={['administrador']}><OrderWorkspacePage/></PrivateRoute>} />
+      <Route path="/admin/sales/:id" element={<PrivateRoute roles={['administrador']}><OrderWorkspacePage/></PrivateRoute>} />
+      <Route path="/admin/requests/:id" element={<PrivateRoute roles={['administrador']}><CatalogRequestPage/></PrivateRoute>} />
+      <Route path="/admin/products/:id" element={<PrivateRoute roles={['administrador']}><AdminProductPage/></PrivateRoute>} />
+      <Route path="/admin/categories/:slug" element={<PrivateRoute roles={['administrador']}><AdminCategoryPage/></PrivateRoute>} />
+      <Route path="/admin/vendors/:id" element={<PrivateRoute roles={['administrador']}><AdminVendorPage/></PrivateRoute>} />
+      <Route path="/admin/users/:id" element={<PrivateRoute roles={['administrador']}><AdminUserPage/></PrivateRoute>} />
       <Route path="/" element={<HomePage />} />
       <Route path="/catalog" element={<CatalogPage />} />
       <Route path="/login" element={<LoginPage />} />

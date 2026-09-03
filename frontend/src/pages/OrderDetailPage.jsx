@@ -8,6 +8,7 @@ import { Separator } from '../components/ui/separator'
 import { Skeleton } from '../components/ui/skeleton'
 import { formatQ, formatDatetime } from '../lib/utils'
 import { cn } from '../lib/utils'
+import { FulfillmentPanel } from './OrderWorkspacePage'
 
 const ESTADO_BADGE = {
   pendiente: 'warning',
@@ -27,7 +28,8 @@ const PROGRESS_STEPS = [
 
 // Barra visual del progreso del pedido: Confirmado → Enviado → Entregado; muestra badge si fue cancelado/reembolsado
 function ProgressBar({ estado }) {
-  const currentIdx = PROGRESS_STEPS.findIndex((s) => s.key === estado)
+  const progressState = ({preparando:'confirmado',enviado_parcial:'confirmado',entregado_parcial:'enviado'})[estado] || estado
+  const currentIdx = PROGRESS_STEPS.findIndex((s) => s.key === progressState)
   const isCancelled = estado === 'cancelado' || estado === 'reembolsado'
 
   if (isCancelled) {
@@ -226,6 +228,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
+      <div className="mt-8"><FulfillmentPanel orderId={id} /></div>
     </div>
   )
 }

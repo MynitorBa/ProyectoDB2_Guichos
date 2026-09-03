@@ -264,6 +264,7 @@ def listar_productos_admin(
     _: Usuario = Depends(get_admin_user),
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
+    categoria: str | None = None,
 ):
     estados_validos = {'todos', 'activo', 'inactivo', 'descontinuado'}
     if estado not in estados_validos:
@@ -272,6 +273,7 @@ def listar_productos_admin(
         db,
         mysql_db,
         q=q,
+        categoria_slug=categoria,
         page=page,
         page_size=page_size,
         orden='nombre_asc',
@@ -1392,13 +1394,8 @@ def update_admin_order_status(
     _: Usuario = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    if payload.estado not in ESTADOS_VALIDOS:
-        raise HTTPException(400, 'Estado no válido.')
-    pedido = db.get(Pedido, pedido_id)
-    if not pedido:
-        raise HTTPException(404, 'Pedido no encontrado.')
-    pedido.estado = payload.estado
-    db.commit()
+    from app.services.fulfillment_service import admin_status
+    admin_status(db, pedido_id, _, payload.estado)
     return {'id': pedido_id, 'estado': payload.estado}
 
 
@@ -1647,50 +1644,13 @@ def update_offer(
     current_user: Usuario = Depends(get_admin_user),
     db: Session = Depends(get_db),
 ):
-    oferta = db.get(Oferta, oferta_id)
+    from app.services.offer_service import editar_oferta
+    oferta = db.query(Oferta).filter_by(id=oferta_id).with_for_update().first()
     if not oferta:
         raise HTTPException(404, 'Oferta no encontrada.')
-
-    if payload.precio is not None:
-        actualizar_precio_oferta(
-            db,
-            oferta=oferta,
-            nuevo_precio=payload.precio,
-            usuario_id=current_user.id,
-            motivo='Actualización desde panel admin',
-            enqueue_projection=False,
-        )
-
-    if payload.stock is not None:
-        inv = db.query(Inventario).filter_by(oferta_id=oferta_id, bodega='principal').first()
-        if inv:
-            inv.cantidad_disponible = payload.stock
-        else:
-            inv = Inventario(
-                oferta_id=oferta_id, cantidad_disponible=payload.stock,
-                bodega='principal'
-            )
-            db.add(inv)
-        db.flush()
-        registrar_saldo_inventario(
-            db, inventario=inv, usuario_id=current_user.id,
-            motivo='Actualización de stock desde panel admin',
-        )
-
-    if payload.estado is not None:
-        estados_validos = {'activa', 'pausada', 'descontinuada', 'borrador'}
-        if payload.estado not in estados_validos:
-            raise HTTPException(400, f'Estado no válido. Opciones: {", ".join(estados_validos)}')
-        oferta.estado = payload.estado
-
-    if payload.estado is not None:
-        registrar_estado_oferta(
-            db, oferta=oferta, usuario_id=current_user.id,
-            motivo='Actualización de estado desde panel admin',
-        )
-
-    db.flush()
-    enqueue_primary_offer_projection(db, oferta.producto_ref, oferta.id)
+    editar_oferta(db, oferta=oferta, usuario_id=current_user.id,
+        precio=payload.precio, stock=payload.stock, estado=payload.estado,
+        motivo='Actualización desde panel admin')
     db.commit()
     return {'oferta_id': oferta_id, 'updated': True}
 

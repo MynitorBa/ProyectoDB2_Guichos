@@ -38,6 +38,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de imágenes y categorías.' }
     & $python scripts\apply_catalog_requests.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de solicitudes de catálogo.' }
+    & $python scripts\apply_unique_nombre_tiendaya.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de reglas del catálogo.' }
+    & $python scripts\apply_fulfillment.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de envíos y variantes.' }
     & $python scripts\repair_catalog_data.py --apply
     if ($LASTEXITCODE -ne 0) { throw 'Falló la reconciliación de atributos.' }
 } finally {

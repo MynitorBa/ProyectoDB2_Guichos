@@ -191,6 +191,7 @@ def procesar_checkout(
         ))
 
         inventory.cantidad_disponible -= quantity
+        offer.version += 1  # Invalida ediciones de stock abiertas antes de la venta.
         projected_stock = max(0, inventory.cantidad_disponible)
         enqueue_outbox(
             db,

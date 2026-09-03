@@ -45,7 +45,7 @@ def registrar_estado_oferta(
     ahora = _as_utc_naive(instante or utc_now())
     vigente = db.query(OfertaEstadoHistorial).filter_by(
         oferta_id=oferta.id, vigente_hasta=None
-    ).first()
+    ).with_for_update().first()
     valores = (oferta.vendedor_id, oferta.sku, oferta.estado)
     if vigente and not forzar and (
         vigente.vendedor_id, vigente.sku, vigente.estado
@@ -81,7 +81,7 @@ def registrar_saldo_inventario(
     ahora = _as_utc_naive(instante or utc_now())
     vigente = db.query(InventarioSaldoHistorial).filter_by(
         inventario_id=inventario.id, vigente_hasta=None
-    ).first()
+    ).with_for_update().first()
     valores = (inventario.cantidad_disponible, inventario.cantidad_reservada)
     if vigente and not forzar and (
         vigente.cantidad_disponible, vigente.cantidad_reservada

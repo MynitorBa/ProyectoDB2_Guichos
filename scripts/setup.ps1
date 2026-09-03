@@ -165,6 +165,9 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Falló la migración de unicidad de nombre y columna es_tiendaya.'
 }
 
+& $python scripts\apply_fulfillment.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la migración de envíos parciales y solicitudes de variantes.' }
+
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
 & $python scripts\sync_mongo_projections.py

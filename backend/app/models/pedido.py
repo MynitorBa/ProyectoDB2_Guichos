@@ -15,7 +15,7 @@ class Pedido(Base):
     usuario_id: Mapped[int] = mapped_column(ForeignKey('usuarios.id'))
     direccion_id: Mapped[int] = mapped_column(ForeignKey('direcciones.id'))
     estado: Mapped[str] = mapped_column(
-        Enum('pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado', 'reembolsado'),
+        Enum('pendiente', 'confirmado', 'preparando', 'enviado_parcial', 'enviado', 'entregado_parcial', 'entregado', 'cancelado', 'reembolsado'),
         default='pendiente'
     )
     subtotal: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))

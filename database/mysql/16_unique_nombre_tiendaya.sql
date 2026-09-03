@@ -37,9 +37,25 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 -- ─── 3. Marcar al vendedor propio de TiendaYa ────────────────────────────────
--- Idempotente: usa nombre_comercial como criterio; si no existe aún, no hace nada.
-UPDATE vendedores v
-    JOIN usuarios u ON u.id = v.usuario_id
-SET v.es_tiendaya = 1
-WHERE u.email = 'admin@tiendaya.gt'
-   OR v.nombre_comercial = 'TiendaYa';
+-- Idempotente: solo elige un candidato cuando todavía no hay uno configurado.
+-- El subquery y LIMIT evitan marcar accidentalmente dos vendedores si el correo
+-- y el nombre comercial pertenecen a filas distintas.
+UPDATE vendedores
+SET es_tiendaya = 1
+WHERE id = (
+    SELECT candidato.id
+    FROM (
+        SELECT v.id
+        FROM vendedores v
+        JOIN usuarios u ON u.id = v.usuario_id
+        WHERE u.email = 'admin@tiendaya.gt'
+           OR v.nombre_comercial = 'TiendaYa'
+        ORDER BY (u.email = 'admin@tiendaya.gt') DESC, v.id
+        LIMIT 1
+    ) AS candidato
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM (SELECT es_tiendaya FROM vendedores) AS existentes
+    WHERE existentes.es_tiendaya = 1
+);

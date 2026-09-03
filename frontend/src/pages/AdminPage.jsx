@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -19,17 +19,19 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
-import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '../components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '../components/ui/record-dialog'
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
 import { formatQ, formatDate, cn } from '../lib/utils'
 import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequestsSection'
+import { AdminVendorsSection } from './AdminVendorPage'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
   { id: 'products',   label: 'Productos',    icon: Package        },
   { id: 'categories', label: 'Categorías',   icon: FolderTree     },
   { id: 'users',      label: 'Usuarios',     icon: Users          },
+  { id: 'vendors',    label: 'Vendedores',  icon: Store          },
   { id: 'orders',     label: 'Pedidos',      icon: ClipboardList  },
   { id: 'sales',      label: 'Ventas',       icon: TrendingUp     },
   { id: 'requests',   label: 'Solicitudes',  icon: Inbox          },
@@ -48,6 +50,7 @@ const ESTADO_BADGE = {
 const ESTADO_LABEL = {
   pendiente:      'Pendiente',
   confirmado:     'Confirmado',
+  preparando: 'En preparación', enviado_parcial: 'Envío parcial', entregado_parcial: 'Entrega parcial',
   en_preparacion: 'En preparación',
   enviado:        'Enviado',
   entregado:      'Entregado',
@@ -73,7 +76,7 @@ const ROLE_META = {
 const ALL_ROLES = ['comprador', 'vendedor', 'administrador']
 
 // ── AttrRow: FUERA de CategoriesSection para evitar remount en cada render ──
-function AttrRow({ attr, onChange, onRemove }) {
+export function AttrRow({ attr, onChange, onRemove }) {
   return (
     <div className="grid grid-cols-[1fr_1fr_auto_auto_auto] gap-2 items-center">
       <Input
@@ -327,7 +330,7 @@ function StatsSection() {
 }
 
 // ── ProductFormModal ──
-function ProductFormModal({ open, onOpenChange, product, onDuplicateFound }) {
+export function ProductFormModal({ open, onOpenChange, product, onDuplicateFound }) {
   const isEdit = !!product
   const queryClient = useQueryClient()
 
@@ -661,7 +664,7 @@ function ProductFormModal({ open, onOpenChange, product, onDuplicateFound }) {
 
 // ── ProductsSection ──
 // ── VariantsModal ──
-function VariantsModal({ product, open, onOpenChange }) {
+export function VariantsModal({ product, open, onOpenChange }) {
   const queryClient = useQueryClient()
   const [variantAttrs, setVariantAttrs] = useState([{ id: 1, key: '', value: '' }])
   const [nextId, setNextId] = useState(2)
@@ -870,7 +873,7 @@ function VariantsModal({ product, open, onOpenChange }) {
 }
 
 // ── OffersModal ──
-function OffersModal({ product, open, onOpenChange }) {
+export function OffersModal({ product, open, onOpenChange }) {
   const queryClient = useQueryClient()
   const [newVendorId, setNewVendorId] = useState('')
   const [newVariantId, setNewVariantId] = useState('')
@@ -1118,6 +1121,7 @@ function OffersModal({ product, open, onOpenChange }) {
 }
 
 function ProductsSection() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -1160,16 +1164,8 @@ function ProductsSection() {
     onError: () => toast.error('No se pudo eliminar el producto.'),
   })
 
-  function openCreate() { setEditProduct(null); setModalOpen(true) }
-  async function openEdit(prod) {
-    try {
-      const response = await getProduct(prod._id)
-      setEditProduct(response.data)
-      setModalOpen(true)
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || 'No se pudo cargar el producto completo.')
-    }
-  }
+  function openCreate() { navigate('/admin/products/new') }
+  function openEdit(prod) { navigate('/admin/products/'+prod._id) }
   function handleDelete(prod) {
     if (!window.confirm(`¿Descontinuar "${prod.nombre}"? Seguirá visible en administración y conservará su historial.`)) return
     deleteMutation.mutate(prod._id)
@@ -1245,7 +1241,7 @@ function ProductsSection() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-display font-semibold text-[var(--color-text-primary)] max-w-[180px]">
-                      <span className="line-clamp-1">{prod.nombre}</span>
+                      <Link className="line-clamp-1 text-[var(--color-action)]" to={'/admin/products/'+prod._id}>{prod.nombre}</Link>
                       <span className="font-mono font-normal text-[10px] text-[var(--color-text-muted)] block">{prod.sku}</span>
                     </td>
                     <td className="px-4 py-3 font-sans text-[var(--color-text-secondary)]">{prod.categoria?.nombre || '—'}</td>
@@ -1272,10 +1268,10 @@ function ProductsSection() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" onClick={() => openEdit(prod)}><Edit size={13} /> Editar</Button>
-                        <Button variant="ghost" size="sm" onClick={() => { setVariantsProduct(prod); setVariantsOpen(true) }}>
+                        <Button variant="ghost" size="sm" onClick={() => { navigate('/admin/products/'+prod._id+'?tab=variants') }}>
                           <GitBranch size={13} /> Variantes
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => { setOffersProduct(prod); setOffersOpen(true) }}>
+                        <Button variant="ghost" size="sm" onClick={() => { navigate('/admin/products/'+prod._id+'?tab=offers') }}>
                           <Layers size={13} /> Ofertas{prod.ofertas_count > 1 ? ` (${prod.ofertas_count})` : ''}
                         </Button>
                         <Button variant="ghost" size="sm" asChild>
@@ -1316,6 +1312,7 @@ function ProductsSection() {
 
 // ── CategoriesSection ──
 function CategoriesSection() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -1391,12 +1388,7 @@ function CategoriesSection() {
     return { nombre: '', etiqueta: '', tipo: 'string', requerido: false, placeholder: '' }
   }
 
-  function openEdit(cat) {
-    setEditTarget(cat)
-    setEditAttrs(cat.atributos.length ? cat.atributos.map((a) => ({ ...a })) : [])
-    setEditSkuPrefix(cat.sku_prefix || '')
-    setEditOpen(true)
-  }
+  function openEdit(cat) { navigate('/admin/categories/'+cat.slug) }
 
   function handleDelete(cat) {
     if (!window.confirm(`¿Eliminar categoría "${cat.nombre}"? Esto también eliminará su esquema de campos.`)) return
@@ -1410,7 +1402,7 @@ function CategoriesSection() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}><Plus size={14} /> Nueva categoría</Button>
+        <Button size="sm" onClick={() => navigate('/admin/categories/new')}><Plus size={14} /> Nueva categoría</Button>
       </div>
 
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
@@ -1426,7 +1418,7 @@ function CategoriesSection() {
             {cats.map((cat, idx) => (
               <tr key={cat.id} className={cn('border-b border-[var(--color-border)] last:border-0', idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]')}>
                 <td className="px-4 py-3 font-display font-semibold text-[var(--color-text-primary)]">
-                  {cat.nombre}
+                  <Link to={'/admin/categories/'+cat.slug} className="text-[var(--color-action)]">{cat.nombre}</Link>
                   {!cat.activa && <Badge variant="error" className="ml-2 text-[10px]">inactiva</Badge>}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-secondary)]">{cat.slug}</td>
@@ -1616,6 +1608,9 @@ function OrdersSection() {
             <SelectItem value="__all__">Todos</SelectItem>
             <SelectItem value="pendiente">Pendiente</SelectItem>
             <SelectItem value="confirmado">Confirmado</SelectItem>
+            <SelectItem value="preparando">En preparación</SelectItem>
+            <SelectItem value="enviado_parcial">Envío parcial</SelectItem>
+            <SelectItem value="entregado_parcial">Entrega parcial</SelectItem>
             <SelectItem value="enviado">Enviado</SelectItem>
             <SelectItem value="entregado">Entregado</SelectItem>
             <SelectItem value="cancelado">Cancelado</SelectItem>
@@ -1630,7 +1625,7 @@ function OrdersSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[var(--color-background)]">
-                {['Pedido #', 'Fecha', 'Comprador', 'Total', 'Estado actual', 'Cambiar estado'].map((h) => (
+                {['Pedido #', 'Fecha', 'Comprador', 'Total', 'Estado actual', 'Detalle y envíos'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)] whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -1644,7 +1639,7 @@ function OrdersSection() {
                   ? <tr><td colSpan={6} className="px-4 py-10 text-center font-sans text-sm text-[var(--color-text-muted)]">Sin pedidos.</td></tr>
                   : pedidos.map((p, idx) => (
                       <tr key={p.id} className={cn('border-b border-[var(--color-border)] last:border-0', idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]')}>
-                        <td className="px-4 py-3 font-mono font-semibold text-[var(--color-text-primary)]">#{p.id}</td>
+                        <td className="px-4 py-3 font-mono font-semibold text-[var(--color-text-primary)]"><Link to={'/admin/orders/'+p.id}>#{p.id}</Link></td>
                         <td className="px-4 py-3 font-sans text-xs text-[var(--color-text-secondary)] whitespace-nowrap">{formatDate(p.fecha)}</td>
                         <td className="px-4 py-3">
                           <p className="font-display font-semibold text-xs text-[var(--color-text-primary)]">{p.comprador?.nombre}</p>
@@ -1655,23 +1650,7 @@ function OrdersSection() {
                           <Badge variant={ESTADO_BADGE[p.estado] || 'default'}>{ESTADO_LABEL[p.estado] || p.estado}</Badge>
                         </td>
                         <td className="px-4 py-3 w-44">
-                          <Select
-                            value={p.estado}
-                            onValueChange={(v) => handleStatusChange(p.id, v)}
-                            disabled={updatingId === p.id}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pendiente">Pendiente</SelectItem>
-                              <SelectItem value="confirmado">Confirmado</SelectItem>
-                              <SelectItem value="enviado">Enviado</SelectItem>
-                              <SelectItem value="entregado">Entregado</SelectItem>
-                              <SelectItem value="cancelado">Cancelado</SelectItem>
-                              <SelectItem value="reembolsado">Reembolsado</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Button variant="secondary" size="sm" asChild><Link to={'/admin/orders/'+p.id}>Abrir pedido</Link></Button>
                         </td>
                       </tr>
                     ))
@@ -1694,6 +1673,7 @@ function OrdersSection() {
 
 // ── UsersSection ──
 function UsersSection() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const queryClient = useQueryClient()
 
@@ -1777,7 +1757,7 @@ function UsersSection() {
               {users.map((user, idx) => (
                 <tr key={user.id} className={cn('border-b border-[var(--color-border)] last:border-0', idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]')}>
                   <td className="px-4 py-3">
-                    <p className="font-display font-semibold text-[var(--color-text-primary)]">{user.nombre} {user.apellido}</p>
+                    <p className="font-display font-semibold text-[var(--color-text-primary)]"><Link to={'/admin/users/'+user.id} className="text-[var(--color-action)]">{user.nombre} {user.apellido}</Link></p>
                     <p className="font-mono text-[10px] text-[var(--color-text-muted)]">#{user.id}</p>
                     {user.roles.includes('vendedor') && vendorByUserId[user.id]?.nombre_comercial && (
                       <p className="font-sans text-[10px] text-[var(--color-text-secondary)] mt-0.5">
@@ -1808,11 +1788,7 @@ function UsersSection() {
                     {user.roles.includes('vendedor') && (
                       <div className="flex flex-col gap-1.5 items-start">
                         <Button variant="ghost" size="sm" onClick={() => {
-                          const vp = vendorByUserId[user.id]
-                          setVpUser(user)
-                          setVpNombre(vp?.nombre_comercial || '')
-                          setVpNit(vp?.nit || '')
-                          setVpOpen(true)
+                          navigate(vendorByUserId[user.id]?.vendedor_id ? '/admin/vendors/'+vendorByUserId[user.id].vendedor_id : '/admin/users/'+user.id)
                         }}>
                           <Store size={13} /> Perfil vendedor
                         </Button>
@@ -1877,6 +1853,7 @@ function UsersSection() {
 
 // ── SalesSection ──
 function SalesSection() {
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [expandedId, setExpandedId] = useState(null)
   const [exporting, setExporting] = useState(false)
@@ -2026,7 +2003,7 @@ function SalesSection() {
                         <React.Fragment key={pedido.id}>
                           <tr
                             className={cn('border-b border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-background)]/60', idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]')}
-                            onClick={() => setExpandedId(isExpanded ? null : pedido.id)}
+                            onClick={() => navigate('/admin/sales/'+pedido.id)}
                           >
                             <td className="px-4 py-3 text-[var(--color-text-muted)]">
                               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -2098,7 +2075,9 @@ function SalesSection() {
 // ── AdminPage ──
 // Panel de administrador: estadísticas con gráficas, CRUD de productos y categorías, gestión de usuarios/roles/pedidos/ventas y solicitudes de catálogo
 export default function AdminPage() {
-  const [activeSection, setActiveSection] = useState('stats')
+  const [params, setParams] = useSearchParams()
+  const activeSection = params.get('section') || 'stats'
+  const setActiveSection = section => setParams({section})
 
   return (
     <div className="min-h-screen bg-[var(--color-background)]">
@@ -2132,6 +2111,7 @@ export default function AdminPage() {
           {activeSection === 'products'   && <ProductsSection />}
           {activeSection === 'categories' && <CategoriesSection />}
           {activeSection === 'users'      && <UsersSection />}
+          {activeSection === 'vendors'    && <AdminVendorsSection />}
           {activeSection === 'orders'     && <OrdersSection />}
           {activeSection === 'sales'      && <SalesSection />}
           {activeSection === 'requests'   && <AdminCatalogRequestsSection />}

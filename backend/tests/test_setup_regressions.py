@@ -31,20 +31,23 @@ def test_projection_contains_the_commercial_fields_verified_by_setup():
         'precio_actual': 1299,
         'moneda': 'GTQ',
         'stock': 44,
+        'stock_total': 61,
         'vendedor_id': 1,
         'vendedor_usuario_id': 2,
         'nombre_comercial': 'TechZone Guatemala',
+        'es_tiendaya': 1,
         'ofertas_count': 2,
     })
     assert projection == {
         'oferta_id': 8,
         'precio': 1299.0,
         'moneda': 'GTQ',
-        'stock': 44,
+        'stock': 61,
         'disponible': True,
         'vendedor_id': 1,
         'vendedor_usuario_id': 2,
         'vendedor_nombre': 'TechZone Guatemala',
+        'es_tiendaya': True,
         'ofertas_count': 2,
     }
 
@@ -64,12 +67,13 @@ def test_runtime_index_and_all_existing_projections_are_synchronized():
         doc = mongo.productos.find_one(
             {'_id': ObjectId(row['producto_ref'])},
             {'precio': 1, 'stock': 1, 'vendedor_id': 1,
-             'vendedor_nombre': 1, 'oferta_id': 1, 'ofertas_count': 1},
+             'vendedor_nombre': 1, 'es_tiendaya': 1,
+             'oferta_id': 1, 'ofertas_count': 1},
         )
         expected = projection_from_row(dict(row))
         if not doc or any(doc.get(key) != expected[key] for key in (
             'precio', 'stock', 'vendedor_id', 'vendedor_nombre',
-            'oferta_id', 'ofertas_count',
+            'es_tiendaya', 'oferta_id', 'ofertas_count',
         )):
             mismatches.append(row['producto_ref'])
     assert mismatches == []

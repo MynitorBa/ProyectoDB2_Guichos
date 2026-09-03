@@ -13,6 +13,44 @@ from app.models.producto_variante_referencia import ProductoVarianteReferencia
 from app.models.vendedor import Vendedor
 from app.core.time import utc_now
 from app.services.outbox_service import enqueue_outbox
+from app.models.inventario import MovimientoInventario
+from app.services.offer_history_service import registrar_estado_oferta, registrar_saldo_inventario
+from fastapi import HTTPException
+
+
+def editar_oferta(db, *, oferta, usuario_id, precio=None, stock=None, estado=None,
+                  version=None, motivo='Edición de oferta'):
+    """El llamador bloquea Oferta antes de invocar. No hace commit."""
+    if version is not None and oferta.version != version:
+        raise HTTPException(409, 'La oferta cambió. Recarga antes de guardar.')
+    if estado is not None and estado not in {'activa', 'pausada', 'descontinuada', 'borrador'}:
+        raise HTTPException(422, 'Estado de oferta inválido.')
+    inventory = db.query(Inventario).filter_by(oferta_id=oferta.id, bodega='principal').with_for_update().first()
+    if stock is not None:
+        reserved = inventory.cantidad_reservada if inventory else 0
+        if stock < reserved:
+            raise HTTPException(409, 'Las existencias no pueden ser menores que las unidades reservadas.')
+    initial_version = oferta.version
+    if precio is not None:
+        actualizar_precio_oferta(db, oferta=oferta, nuevo_precio=precio,
+            usuario_id=usuario_id, motivo=motivo, enqueue_projection=False)
+    if stock is not None:
+        old = inventory.cantidad_disponible if inventory else 0
+        if not inventory:
+            inventory = Inventario(oferta_id=oferta.id, bodega='principal', cantidad_disponible=0, cantidad_reservada=0)
+            db.add(inventory)
+        inventory.cantidad_disponible = stock
+        db.flush()
+        if stock != old:
+            db.add(MovimientoInventario(inventario_id=inventory.id, tipo='ajuste',
+                cantidad=stock-old, motivo=motivo[:100], usuario_id=usuario_id))
+        registrar_saldo_inventario(db, inventario=inventory, usuario_id=usuario_id, motivo=motivo)
+    if estado is not None:
+        oferta.estado = estado
+        registrar_estado_oferta(db, oferta=oferta, usuario_id=usuario_id, motivo=motivo)
+    oferta.version = initial_version + 1
+    db.flush()
+    enqueue_primary_offer_projection(db, oferta.producto_ref, oferta.id)
 
 
 def actualizar_precio_oferta(
@@ -32,7 +70,7 @@ def actualizar_precio_oferta(
     ahora = utc_now()
     vigente = db.query(OfertaPrecioHistorial).filter_by(
         oferta_id=oferta.id, vigente_hasta=None
-    ).first()
+    ).with_for_update().first()
     if vigente:
         if ahora <= vigente.vigente_desde:
             ahora = vigente.vigente_desde + timedelta(microseconds=1)
@@ -167,6 +205,7 @@ def enqueue_primary_offer_projection(
             'vendedor_id': primary['vendedor_id'],
             'vendedor_usuario_id': primary['vendedor_usuario_id'],
             'vendedor_nombre': primary['vendedor_nombre'],
+            'es_tiendaya': primary['es_tiendaya'],
         })
     enqueue_outbox(
         db,

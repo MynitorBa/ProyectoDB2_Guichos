@@ -17,6 +17,8 @@ export const proposeProduct = (data) =>
 export const proposeOffer = (data) =>
   api.post('/vendor/catalog-requests/offers', data)
 
+export const proposeVariant = (data) => api.post('/vendor/catalog-requests/variants', data)
+
 export const cancelCatalogRequest = (requestId) =>
   api.patch(`/vendor/catalog-requests/${requestId}/cancel`)
 

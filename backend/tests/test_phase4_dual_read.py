@@ -58,16 +58,27 @@ def test_catalog_uses_mysql_offer_price_and_stock():
         assert result['dual_read']['source'] == 'mongodb+mysql'
         assert result['items']
         for item in result['items']:
-            row = db.execute(text("""
-                SELECT o.precio_actual,
-                       GREATEST(0, SUM(i.cantidad_disponible - i.cantidad_reservada)) stock
+            primary = db.execute(text("""
+                SELECT o.precio_actual
                 FROM ofertas o
-                JOIN inventario i ON i.oferta_id = o.id
                 WHERE o.id = :offer_id
-                GROUP BY o.id, o.precio_actual
             """), {'offer_id': item['oferta_id']}).one()
-            assert item['precio'] == float(row[0])
-            assert item['stock'] == int(row[1])
+            total_stock = db.execute(text("""
+                SELECT COALESCE(SUM(offer_stock.stock), 0)
+                FROM (
+                    SELECT o.id,
+                           GREATEST(0, COALESCE(SUM(
+                               i.cantidad_disponible - i.cantidad_reservada
+                           ), 0)) AS stock
+                    FROM ofertas o
+                    LEFT JOIN inventario i ON i.oferta_id = o.id
+                    WHERE o.producto_ref = :product_ref
+                      AND o.estado = 'activa'
+                    GROUP BY o.id
+                ) AS offer_stock
+            """), {'product_ref': item['_id']}).scalar_one()
+            assert item['precio'] == float(primary[0])
+            assert item['stock'] == int(total_stock)
     finally:
         db.close()
         client.close()

@@ -17,7 +17,7 @@ class PedidoVendedor(Base):
     vendedor_id: Mapped[int] = mapped_column(ForeignKey('vendedores.id'))
     estado: Mapped[str] = mapped_column(
         Enum(
-            'pendiente', 'confirmado', 'preparando', 'enviado',
+            'pendiente', 'confirmado', 'preparando', 'enviado_parcial', 'enviado', 'entregado_parcial',
             'entregado', 'cancelado', 'reembolsado',
         ),
         default='pendiente',

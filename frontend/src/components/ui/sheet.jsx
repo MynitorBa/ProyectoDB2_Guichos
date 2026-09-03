@@ -1,4 +1,5 @@
 // Panel deslizante (drawer) accesible desde cualquier lado (right/left/bottom), basado en Radix Dialog
+import { forwardRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -7,9 +8,10 @@ const Sheet = DialogPrimitive.Root
 const SheetTrigger = DialogPrimitive.Trigger
 const SheetClose = DialogPrimitive.Close
 
-function SheetOverlay({ className, ...props }) {
+const SheetOverlay = forwardRef(function SheetOverlay({ className, ...props }, ref) {
   return (
     <DialogPrimitive.Overlay
+      ref={ref}
       className={cn(
         'fixed inset-0 z-50 bg-black/40 backdrop-blur-sm',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
@@ -19,9 +21,11 @@ function SheetOverlay({ className, ...props }) {
       {...props}
     />
   )
-}
+})
 
-function SheetContent({ className, side = 'right', title, children, ...props }) {
+const SheetContent = forwardRef(function SheetContent(
+  { className, side = 'right', title, children, ...props }, ref
+) {
   const sideClasses = {
     right: 'right-0 top-0 h-full w-full max-w-sm data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right',
     left:  'left-0 top-0 h-full w-full max-w-sm data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left',
@@ -31,6 +35,7 @@ function SheetContent({ className, side = 'right', title, children, ...props }) 
     <DialogPrimitive.Portal>
       <SheetOverlay />
       <DialogPrimitive.Content
+        ref={ref}
         className={cn(
           'fixed z-50 bg-[var(--color-surface)] shadow-[var(--shadow-xl)]',
           'data-[state=open]:animate-in data-[state=closed]:animate-out duration-300',
@@ -55,6 +60,6 @@ function SheetContent({ className, side = 'right', title, children, ...props }) 
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   )
-}
+})
 
 export { Sheet, SheetTrigger, SheetClose, SheetContent }
