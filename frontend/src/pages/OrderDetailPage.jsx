@@ -228,7 +228,14 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
-      <div className="mt-8"><FulfillmentPanel orderId={id} /></div>
+      <div className="max-w-3xl mx-auto px-4 pb-12">
+        <div className="border-t border-[var(--color-border)] pt-6 mt-2">
+          <h2 className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-5">
+            Seguimiento de envíos
+          </h2>
+          <FulfillmentPanel orderId={id} compact />
+        </div>
+      </div>
     </div>
   )
 }
