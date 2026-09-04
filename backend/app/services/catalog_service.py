@@ -59,6 +59,7 @@ def listar_productos(
     page_size: int = 20,
     orden: str = 'precio_asc',
     estado: str | None = 'activo',
+    vendedor_id: int | None = None,
 ) -> dict:
     filtro: dict[str, Any] = {}
     if estado:
@@ -101,6 +102,10 @@ def listar_productos(
                 'vendedor_nombre': item.get('vendedor_nombre'),
             }
             offers = offers_by_ref.get(item['_id'], [])
+            if vendedor_id is not None:
+                offers = [o for o in offers if o['vendedor_id'] == vendedor_id]
+                if not offers:
+                    continue
             primary = oferta_principal(offers)
             stock_total = sum(o['stock'] for o in offers)
             if primary:

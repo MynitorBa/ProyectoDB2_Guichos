@@ -22,6 +22,7 @@ def listar_productos(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     orden: str = Query('precio_asc', enum=['precio_asc', 'precio_desc', 'nombre_asc', 'reciente']),
+    vendedor_id: int | None = Query(None),
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
 ):
@@ -36,6 +37,7 @@ def listar_productos(
         page=page,
         page_size=page_size,
         orden=orden,
+        vendedor_id=vendedor_id,
     )
 
 

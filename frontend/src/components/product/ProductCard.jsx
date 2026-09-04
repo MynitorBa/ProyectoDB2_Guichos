@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext'
 import { toast } from 'sonner'
 
 // Tarjeta de producto: imagen con fallback, precio, rating y botón de agregar al carrito con feedback visual
-export function ProductCard({ product }) {
+export function ProductCard({ product, vendedorId }) {
   const { add } = useCart()
   const { user } = useAuth()
   const [added, setAdded] = useState(false)
@@ -41,7 +41,7 @@ export function ProductCard({ product }) {
 
   return (
     <Link
-      to={`/products/${product._id}`}
+      to={`/products/${product._id}${vendedorId ? `?desde_tienda=${vendedorId}` : ''}`}
       className="group flex flex-col bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:border-[var(--color-border-strong)] transition-all duration-200 focus-visible:outline-2 focus-visible:outline-[var(--color-action)]"
     >
       <div className="relative overflow-hidden">

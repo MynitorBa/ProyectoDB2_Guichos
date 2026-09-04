@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch, Store } from 'lucide-react'
 import { toast } from 'sonner'
@@ -44,6 +44,8 @@ function DetailSkeleton() {
 export default function ProductDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const desdeTienda = searchParams.get('desde_tienda')
   const { add, loading: cartLoading } = useCart()
   const { user } = useAuth()
   const [selectedImg, setSelectedImg] = useState(0)
@@ -55,6 +57,17 @@ export default function ProductDetailPage() {
     queryKey: ['product', id],
     queryFn: () => getProduct(id).then((r) => r.data),
   })
+
+  // Cuando se llega desde una tienda individual, preseleccionar la oferta de ese vendedor
+  useEffect(() => {
+    if (!desdeTienda || !data?.ofertas?.length) return
+    const vendorId = parseInt(desdeTienda, 10)
+    const vendorOffer = data.ofertas.find(o => o.vendedor_id === vendorId)
+    if (vendorOffer) {
+      setSelectedOfferId(vendorOffer.oferta_id)
+      setSelectedVariantId(vendorOffer.producto_variante_id)
+    }
+  }, [data, desdeTienda])
 
   const product = data
 
@@ -135,6 +148,7 @@ export default function ProductDetailPage() {
     ? ((selectedOffer.disponible ?? false) || (selectedOffer.stock ?? 0) > 0)
     : (product.disponible ?? false)
   const displayVendor = selectedOffer?.vendedor_nombre ?? null
+  const displayVendorId = selectedOffer?.vendedor_id ?? null
 
   const starCounts = [5, 4, 3, 2, 1].map((n) => ({
     stars: n,
@@ -226,15 +240,18 @@ export default function ProductDetailPage() {
             </div>
 
             {displayVendor && (
-              <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 w-fit">
-                <Store size={15} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
+              <Link
+                to={displayVendorId ? `/tienda/${displayVendorId}` : '#'}
+                className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 w-fit hover:border-[var(--color-action)] hover:shadow-[var(--shadow-sm)] transition-all group"
+              >
+                <Store size={15} className="text-[var(--color-action)] shrink-0 group-hover:scale-110 transition-transform" strokeWidth={1.5} />
                 <div>
-                  <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] leading-none mb-0.5">Vendedor</p>
-                  <p className="font-display font-semibold text-sm text-[var(--color-text-primary)]">
+                  <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)] leading-none mb-0.5">Vendedor · Ver tienda</p>
+                  <p className="font-display font-semibold text-sm text-[var(--color-text-primary)] group-hover:text-[var(--color-action)] transition-colors">
                     {displayVendor}
                   </p>
                 </div>
-              </div>
+              </Link>
             )}
 
             {mostrarSelector && (
@@ -289,28 +306,36 @@ export default function ProductDetailPage() {
                 {ofertasVariante.map((offer) => {
                   const isSelected = selectedOffer?.oferta_id === offer.oferta_id
                   return (
-                    <button
-                      key={offer.oferta_id}
-                      type="button"
-                      onClick={() => { setSelectedOfferId(offer.oferta_id); setCantidad(1) }}
-                      className={`w-full flex items-center justify-between rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors ${
-                        isSelected
-                          ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
-                          : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Store size={13} className={isSelected ? 'text-[var(--color-action)]' : 'text-[var(--color-text-muted)]'} strokeWidth={1.5} />
-                        <span className="font-sans text-sm font-medium">{offer.vendedor_nombre}</span>
-                        {(offer.stock ?? 0) > 0 && (offer.stock ?? 0) <= 5 && (
-                          <span className="text-[10px] text-amber-500 font-medium">¡Últimas {offer.stock}!</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-bold">{formatQ(offer.precio)}</span>
-                        <span className="font-sans text-xs text-[var(--color-text-muted)]">{offer.stock} disp.</span>
-                      </div>
-                    </button>
+                    <div key={offer.oferta_id} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedOfferId(offer.oferta_id); setCantidad(1) }}
+                        className={`flex-1 flex items-center justify-between rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors ${
+                          isSelected
+                            ? 'border-[var(--color-action)] bg-[var(--color-action)]/5'
+                            : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Store size={13} className={isSelected ? 'text-[var(--color-action)]' : 'text-[var(--color-text-muted)]'} strokeWidth={1.5} />
+                          <span className="font-sans text-sm font-medium">{offer.vendedor_nombre}</span>
+                          {(offer.stock ?? 0) > 0 && (offer.stock ?? 0) <= 5 && (
+                            <span className="text-[10px] text-amber-500 font-medium">¡Últimas {offer.stock}!</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-bold">{formatQ(offer.precio)}</span>
+                          <span className="font-sans text-xs text-[var(--color-text-muted)]">{offer.stock} disp.</span>
+                        </div>
+                      </button>
+                      <Link
+                        to={`/tienda/${offer.vendedor_id}`}
+                        title={`Ver tienda de ${offer.vendedor_nombre}`}
+                        className="h-10 w-10 flex-shrink-0 flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-action)] hover:text-[var(--color-action)] transition-colors"
+                      >
+                        <Store size={14} strokeWidth={1.5} />
+                      </Link>
+                    </div>
                   )
                 })}
               </div>

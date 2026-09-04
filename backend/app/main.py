@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
-from app.api.v1 import backoffice
+from app.api.v1 import backoffice, stores
 
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ app.include_router(fulfillment.router, prefix='/api/v1')
 app.include_router(backoffice.router, prefix='/api/v1')
 app.include_router(catalog_requests.vendor_router, prefix='/api/v1')
 app.include_router(catalog_requests.admin_router, prefix='/api/v1')
+app.include_router(stores.router, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
