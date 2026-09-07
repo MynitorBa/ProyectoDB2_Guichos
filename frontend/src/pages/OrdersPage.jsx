@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Package, ChevronRight, FileDown } from 'lucide-react'
+import { motion } from 'motion/react'
 import { toast } from 'sonner'
 import { getOrders, getOrderInvoice } from '../api/orders'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
 import { formatQ, formatDate } from '../lib/utils'
+
+const ease = [0.23, 1, 0.32, 1]
 
 const ESTADO_BADGE = {
   pendiente:       'warning',
@@ -29,7 +32,6 @@ const ESTADO_LABEL = {
   reembolsado:     'Reembolsado',
 }
 
-// Crea un enlace temporal para descargar un Blob (usado para la factura PDF)
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -41,7 +43,6 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-// Lista todos los pedidos del usuario con estado, fecha, total y botón para descargar la factura PDF
 export default function OrdersPage() {
   const [downloadingId, setDownloadingId] = useState(null)
 
@@ -90,8 +91,19 @@ export default function OrdersPage() {
 
   if (pedidos.length === 0) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
-        <Package size={64} className="text-[var(--color-border-strong)] mb-4" />
+      <motion.div
+        className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease }}
+      >
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.5, ease, delay: 0.1 }}
+        >
+          <Package size={64} className="text-[var(--color-border-strong)] mb-4" />
+        </motion.div>
         <h2 className="font-display font-bold text-2xl text-[var(--color-text-primary)] mb-2">
           Sin pedidos todavía
         </h2>
@@ -101,58 +113,71 @@ export default function OrdersPage() {
         <Button size="lg" asChild>
           <Link to="/catalog">Ir al catálogo</Link>
         </Button>
-      </div>
+      </motion.div>
     )
   }
 
   return (
     <div className="min-h-screen bg-[var(--color-background)]">
       <div className="max-w-3xl mx-auto px-4 py-8">
-        <h1 className="font-display font-bold text-2xl text-[var(--color-text-primary)] mb-6">
+
+        <motion.h1
+          className="font-display font-bold text-2xl text-[var(--color-text-primary)] mb-6"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease }}
+        >
           Mis pedidos
-        </h1>
+        </motion.h1>
 
         <div className="space-y-3">
-          {pedidos.map((pedido) => (
-            <Link
+          {pedidos.map((pedido, i) => (
+            <motion.div
               key={pedido.id}
-              to={`/orders/${pedido.id}`}
-              className="flex items-center gap-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-4 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-md)] transition-all duration-200"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease, delay: Math.min(i * 0.07, 0.4) }}
             >
-              <div className="h-10 w-10 rounded-full bg-[var(--color-action)]/10 flex items-center justify-center shrink-0">
-                <Package size={18} className="text-[var(--color-action)]" />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-display font-semibold text-sm text-[var(--color-text-primary)]">
-                    Pedido #{pedido.id}
-                  </span>
-                  <Badge variant={ESTADO_BADGE[pedido.estado] || 'default'}>
-                    {ESTADO_LABEL[pedido.estado] || pedido.estado}
-                  </Badge>
+              <Link
+                to={`/orders/${pedido.id}`}
+                className="flex items-center gap-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-4 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 transition-all duration-200"
+                style={{ transitionTimingFunction: 'cubic-bezier(0.23,1,0.32,1)' }}
+              >
+                <div className="h-10 w-10 rounded-full bg-[var(--color-action)]/10 flex items-center justify-center shrink-0">
+                  <Package size={18} className="text-[var(--color-action)]" />
                 </div>
-                <p className="font-sans text-xs text-[var(--color-text-muted)] mt-0.5">
-                  {formatDate(pedido.fecha || pedido.created_at)}
-                </p>
-              </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="font-mono font-bold text-base text-[var(--color-text-primary)]">
-                  {formatQ(pedido.total)}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={(e) => handleDownload(e, pedido.id)}
-                  loading={downloadingId === pedido.id}
-                  title="Descargar factura PDF"
-                >
-                  <FileDown size={14} />
-                </Button>
-                <ChevronRight size={16} className="text-[var(--color-text-muted)]" />
-              </div>
-            </Link>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-display font-semibold text-sm text-[var(--color-text-primary)]">
+                      Pedido #{pedido.id}
+                    </span>
+                    <Badge variant={ESTADO_BADGE[pedido.estado] || 'default'}>
+                      {ESTADO_LABEL[pedido.estado] || pedido.estado}
+                    </Badge>
+                  </div>
+                  <p className="font-sans text-xs text-[var(--color-text-muted)] mt-0.5">
+                    {formatDate(pedido.fecha || pedido.created_at)}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="font-mono font-bold text-base text-[var(--color-text-primary)]">
+                    {formatQ(pedido.total)}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={(e) => handleDownload(e, pedido.id)}
+                    loading={downloadingId === pedido.id}
+                    title="Descargar factura PDF"
+                  >
+                    <FileDown size={14} />
+                  </Button>
+                  <ChevronRight size={16} className="text-[var(--color-text-muted)]" />
+                </div>
+              </Link>
+            </motion.div>
           ))}
         </div>
       </div>

@@ -65,25 +65,42 @@
 
 /* ── Dark mode ───────────────────────────────────────────── */
 .dark {
-  --color-background:    #080B14;
-  --color-surface:       #111827;
-  --color-surface-raised:#1A2035;
-  --color-text-primary:  #F1F5F9;
-  --color-text-secondary:#94A3B8;
-  --color-text-muted:    #475569;
-  --color-action:        #818CF8;
-  --color-action-h:      #6366F1;
+  /* Fondos — escala oscura suave, no pitch-black */
+  --color-background:    #0D1117;
+  --color-surface:       #161B22;
+  --color-surface-raised:#1C2333;
+
+  /* Texto — jerarquía clara */
+  --color-text-primary:  #E6EDF3;
+  --color-text-secondary:#8B949E;
+  --color-text-muted:    #484F58;
+
+  /* Acción — índigo claro para contraste sobre oscuro */
+  --color-action:        #7C87FB;
+  --color-action-h:      #6870F0;
   --color-action-fg:     #FFFFFF;
+
+  /* Jade */
   --color-jade:          #2DD4BF;
-  --color-jade-light:    #0D2F2B;
-  --color-success:       #34D399;
-  --color-success-light: #064E3B;
-  --color-warning:       #FCD34D;
-  --color-warning-light: #451A03;
-  --color-error:         #F87171;
-  --color-error-light:   #450A0A;
-  --color-border:        #1E293B;
-  --color-border-strong: #334155;
+  --color-jade-light:    #0A2520;
+
+  /* Estados */
+  --color-success:       #3FB950;
+  --color-success-light: #0A2A12;
+  --color-warning:       #D29922;
+  --color-warning-light: #2D1F00;
+  --color-error:         #F85149;
+  --color-error-light:   #3D0C0A;
+
+  /* Bordes — visibles pero sutiles */
+  --color-border:        #21262D;
+  --color-border-strong: #30363D;
+
+  /* Sombras adaptadas al modo oscuro */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
 }
 
 /* ── Base ────────────────────────────────────────────────── */
@@ -137,6 +154,83 @@ img {
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
 
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* ── Custom easing curves (Emil Kowalski principles) ─────── */
+:root {
+  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ── Keyframes ────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Animation utilities ──────────────────────────────────── */
+.animate-fade-in-up   { animation: fadeInUp 420ms var(--ease-out) both; }
+.animate-fade-in      { animation: fadeIn 280ms var(--ease-out) both; }
+.animate-scale-in     { animation: scaleIn 220ms var(--ease-out) both; }
+.animate-slide-in-right { animation: slideInRight 350ms var(--ease-out) both; }
+
+/* Stagger delays — use on sibling lists */
+.stagger-1 { animation-delay:  60ms; }
+.stagger-2 { animation-delay: 120ms; }
+.stagger-3 { animation-delay: 180ms; }
+.stagger-4 { animation-delay: 240ms; }
+
+/* ── Hover transforms — only on devices that support hover ── */
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift:hover {
+    transform: translateY(-3px);
+    transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+  }
+  .hover-scale:hover {
+    transform: scale(1.03);
+    transition: transform 200ms var(--ease-out);
+  }
+}
+
+/* ── Hover animations ────────────────────────────────────── */
+
+/* Logo: lift suave + sombra celeste */
+.logo-hover {
+  transition: transform 0.35s cubic-bezier(0.23, 1, 0.32, 1),
+              filter    0.35s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.logo-hover:hover {
+  transform: translateY(-3px) scale(1.06);
+  filter: drop-shadow(0 8px 20px rgba(41, 182, 246, 0.55));
+}
+
+/* Botón: ring pulse que expande y desvanece */
+@keyframes ring-pulse {
+  0%   { box-shadow: 0 4px 20px rgba(0,0,0,0.22), 0 0 0 0   rgba(41,182,246,0.5); }
+  60%  { box-shadow: 0 6px 28px rgba(0,0,0,0.18), 0 0 0 10px rgba(41,182,246,0);   }
+  100% { box-shadow: 0 6px 28px rgba(0,0,0,0.18), 0 0 0 0   rgba(41,182,246,0);   }
+}
+.btn-pulse {
+  transition: transform 0.25s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.btn-pulse:hover {
+  animation: ring-pulse 0.55s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  transform: translateY(-2px);
+}

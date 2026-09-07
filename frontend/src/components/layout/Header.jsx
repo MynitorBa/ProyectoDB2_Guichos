@@ -17,7 +17,6 @@ import { getCategories } from '../../api/products'
 import { getUnreadCount, getNotifications, markAllAsRead } from '../../api/notifications'
 import { cn } from '../../lib/utils'
 
-// Mapa de slug → icono para las categorías conocidas
 const ICON_BY_SLUG = {
   computadoras: Monitor,
   celulares:    Smartphone,
@@ -36,18 +35,17 @@ const DEFAULT_ICON = Layers
 
 function Logo() {
   return (
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" className="shrink-0" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="var(--color-action)" />
-      <path d="M10 14h12l-1.8 9H11.8L10 14z" stroke="white" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
-      <path d="M13 14c0-1.657 1.343-3 3-3s3 1.343 3 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-      <path d="M13.5 19.5l1.5 1.5 3.5-3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <img
+      src="/TiendaYAlogo.png"
+      alt="TiendaYa"
+      className="h-11 w-auto shrink-0 object-contain logo-hover"
+    />
   )
 }
 
-// Barra de búsqueda que navega a /catalog?q=... al enviar el formulario
 function SearchBar({ className, onSearch }) {
   const [q, setQ] = useState('')
+  const [focused, setFocused] = useState(false)
   const navigate = useNavigate()
   function submit(e) {
     e.preventDefault()
@@ -55,14 +53,37 @@ function SearchBar({ className, onSearch }) {
   }
   return (
     <form onSubmit={submit} className={cn('relative flex items-center', className)}>
-      <Search size={15} className="absolute left-3 text-[var(--color-text-muted)] pointer-events-none" />
+      <Search
+        size={15}
+        className={cn(
+          'absolute left-3.5 pointer-events-none transition-colors duration-150',
+          focused ? 'text-[#29B6F6]' : 'text-[var(--color-text-muted)]'
+        )}
+      />
       <input
         value={q}
         onChange={e => setQ(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder="Buscar productos..."
-        className="w-full h-10 pl-9 pr-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-action)] focus:ring-2 focus:ring-[var(--color-action)]/20 transition-colors"
+        className="w-full h-10 pl-9 pr-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-full font-sans text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[#29B6F6] focus:ring-2 focus:ring-[#29B6F6]/20 transition-all duration-200"
       />
     </form>
+  )
+}
+
+function IconBtn({ onClick, label, children, className }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={cn(
+        'relative h-9 w-9 flex items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-all duration-150',
+        className
+      )}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -72,12 +93,12 @@ function CartIcon() {
   return (
     <Link
       to="/cart"
-      className="relative p-2 rounded-[var(--radius-md)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
+      className="relative h-9 w-9 flex items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-all duration-150"
       aria-label={`Carrito, ${count} artículos`}
     >
-      <ShoppingCart size={20} />
+      <ShoppingCart size={19} />
       {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 h-5 min-w-[20px] px-1 flex items-center justify-center rounded-full bg-[var(--color-action)] text-white font-sans font-bold text-[10px] leading-none">
+        <span className="absolute -top-0.5 -right-0.5 h-[18px] min-w-[18px] px-1 flex items-center justify-center rounded-full bg-[#29B6F6] text-white font-sans font-bold text-[9px] leading-none shadow-sm">
           {count > 99 ? '99+' : count}
         </span>
       )}
@@ -97,8 +118,13 @@ function UserMenu({ user, signOut }) {
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" asChild><Link to="/login">Entrar</Link></Button>
-        <Button variant="primary" size="sm" asChild><Link to="/register">Registrarse</Link></Button>
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/login">Entrar</Link>
+        </Button>
+        <Button size="sm" asChild style={{ backgroundColor: '#29B6F6', color: 'white' }}
+          className="hover:opacity-90 active:scale-95">
+          <Link to="/register">Registrarse</Link>
+        </Button>
       </div>
     )
   }
@@ -107,40 +133,51 @@ function UserMenu({ user, signOut }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 p-1.5 rounded-[var(--radius-md)] hover:bg-[var(--color-border)] transition-colors"
+        className={cn(
+          'flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full transition-all duration-150',
+          open
+            ? 'bg-[var(--color-border)]'
+            : 'hover:bg-[var(--color-border)]'
+        )}
       >
-        <div className="h-8 w-8 rounded-full bg-[var(--color-action)]/10 flex items-center justify-center">
-          <span className="font-display font-semibold text-sm text-[var(--color-action)]">
-            {user.nombre?.[0]?.toUpperCase() || 'U'}
-          </span>
+        <div
+          className="h-8 w-8 rounded-full flex items-center justify-center text-white font-display font-bold text-sm shadow-sm"
+          style={{ background: 'linear-gradient(135deg, #29B6F6, #0288D1)' }}
+        >
+          {user.nombre?.[0]?.toUpperCase() || 'U'}
         </div>
-        <ChevronDown size={12} className={cn('text-[var(--color-text-muted)] transition-transform', open && 'rotate-180')} />
+        <span className="font-sans text-sm font-medium text-[var(--color-text-primary)] hidden lg:block max-w-[80px] truncate">
+          {user.nombre}
+        </span>
+        <ChevronDown size={12} className={cn('text-[var(--color-text-muted)] transition-transform duration-200', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-48 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] py-1 z-50">
-          <div className="px-3 py-2 border-b border-[var(--color-border)]">
+        <div className="absolute right-0 top-full mt-2 w-56 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-xl)] shadow-[0_16px_48px_rgba(0,0,0,0.12)] py-1.5 z-50 animate-scale-in">
+          <div className="px-3.5 py-2.5 mb-1">
             <p className="font-display font-semibold text-sm text-[var(--color-text-primary)] truncate">{user.nombre} {user.apellido}</p>
             <p className="font-sans text-xs text-[var(--color-text-muted)] truncate">{user.email}</p>
           </div>
-          <Link to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors">
-            <UserCircle size={14} /> Mi perfil
-          </Link>
-          <Link to="/orders" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors">
-            <Package size={14} /> Mis pedidos
-          </Link>
-          {user.roles?.includes('administrador') && (
-            <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors">
-              <Settings size={14} /> Panel admin
+          <div className="border-t border-[var(--color-border)] pt-1">
+            <Link to="/profile" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3.5 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-md mx-1">
+              <UserCircle size={14} /> Mi perfil
             </Link>
-          )}
-          {user.roles?.includes('vendedor') && (
-            <Link to="/vendor" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors">
-              <Store size={14} /> Panel vendedor
+            <Link to="/orders" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3.5 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-md mx-1">
+              <Package size={14} /> Mis pedidos
             </Link>
-          )}
+            {user.roles?.includes('administrador') && (
+              <Link to="/admin" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3.5 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-md mx-1">
+                <Settings size={14} /> Panel admin
+              </Link>
+            )}
+            {user.roles?.includes('vendedor') && (
+              <Link to="/vendor" onClick={() => setOpen(false)} className="flex items-center gap-2.5 px-3.5 py-2 font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors rounded-md mx-1">
+                <Store size={14} /> Panel vendedor
+              </Link>
+            )}
+          </div>
           <div className="border-t border-[var(--color-border)] mt-1 pt-1">
-            <button onClick={() => { signOut(); setOpen(false) }} className="flex w-full items-center gap-2.5 px-3 py-2 font-sans text-sm text-[var(--color-error)] hover:bg-[var(--color-error-light)] transition-colors">
+            <button onClick={() => { signOut(); setOpen(false) }} className="flex w-full items-center gap-2.5 px-3.5 py-2 font-sans text-sm text-[var(--color-error)] hover:bg-[var(--color-error)]/8 transition-colors rounded-md mx-1 w-[calc(100%-8px)]">
               <LogOut size={14} /> Cerrar sesión
             </button>
           </div>
@@ -150,7 +187,6 @@ function UserMenu({ user, signOut }) {
   )
 }
 
-// Campanita de notificaciones: polling cada 60s, carga el listado al abrir y marca todas como leídas automáticamente
 function NotificationBell({ user }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -191,21 +227,17 @@ function NotificationBell({ user }) {
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        onClick={handleOpen}
-        className="relative p-2 rounded-[var(--radius-md)] text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
-        aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ''}`}
-      >
-        <Bell size={20} />
+      <IconBtn onClick={handleOpen} label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ''}`}>
+        <Bell size={19} />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-5 min-w-[20px] px-1 flex items-center justify-center rounded-full bg-[var(--color-error)] text-white font-sans font-bold text-[10px] leading-none">
+          <span className="absolute -top-0.5 -right-0.5 h-[18px] min-w-[18px] px-1 flex items-center justify-center rounded-full bg-[var(--color-error)] text-white font-sans font-bold text-[9px] leading-none shadow-sm">
             {unread > 99 ? '99+' : unread}
           </span>
         )}
-      </button>
+      </IconBtn>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-80 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-xl)] shadow-[0_16px_48px_rgba(0,0,0,0.12)] z-50 overflow-hidden animate-scale-in">
           <div className="px-4 py-3 border-b border-[var(--color-border)]">
             <p className="font-display font-semibold text-sm text-[var(--color-text-primary)]">Notificaciones</p>
           </div>
@@ -230,7 +262,6 @@ function NotificationBell({ user }) {
   )
 }
 
-// Dropdown "Todas las categorías" con grid de 2 columnas y cierre con Escape o clic fuera
 function CategoryDropdown({ categories }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -253,39 +284,40 @@ function CategoryDropdown({ categories }) {
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(
-          'flex items-center gap-1.5 px-3 h-9 rounded-[var(--radius-md)] font-display font-semibold text-sm transition-colors whitespace-nowrap',
+          'flex items-center gap-1.5 px-3.5 h-8 rounded-full font-display font-semibold text-[13px] transition-all duration-150 whitespace-nowrap',
           open
-            ? 'bg-[var(--color-action)] text-white'
-            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-action)]/8 hover:text-[var(--color-action)]'
+            ? 'text-white shadow-sm'
+            : 'text-[var(--color-text-secondary)] hover:text-white'
         )}
+        style={open
+          ? { backgroundColor: '#29B6F6' }
+          : undefined
+        }
+        onMouseEnter={e => { if (!open) e.currentTarget.style.backgroundColor = '#29B6F6' }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.backgroundColor = '' }}
       >
-        <Menu size={14} />
-        Todas las categorías
+        <Menu size={13} />
+        Categorías
         <ChevronDown size={11} className={cn('transition-transform duration-200', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-[calc(100%+6px)] w-[340px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] z-[200] overflow-hidden">
-          {/* header del panel */}
-          <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-background)]">
+        <div className="absolute left-0 top-[calc(100%+8px)] w-[340px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-xl)] shadow-[var(--shadow-xl)] z-[200] overflow-hidden animate-scale-in">
+          <div className="px-4 py-2.5 border-b border-[var(--color-border)]" style={{ background: 'linear-gradient(to right, #29B6F6/8, transparent)' }}>
             <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
               Explorar categorías
             </p>
           </div>
-
-          {/* grid de categorías */}
-          <div className="p-2 grid grid-cols-2 gap-1">
+          <div className="p-2 grid grid-cols-2 gap-0.5">
             {categories.map(cat => {
               const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
               return (
                 <button
                   key={cat.slug}
                   onClick={() => { navigate(`/catalog?categoria=${cat.slug}`); setOpen(false) }}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-[var(--radius-md)] text-left group hover:bg-[var(--color-action)]/8 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-[var(--radius-md)] text-left hover:bg-[#29B6F6]/8 transition-colors group"
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-action)]/10 group-hover:bg-[var(--color-action)]/20 transition-colors">
-                    <Icon size={14} className="text-[var(--color-action)]" strokeWidth={1.75} />
-                  </span>
+                  <Icon size={13} className="text-[#29B6F6] shrink-0" strokeWidth={1.5} />
                   <span className="font-sans text-sm font-medium text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-primary)] transition-colors leading-tight">
                     {cat.nombre}
                   </span>
@@ -293,12 +325,13 @@ function CategoryDropdown({ categories }) {
               )
             })}
           </div>
-
-          {/* footer — ver todo */}
           <div className="px-3 pb-2.5">
             <button
               onClick={() => { navigate('/catalog'); setOpen(false) }}
-              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--radius-md)] font-sans text-xs font-semibold text-[var(--color-action)] hover:bg-[var(--color-action)]/8 transition-colors border border-[var(--color-action)]/20 hover:border-[var(--color-action)]/40"
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-full font-sans text-xs font-semibold transition-all duration-150 text-white"
+              style={{ backgroundColor: '#29B6F6' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
             >
               Ver todo el catálogo
               <ChevronDown size={11} className="-rotate-90" />
@@ -310,14 +343,13 @@ function CategoryDropdown({ categories }) {
   )
 }
 
-// Header principal: sticky con búsqueda, toggle de tema oscuro, notificaciones, carrito, menú de usuario y barra de categorías
 export function Header() {
   const { user, signOut } = useAuth()
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   const location = useLocation()
 
-  // Categorías desde la API (MySQL → real)
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
     queryFn: () => getCategories().then(r => r.data),
@@ -325,7 +357,17 @@ export function Header() {
   })
   const categories = categoriesData || []
 
+  // Categoría activa desde la URL
+  const params = new URLSearchParams(location.search)
+  const activeSlug = location.pathname === '/catalog' ? params.get('categoria') : null
+
   useEffect(() => { setMobileOpen(false) }, [location])
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 8)
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   function toggleDark() {
     document.documentElement.classList.toggle('dark')
@@ -333,34 +375,41 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-[var(--color-surface)]/95 backdrop-blur-sm border-b border-[var(--color-border)]">
+    <header
+      className={cn(
+        'sticky top-0 z-40 transition-all duration-300',
+        scrolled
+          ? 'bg-[var(--color-surface)]/95 backdrop-blur-md shadow-[0_2px_20px_rgba(0,0,0,0.08)] border-b border-[var(--color-border)]'
+          : 'bg-[var(--color-surface)] border-b border-transparent'
+      )}
+    >
+      {/* Línea de acento celeste en la parte superior */}
+      <div className="h-[3px] w-full" style={{ background: 'linear-gradient(to right, #29B6F6, #0288D1, #29B6F6)' }} />
+
       {/* ── Barra principal ── */}
-      <div className="max-w-[1280px] mx-auto px-4 md:px-6 h-16 flex items-center gap-4">
-        <Link to="/" className="shrink-0 flex items-center gap-2 group">
+      <div className="max-w-[1320px] mx-auto px-4 md:px-6 lg:px-12 h-[68px] flex items-center gap-4">
+        <Link to="/" className="shrink-0 flex items-center hover:opacity-80 active:scale-[.97] transition-all duration-150">
           <Logo />
-          <span className="font-display font-bold text-lg text-[var(--color-text-primary)] hidden sm:block">
-            TiendaYa
-          </span>
         </Link>
 
         <SearchBar className="flex-1 hidden md:flex max-w-xl" />
 
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            onClick={toggleDark}
-            className="p-2 rounded-[var(--radius-md)] text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)] transition-colors"
-            aria-label="Cambiar tema"
-          >
+        <div className="ml-auto flex items-center gap-0.5">
+          <IconBtn onClick={toggleDark} label="Cambiar tema">
             {dark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          </IconBtn>
           <NotificationBell user={user} />
           <CartIcon />
+
+          {/* Separador visual */}
+          <span className="h-5 w-px bg-[var(--color-border)] mx-1.5 hidden sm:block" />
+
           <UserMenu user={user} signOut={signOut} />
 
           {/* Menú móvil */}
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <button className="md:hidden p-2 rounded-[var(--radius-md)] text-[var(--color-text-muted)] hover:bg-[var(--color-border)]">
+              <button className="md:hidden h-9 w-9 flex items-center justify-center rounded-full text-[var(--color-text-muted)] hover:bg-[var(--color-border)]">
                 <Menu size={20} />
               </button>
             </SheetTrigger>
@@ -378,7 +427,7 @@ export function Header() {
                         onClick={() => setMobileOpen(false)}
                         className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)] hover:text-[var(--color-text-primary)] transition-colors"
                       >
-                        <Icon size={18} className="text-[var(--color-action)] shrink-0" strokeWidth={1.5} />
+                        <Icon size={18} className="shrink-0" style={{ color: '#29B6F6' }} strokeWidth={1.5} />
                         {cat.nombre}
                       </Link>
                     )
@@ -391,26 +440,31 @@ export function Header() {
       </div>
 
       {/* ── Barra de categorías — desktop ── */}
-      <div className="hidden md:block border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="max-w-[1280px] mx-auto px-6 h-10 flex items-center gap-1">
-          {/* Dropdown fuera del scroll para que no quede recortado */}
+      <div className="hidden md:block border-t border-[var(--color-border)]">
+        <div className="max-w-[1320px] mx-auto px-6 lg:px-12 h-10 flex items-center gap-2">
           <CategoryDropdown categories={categories} />
 
           {categories.length > 0 && (
-            <div className="w-px h-5 bg-[var(--color-border)] mx-1 shrink-0" />
+            <span className="h-4 w-px bg-[var(--color-border)] shrink-0" />
           )}
 
-          {/* Links individuales en su propio scroll */}
           <div className="flex items-center gap-0.5 overflow-x-auto flex-1 scrollbar-none">
             {categories.map(cat => {
               const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
+              const isActive = activeSlug === cat.slug
               return (
                 <Link
                   key={cat.slug}
                   to={`/catalog?categoria=${cat.slug}`}
-                  className="shrink-0 flex items-center gap-1.5 px-3 h-8 font-display font-semibold text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-action)] hover:bg-[var(--color-action)]/8 rounded-[var(--radius-md)] transition-colors whitespace-nowrap"
+                  className={cn(
+                    'shrink-0 flex items-center gap-1.5 px-3 h-7 rounded-full font-sans text-[12px] font-medium transition-all duration-150 whitespace-nowrap',
+                    isActive
+                      ? 'text-white'
+                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]'
+                  )}
+                  style={isActive ? { backgroundColor: '#29B6F6' } : undefined}
                 >
-                  <Icon size={13} strokeWidth={1.5} />
+                  <Icon size={12} strokeWidth={1.5} />
                   {cat.nombre}
                 </Link>
               )

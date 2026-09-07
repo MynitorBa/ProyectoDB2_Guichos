@@ -15,14 +15,17 @@ export function Skeleton({ className, ...props }) {
 
 export function ProductCardSkeleton() {
   return (
-    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
-      <Skeleton className="aspect-square w-full rounded-none" />
-      <div className="p-3 space-y-2">
-        <Skeleton className="h-3 w-1/3" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-4/5" />
-        <Skeleton className="h-5 w-1/2 mt-1" />
-        <Skeleton className="h-9 w-full mt-2 rounded-[var(--radius-md)]" />
+    <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl overflow-hidden">
+      <div className="relative">
+        <Skeleton className="aspect-square w-full rounded-none" />
+        <Skeleton className="absolute top-2.5 left-2.5 h-4 w-16 rounded-full" />
+      </div>
+      <div className="px-3.5 pt-3 pb-4 space-y-2">
+        <Skeleton className="h-3.5 w-full" />
+        <Skeleton className="h-3.5 w-3/4" />
+        <div className="pt-2">
+          <Skeleton className="h-5 w-1/3" />
+        </div>
       </div>
     </div>
   )

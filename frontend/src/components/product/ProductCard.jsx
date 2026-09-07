@@ -1,8 +1,7 @@
 import { Link } from 'react-router-dom'
-import { ShoppingCart, CheckCircle } from 'lucide-react'
+import { ShoppingCart, Check } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '../ui/button'
-import { Badge } from '../ui/badge'
 import { StarRating } from '../ui/star-rating'
 import { ProductImage } from './ProductImage'
 import { formatQ } from '../../lib/utils'
@@ -10,7 +9,6 @@ import { useCart } from '../../context/CartContext'
 import { useAuth } from '../../context/AuthContext'
 import { toast } from 'sonner'
 
-// Tarjeta de producto: imagen con fallback, precio, rating y botón de agregar al carrito con feedback visual
 export function ProductCard({ product, vendedorId }) {
   const { add } = useCart()
   const { user } = useAuth()
@@ -31,7 +29,7 @@ export function ProductCard({ product, vendedorId }) {
       await add(product.oferta_id, 1)
       setAdded(true)
       toast.success(`${product.nombre} agregado al carrito`)
-      setTimeout(() => setAdded(false), 2000)
+      setTimeout(() => setAdded(false), 2200)
     } catch {
       toast.error('No se pudo agregar al carrito')
     } finally {
@@ -42,66 +40,81 @@ export function ProductCard({ product, vendedorId }) {
   return (
     <Link
       to={`/products/${product._id}${vendedorId ? `?desde_tienda=${vendedorId}` : ''}`}
-      className="group flex flex-col bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:border-[var(--color-border-strong)] transition-all duration-200 focus-visible:outline-2 focus-visible:outline-[var(--color-action)]"
+      className="group flex flex-col bg-[var(--color-surface)] rounded-2xl overflow-hidden border border-[var(--color-border)] hover:border-[#29B6F6]/35 hover:shadow-[0_20px_48px_rgba(41,182,246,0.10),0_4px_16px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 focus-visible:outline-2 focus-visible:outline-[#29B6F6]"
+      style={{ transitionTimingFunction: 'cubic-bezier(0.23,1,0.32,1)' }}
     >
-      <div className="relative overflow-hidden">
-        <ProductImage
-          src={imgSrc}
-          alt={product.nombre}
-          categoria={categoria}
-          nombre={product.nombre}
-          aspectRatio="aspect-square"
-        />
+      {/* Imagen */}
+      <div className="relative overflow-hidden bg-[var(--color-background)]">
+        <div
+          className="group-hover:scale-[1.05] transition-transform duration-500"
+          style={{ transitionTimingFunction: 'cubic-bezier(0.23,1,0.32,1)' }}
+        >
+          <ProductImage
+            src={imgSrc}
+            alt={product.nombre}
+            categoria={categoria}
+            nombre={product.nombre}
+            aspectRatio="aspect-square"
+          />
+        </div>
+
+        {/* Categoría — pill sobre la imagen */}
+        {(categoria?.nombre || product.vendedor_nombre) && (
+          <span className="absolute top-2.5 left-2.5 font-sans text-[10px] font-semibold text-white bg-black/45 backdrop-blur-sm px-2 py-0.5 rounded-full pointer-events-none">
+            {categoria?.nombre || product.vendedor_nombre}
+          </span>
+        )}
+
+        {/* Sin stock overlay */}
         {!product.disponible && (
-          <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-            <Badge variant="default" className="text-xs">Sin stock</Badge>
+          <div className="absolute inset-0 bg-[var(--color-surface)]/80 backdrop-blur-[2px] flex items-center justify-center">
+            <span className="font-sans font-semibold text-xs text-[var(--color-text-secondary)] px-3 py-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]">
+              Sin stock
+            </span>
           </div>
         )}
-        {categoria?.nombre && (
-          <div className="absolute top-2 left-2">
-            <Badge variant="jade">{categoria.nombre}</Badge>
-          </div>
+
+        {/* Badge "¡Solo X!" */}
+        {product.stock !== undefined && product.stock !== null && product.disponible && product.stock > 0 && product.stock <= 5 && (
+          <span className="absolute top-2.5 right-2.5 font-sans text-[10px] font-bold text-white bg-[var(--color-error)] px-2 py-0.5 rounded-full shadow-sm">
+            ¡Solo {product.stock}!
+          </span>
         )}
+
+        {/* Botón rápido add — aparece en hover */}
+        <div className="absolute bottom-0 inset-x-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300 p-2" style={{ transitionTimingFunction: 'cubic-bezier(0.23,1,0.32,1)' }}>
+          <button
+            onClick={handleAdd}
+            disabled={!product.disponible || adding}
+            className="w-full flex items-center justify-center gap-1.5 h-9 rounded-xl font-sans font-semibold text-[13px] text-white shadow-lg transition-opacity duration-150 disabled:opacity-50"
+            style={{ background: added ? '#16a34a' : 'linear-gradient(135deg, #29B6F6, #0288D1)' }}
+          >
+            {added
+              ? <><Check size={13} strokeWidth={2.5} /> Agregado</>
+              : <><ShoppingCart size={13} /> Agregar al carrito</>
+            }
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-col flex-1 p-3 gap-1.5">
-        <p className="font-sans text-[10px] font-medium text-[var(--color-text-muted)] uppercase tracking-wider truncate">
-          {product.vendedor_nombre}
-        </p>
-        <h3 className="font-display font-semibold text-sm text-[var(--color-text-primary)] line-clamp-2 leading-snug min-h-[2.5rem]">
+      {/* Info */}
+      <div className="flex flex-col flex-1 px-3.5 pt-3 pb-4 gap-1">
+        <h3 className="font-display font-semibold text-[13px] text-[var(--color-text-primary)] line-clamp-2 leading-snug min-h-[2.5rem]">
           {product.nombre}
         </h3>
 
         {resenas.total > 0 && (
-          <StarRating value={resenas.promedio} size={12} count={resenas.total} />
+          <StarRating value={resenas.promedio} size={11} count={resenas.total} />
         )}
 
-        <div className="mt-auto pt-2 flex items-end justify-between gap-2">
-          <span className="font-display font-bold text-lg text-[var(--color-text-primary)]">
+        <div className="mt-auto pt-2 flex items-center justify-between gap-2">
+          <span className="font-mono font-bold text-[16px] tabular-nums" style={{ color: '#0277BD' }}>
             {formatQ(product.precio)}
           </span>
-        </div>
-
-        {product.stock !== undefined && product.stock !== null && product.disponible && product.stock > 0 && (
-          product.stock <= 5
-            ? <span className="font-sans text-xs text-[var(--color-error)]">¡Solo {product.stock} en stock!</span>
-            : <span className="font-sans text-xs text-[var(--color-text-muted)]">{product.stock} en stock</span>
-        )}
-
-        <Button
-          variant={added ? 'jade' : 'primary'}
-          size="sm"
-          className="w-full mt-1"
-          loading={adding}
-          disabled={!product.disponible}
-          onClick={handleAdd}
-        >
-          {added ? (
-            <><CheckCircle size={14} /> Agregado</>
-          ) : (
-            <><ShoppingCart size={14} /> Agregar</>
+          {!product.disponible && (
+            <span className="font-sans text-[11px] text-[var(--color-text-muted)]">No disponible</span>
           )}
-        </Button>
+        </div>
       </div>
     </Link>
   )

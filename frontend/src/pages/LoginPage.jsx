@@ -5,9 +5,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { login, me } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
+import { motion } from 'motion/react'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+
+const ease = [0.23, 1, 0.32, 1]
 
 const schema = z.object({
   email: z.string().email('Ingresa un correo electrónico válido'),
@@ -48,17 +51,32 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
+      <motion.div
+        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease }}
+      >
+        <motion.div
+          className="text-center mb-8"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease, delay: 0.08 }}
+        >
           <h1 className="font-display font-bold text-3xl text-[var(--color-text-primary)] mb-2">
             Iniciar sesión
           </h1>
           <p className="font-sans text-sm text-[var(--color-text-secondary)]">
             Accede a tu cuenta de TiendaYa
           </p>
-        </div>
+        </motion.div>
 
-        <div className="bg-[var(--color-surface)] rounded-[var(--radius-xl)] border border-[var(--color-border)] shadow-[var(--shadow-md)] p-8">
+        <motion.div
+          className="bg-[var(--color-surface)] rounded-[var(--radius-xl)] border border-[var(--color-border)] shadow-[var(--shadow-md)] p-8"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, ease, delay: 0.15 }}
+        >
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
             <div>
               <Label htmlFor="email">Correo electrónico</Label>
@@ -111,8 +129,8 @@ export default function LoginPage() {
               Crear cuenta gratis
             </Link>
           </p>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   )
 }
