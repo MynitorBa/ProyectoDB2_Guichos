@@ -7,7 +7,6 @@ from bson import ObjectId
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.carrito import Carrito, CarritoItem
 from app.models.direccion import Direccion
 from app.models.inventario import Inventario, MovimientoInventario
 from app.models.oferta import Oferta
@@ -231,10 +230,6 @@ def procesar_checkout(
         estado='aprobado',
         referencia_transaccion=f'TXN-{pedido.id:08d}-{int(total * 100)}',
     ))
-    cart = db.query(Carrito).filter_by(usuario_id=usuario_id, estado='activo').first()
-    if cart:
-        db.query(CarritoItem).filter_by(carrito_id=cart.id).delete()
-
     db.commit()
 
     db.refresh(pedido)

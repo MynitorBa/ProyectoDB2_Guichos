@@ -47,6 +47,33 @@ services:
       retries: 10
       start_period: 30s
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: tiendaya_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --save 60 1 --loglevel warning
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: tiendaya_redis_commander
+    restart: unless-stopped
+    ports:
+      - "8082:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOSTS: local:redis:6379
+
   adminer:
     image: adminer:4
     container_name: tiendaya_adminer
@@ -77,3 +104,4 @@ services:
 volumes:
   mysql_data:
   mongo_data:
+  redis_data:

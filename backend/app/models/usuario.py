@@ -49,8 +49,6 @@ class Usuario(Base):
     usuario_roles: Mapped[list['UsuarioRol']] = relationship(back_populates='usuario', cascade='all, delete-orphan')
     direcciones: Mapped[list['Direccion']] = relationship(back_populates='usuario')
     pedidos: Mapped[list['Pedido']] = relationship(back_populates='usuario')
-    carritos: Mapped[list['Carrito']] = relationship(back_populates='usuario')
-
     # Atajo para obtener los objetos Rol sin pasar por UsuarioRol manualmente
     @property
     def roles(self) -> list[Rol]:
@@ -60,4 +58,3 @@ class Usuario(Base):
 # Importaciones diferidas para evitar ciclos
 from app.models.direccion import Direccion  # noqa: E402
 from app.models.pedido import Pedido        # noqa: E402
-from app.models.carrito import Carrito      # noqa: E402

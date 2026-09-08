@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = '0.0.0.0'
     BACKEND_PORT: int = 8000
 
+    # Redis
+    REDIS_HOST: str = 'localhost'
+    REDIS_PORT: int = 6379
+    REDIS_CART_TTL: int = 1800  # segundos de inactividad antes de expirar el carrito
+
     # Email (SMTP) — dejar vacío para deshabilitar envío de correos
     SMTP_HOST: str = 'smtp.gmail.com'
     SMTP_PORT: int = 587

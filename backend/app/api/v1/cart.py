@@ -4,14 +4,16 @@ from sqlalchemy.orm import Session
 from decimal import Decimal
 from bson import ObjectId
 from pymongo.database import Database
+import redis as redis_lib
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
+from app.core.db_redis import get_redis
 from app.core.deps import get_current_user
 from app.models.usuario import Usuario
-from app.models.carrito import Carrito, CarritoItem
 from app.models.oferta import Oferta
 from app.services.offer_service import resolver_oferta_comprable, stock_by_offer
+from app.services import redis_cart_service as rcs
 
 router = APIRouter(prefix='/cart', tags=['Carrito'])
 
@@ -21,128 +23,156 @@ class CartItemRequest(BaseModel):
     cantidad: int = 1
 
 
-# Obtiene el carrito activo del usuario o crea uno nuevo sin hacer commit
-def _get_or_create_cart(db: Session, usuario_id: int) -> Carrito:
-    carrito = db.query(Carrito).filter_by(usuario_id=usuario_id, estado='activo').first()
-    if not carrito:
-        carrito = Carrito(usuario_id=usuario_id)
-        db.add(carrito)
-        db.flush()
-    return carrito
+class UpdateCantidadRequest(BaseModel):
+    cantidad: int
 
 
-# Lee el carrito activo enriqueciendo cada ítem con precio y stock actuales
-# Detecta cambios de precio (precio_cambio) y agotamiento de stock (sin_stock)
+# ── GET /cart/ ────────────────────────────────────────────────────────────────
+
+
 @router.get('/')
 def ver_carrito(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
     mongo_db: Database = Depends(get_mongo_db),
+    r: redis_lib.Redis = Depends(get_redis),
 ):
-    carrito = db.query(Carrito).filter_by(usuario_id=current_user.id, estado='activo').first()
-    if not carrito:
-        return {'items': [], 'total': 0, 'tiene_alertas': False}
+    items_raw = rcs.obtener_carrito(r, current_user.id)
+    if not items_raw:
+        return {'items': [], 'total': 0, 'tiene_alertas': False, 'ttl_segundos': -2}
 
-    offer_ids = [i.oferta_id for i in carrito.items if i.oferta_id]
-    stocks = stock_by_offer(db, offer_ids) if offer_ids else {}
+    offer_ids = [i['oferta_id'] for i in items_raw]
+    stocks = stock_by_offer(db, offer_ids)
 
     items = []
     total = Decimal('0')
     tiene_alertas = False
-    for item in carrito.items:
-        offer = db.get(Oferta, item.oferta_id) if item.oferta_id else None
-        current_price = offer.precio_actual if offer else item.precio_al_agregar
-        available_stock = stocks.get(item.oferta_id, 0) if offer else 0
-        sin_stock = (offer is None or offer.estado != 'activa' or available_stock == 0)
-        precio_cambio = (current_price != item.precio_al_agregar)
+
+    for raw in items_raw:
+        oferta_id = raw['oferta_id']
+        precio_al_agregar = Decimal(raw['precio_al_agregar'])
+        producto_ref = raw.get('producto_ref')
+        cantidad = raw['cantidad']
+
+        offer = db.get(Oferta, oferta_id)
+        current_price = offer.precio_actual if offer else precio_al_agregar
+        available_stock = stocks.get(oferta_id, 0) if offer else 0
+        sin_stock = offer is None or offer.estado != 'activa' or available_stock == 0
+        precio_cambio = current_price != precio_al_agregar
         if sin_stock or precio_cambio:
             tiene_alertas = True
 
-        product_ref = item.producto_ref or (offer.producto_ref if offer else None)
         product_doc = None
-        if product_ref:
+        if producto_ref:
             try:
                 product_doc = mongo_db.productos.find_one(
-                    {'_id': ObjectId(product_ref)}, {'nombre': 1}
+                    {'_id': ObjectId(producto_ref)}, {'nombre': 1}
                 )
             except Exception:
                 product_doc = None
-        subtotal = current_price * item.cantidad
+
+        subtotal = current_price * cantidad
         if not sin_stock:
             total += subtotal
+
         items.append({
-            'id': item.id,
-            'oferta_id': item.oferta_id,
-            'producto_ref': item.producto_ref,
+            'oferta_id': oferta_id,
+            'producto_ref': producto_ref,
             'nombre': (
                 product_doc.get('nombre')
                 if product_doc and product_doc.get('nombre')
                 else (offer.sku if offer else 'Producto eliminado')
             ),
             'precio': float(current_price),
-            'precio_al_agregar': float(item.precio_al_agregar),
+            'precio_al_agregar': float(precio_al_agregar),
             'precio_cambio': precio_cambio,
             'sin_stock': sin_stock,
             'stock_disponible': available_stock,
-            'cantidad': item.cantidad,
+            'cantidad': cantidad,
             'subtotal': float(subtotal) if not sin_stock else 0.0,
         })
 
-    return {'items': items, 'total': float(total), 'tiene_alertas': tiene_alertas}
+    return {
+        'items': items,
+        'total': float(total),
+        'tiene_alertas': tiene_alertas,
+        'ttl_segundos': rcs.ttl_restante(r, current_user.id),
+    }
 
 
-# Agrega una oferta al carrito; si ya existe el mismo oferta_id acumula la cantidad
+# ── POST /cart/items ──────────────────────────────────────────────────────────
+
+
 @router.post('/items', status_code=201)
 def agregar_item(
     payload: CartItemRequest,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
+    r: redis_lib.Redis = Depends(get_redis),
 ):
     if payload.cantidad < 1:
         raise HTTPException(status_code=422, detail='La cantidad debe ser positiva.')
+
     try:
         offer = resolver_oferta_comprable(db, oferta_id=payload.oferta_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    carrito = _get_or_create_cart(db, current_user.id)
-
-    item = db.query(CarritoItem).filter_by(
-        carrito_id=carrito.id, oferta_id=offer.id
-    ).first()
-    if item:
-        item.cantidad += payload.cantidad
-    else:
-        item = CarritoItem(
-            carrito_id=carrito.id,
-            oferta_id=offer.id,
-            producto_ref=offer.producto_ref,
-            cantidad=payload.cantidad,
-            precio_al_agregar=offer.precio_actual,
-        )
-        db.add(item)
-
-    db.commit()
+    rcs.agregar_item(
+        r,
+        usuario_id=current_user.id,
+        oferta_id=offer.id,
+        cantidad=payload.cantidad,
+        precio_al_agregar=offer.precio_actual,
+        producto_ref=offer.producto_ref,
+    )
     return {
         'mensaje': 'Oferta agregada al carrito.',
         'oferta_id': offer.id,
+        'ttl_segundos': rcs.ttl_restante(r, current_user.id),
     }
 
 
-# Elimina un ítem del carrito validando que pertenezca al carrito activo del usuario
-@router.delete('/items/{item_id}', status_code=204)
-def eliminar_item(
-    item_id: int,
+# ── PATCH /cart/items/{oferta_id} ─────────────────────────────────────────────
+
+
+@router.patch('/items/{oferta_id}', status_code=200)
+def actualizar_cantidad(
+    oferta_id: int,
+    payload: UpdateCantidadRequest,
     current_user: Usuario = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    r: redis_lib.Redis = Depends(get_redis),
 ):
-    carrito = db.query(Carrito).filter_by(usuario_id=current_user.id, estado='activo').first()
-    if not carrito:
-        raise HTTPException(status_code=404, detail='Carrito no encontrado.')
+    if payload.cantidad < 1:
+        raise HTTPException(status_code=422, detail='La cantidad debe ser positiva.')
 
-    item = db.query(CarritoItem).filter_by(id=item_id, carrito_id=carrito.id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail='Item no encontrado.')
+    ok = rcs.actualizar_cantidad(r, current_user.id, oferta_id, payload.cantidad)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Ítem no encontrado en el carrito.')
 
-    db.delete(item)
-    db.commit()
+    return {'mensaje': 'Cantidad actualizada.', 'ttl_segundos': rcs.ttl_restante(r, current_user.id)}
+
+
+# ── DELETE /cart/items/{oferta_id} ────────────────────────────────────────────
+
+
+@router.delete('/items/{oferta_id}', status_code=204)
+def eliminar_item(
+    oferta_id: int,
+    current_user: Usuario = Depends(get_current_user),
+    r: redis_lib.Redis = Depends(get_redis),
+):
+    ok = rcs.eliminar_item(r, current_user.id, oferta_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Ítem no encontrado en el carrito.')
+
+
+# ── DELETE /cart/ ─────────────────────────────────────────────────────────────
+
+
+@router.delete('/', status_code=204)
+def vaciar_carrito(
+    current_user: Usuario = Depends(get_current_user),
+    r: redis_lib.Redis = Depends(get_redis),
+):
+    rcs.vaciar_carrito(r, current_user.id)

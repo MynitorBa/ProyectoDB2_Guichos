@@ -128,7 +128,7 @@ export default function CartPage() {
           <div className="flex-1 space-y-3">
             {items.map((item, i) => (
               <motion.div
-                key={item.id}
+                key={item.oferta_id}
                 className={[
                   'bg-[var(--color-surface)] border rounded-[var(--radius-lg)] p-4 flex items-center gap-4',
                   item.sin_stock
@@ -187,7 +187,7 @@ export default function CartPage() {
                     variant="ghost"
                     size="icon-sm"
                     className="mt-1 text-[var(--color-error)] hover:text-[var(--color-error)] hover:bg-[var(--color-error)]/10"
-                    onClick={() => remove(item.id)}
+                    onClick={() => remove(item.oferta_id)}
                     disabled={loading}
                   >
                     <Trash2 size={14} />

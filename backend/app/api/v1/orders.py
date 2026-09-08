@@ -1,6 +1,7 @@
 import logging
 from datetime import timezone
 
+import redis as redis_lib
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 from pymongo.database import Database
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
+from app.core.db_redis import get_redis
 from app.core.deps import get_current_user
 from app.models.direccion import Direccion
 from app.models.usuario import Usuario
@@ -19,6 +21,7 @@ from app.schemas.checkout import CheckoutRequest, CheckoutResponse
 from app.services.checkout_service import procesar_checkout, CheckoutError
 from app.services.invoice_service import generar_factura_pdf
 from app.services.email_service import enviar_factura_por_correo
+from app.services import redis_cart_service as rcs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/orders', tags=['Pedidos'])
@@ -111,6 +114,7 @@ def checkout(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
     mongo_db: Database = Depends(get_mongo_db),
+    r: redis_lib.Redis = Depends(get_redis),
 ):
     try:
         pedido = procesar_checkout(
@@ -123,6 +127,9 @@ def checkout(
         )
     except CheckoutError as e:
         raise HTTPException(status_code=422, detail={'detail': e.message, 'code': e.code})
+
+    # Limpiar el carrito Redis una vez que el pedido está confirmado en MySQL
+    rcs.vaciar_carrito(r, current_user.id)
 
     # Notify vendors (synchronous, exceptions are caught internally)
     _crear_notificaciones_vendedores(db, pedido, current_user)

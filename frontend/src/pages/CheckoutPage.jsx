@@ -91,7 +91,7 @@ function OrderSummary({ items, cart }) {
       </h3>
       <div className="space-y-2 mb-4">
         {items.map((item) => (
-          <div key={item.id} className="flex justify-between gap-2 text-sm font-sans">
+          <div key={item.oferta_id} className="flex justify-between gap-2 text-sm font-sans">
             <span className="text-[var(--color-text-secondary)] line-clamp-1 flex-1">
               {item.nombre} <span className="text-[var(--color-text-muted)]">×{item.cantidad}</span>
             </span>

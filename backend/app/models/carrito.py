@@ -19,7 +19,6 @@ class Carrito(Base):
     fecha_creacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
-    usuario: Mapped['Usuario'] = relationship(back_populates='carritos')
     items: Mapped[list['CarritoItem']] = relationship(back_populates='carrito', cascade='all, delete-orphan')
 
 

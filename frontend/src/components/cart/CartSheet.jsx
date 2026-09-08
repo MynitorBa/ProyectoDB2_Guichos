@@ -11,7 +11,7 @@ import { useCart } from '../../context/CartContext'
 export function CartSheet({ open, onClose }) {
   const { cart, remove, loading } = useCart()
   const items = cart?.items || []
-  const total = items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0)
+  const total = items.reduce((s, i) => s + (i.precio * i.cantidad), 0)
   const subtotal = total / 1.12
   const iva = total - subtotal
 
@@ -36,7 +36,7 @@ export function CartSheet({ open, onClose }) {
             {/* Items */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
               {items.map(item => (
-                <div key={item.id} className="flex gap-3">
+                <div key={item.oferta_id} className="flex gap-3">
                   <div className="h-16 w-16 shrink-0 rounded-[var(--radius-md)] overflow-hidden border border-[var(--color-border)]">
                     <ProductImage
                       src={item.imagen_url}
@@ -51,12 +51,12 @@ export function CartSheet({ open, onClose }) {
                       {item.nombre}
                     </p>
                     <p className="font-display font-semibold text-sm text-[var(--color-text-primary)] mt-0.5">
-                      {formatQ(item.precio_unitario * item.cantidad)}
+                      {formatQ(item.precio * item.cantidad)}
                     </p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="font-sans text-xs text-[var(--color-text-muted)]">Cant: {item.cantidad}</span>
                       <button
-                        onClick={() => remove(item.id)}
+                        onClick={() => remove(item.oferta_id)}
                         disabled={loading}
                         className="ml-auto p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-error)] hover:bg-[var(--color-error-light)] transition-colors"
                         aria-label="Eliminar"
