@@ -3,11 +3,12 @@
 Proyecto del curso **Bases de Datos 2** — UNIS, Segundo Semestre 2026.
 Portal de e-commerce con arquitectura políglota: MySQL 8 para datos relacionales y MongoDB 7 para el catálogo de productos con atributos variables.
 
-## Arquitectura actual (Entrega 1)
+## Arquitectura actual (inicio de Entrega 2)
 
 ```
 React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inventario, outbox)
                                 → MongoDB 7 (catálogo documental, proyecciones, eventos)
+                                → Redis 7   (carritos activos con expiración)
 ```
 
 ## Requisitos
@@ -26,6 +27,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 | API Docs (Swagger) | http://localhost:8000/docs |
 | Adminer (MySQL) | http://localhost:8080 |
 | Mongo Express | http://localhost:8081 |
+| Redis Commander | http://localhost:8082 |
 
 ## Credenciales de prueba
 
@@ -81,6 +83,12 @@ npm run build
 cd ..
 .\scripts\reset-db.ps1
 ```
+
+`setup.ps1` y `start-dev.ps1` levantan y verifican Redis, y ejecutan de forma
+idempotente la migración de carritos SQL heredados. El carrito activo vive en
+Redis durante 30 minutos de inactividad. En el checkout, Redis aporta las
+ofertas y cantidades elegidas; MySQL vuelve a validar y bloquear precio,
+estado e inventario antes de guardar el pedido definitivo.
 
 La migración de Fase 1 no elimina datos. Antes de crear las nuevas claves
 foráneas comprueba que no existan referencias huérfanas y aborta si encuentra
@@ -147,12 +155,13 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Solicitudes de catálogo de vendedores](docs/21-solicitudes-catalogo-vendedores.md)
 - [Variantes dinámicas de producto](docs/22-variantes-dinamicas.md)
 - [Paneles, envíos parciales y solicitudes de variantes: instalación y pruebas](docs/23-paneles-envios-solicitudes-variantes.md)
+- [Carrito activo, concurrencia y checkout con Redis](docs/24-carrito-redis.md)
 
 ## Entregas del proyecto
 
 | Entrega | Estado | Contenido |
 |---|---|---|
 | **Entrega 1** | **Completada** | MySQL normalizado + migración a MongoDB + historial por eventos |
-| Entrega 2 | Pendiente | Redis (carrito, sesiones, caché de catálogo) |
+| Entrega 2 | En progreso | Redis (carrito con TTL y base para promociones concurrentes) |
 | Entrega 3 | Pendiente | Base de datos columnar/grafos (analytics, recomendaciones) |
 | Entrega 4 | Pendiente | Motor de búsqueda + base vectorial (búsqueda semántica) |

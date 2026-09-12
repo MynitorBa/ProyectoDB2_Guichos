@@ -274,6 +274,78 @@ def test_checkout_carrito_vacio():
         db.close()
 
 
+def test_checkout_exige_confirmar_precio_cambiado():
+    """El snapshot Redis no sustituye al precio vigente y exige confirmación."""
+    db: Session = TestSession()
+    try:
+        precio_actual = db.execute(
+            text('SELECT precio_actual FROM ofertas WHERE id = :oid'),
+            {'oid': OFERTA_TEST_ID},
+        ).scalar_one()
+        with pytest.raises(CheckoutError) as exc_info:
+            procesar_checkout(
+                db,
+                usuario_id=USUARIO_COMPRADOR_ID,
+                direccion_id=DIRECCION_ID,
+                metodo_pago_id=METODO_PAGO_ID,
+                items=[CheckoutItem(oferta_id=OFERTA_TEST_ID, cantidad=1)],
+                precios_esperados={OFERTA_TEST_ID: precio_actual - 1},
+            )
+        assert exc_info.value.code == 'PRICE_CHANGED'
+        db.rollback()
+    finally:
+        db.close()
+
+
+def test_checkout_rechaza_confirmacion_de_precio_que_volvio_a_cambiar():
+    """Una confirmación vieja no acepta silenciosamente un segundo cambio."""
+    db: Session = TestSession()
+    try:
+        precio_actual = db.execute(
+            text('SELECT precio_actual FROM ofertas WHERE id = :oid'),
+            {'oid': OFERTA_TEST_ID},
+        ).scalar_one()
+        with pytest.raises(CheckoutError) as exc_info:
+            procesar_checkout(
+                db,
+                usuario_id=USUARIO_COMPRADOR_ID,
+                direccion_id=DIRECCION_ID,
+                metodo_pago_id=METODO_PAGO_ID,
+                items=[CheckoutItem(oferta_id=OFERTA_TEST_ID, cantidad=1)],
+                precios_esperados={OFERTA_TEST_ID: precio_actual - 2},
+                confirmar_cambios_precio=True,
+                precios_confirmados={OFERTA_TEST_ID: precio_actual - 1},
+            )
+        assert exc_info.value.code == 'PRICE_CHANGED'
+        db.rollback()
+    finally:
+        db.close()
+
+
+def test_checkout_acepta_precio_actual_confirmado(reset_stock):
+    """Tras mostrar el valor vigente, la segunda confirmación puede comprar."""
+    db: Session = TestSession()
+    try:
+        precio_actual = db.execute(
+            text('SELECT precio_actual FROM ofertas WHERE id = :oid'),
+            {'oid': OFERTA_TEST_ID},
+        ).scalar_one()
+        pedido = procesar_checkout(
+            db,
+            usuario_id=USUARIO_COMPRADOR_ID,
+            direccion_id=DIRECCION_ID,
+            metodo_pago_id=METODO_PAGO_ID,
+            items=[CheckoutItem(oferta_id=OFERTA_TEST_ID, cantidad=1)],
+            precios_esperados={OFERTA_TEST_ID: precio_actual - 1},
+            confirmar_cambios_precio=True,
+            precios_confirmados={OFERTA_TEST_ID: precio_actual},
+        )
+        reset_stock.append(pedido.id)
+        assert pedido.total == precio_actual
+    finally:
+        db.close()
+
+
 def test_concurrencia_ultima_unidad(reset_stock):
     """
     Dos hilos compran la última unidad al mismo tiempo.

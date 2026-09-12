@@ -3,6 +3,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import pymysql
+import redis
 from pymongo import MongoClient
 from bson import ObjectId
 from dotenv import load_dotenv
@@ -17,6 +18,9 @@ MYSQL_USER  = os.getenv('MYSQL_USER', 'tiendaya')
 MYSQL_PASS  = os.getenv('MYSQL_PASSWORD', 'tiendaya123')
 MONGO_URI   = os.getenv('MONGO_URI', 'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin')
 MONGO_DB    = os.getenv('MONGO_DB', 'tiendaya')
+REDIS_HOST  = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT  = int(os.getenv('REDIS_PORT', 6379))
+REDIS_TTL   = int(os.getenv('REDIS_CART_TTL', 1800))
 
 
 def main():
@@ -24,6 +28,24 @@ def main():
     offer_projections = []
     registry_refs = []
     variant_registry_refs = []
+
+    # ── Redis ─────────────────────────────────────────────────────────────────
+    try:
+        redis_client = redis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+        if not redis_client.ping():
+            raise RuntimeError('PING no respondió PONG')
+        if REDIS_TTL <= 0:
+            raise RuntimeError('REDIS_CART_TTL debe ser positivo')
+        print(f'Redis carrito: disponible; TTL configurado={REDIS_TTL}s')
+    except Exception as exc:
+        print(f'Redis carrito: ERROR ({exc})')
+        ok = False
 
     # ── MySQL ─────────────────────────────────────────────────────────────────
     try:

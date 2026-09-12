@@ -38,6 +38,9 @@ def procesar_checkout(
     direccion_id: int,
     metodo_pago_id: int,
     items: list[CheckoutItem],
+    precios_esperados: dict[int, Decimal] | None = None,
+    confirmar_cambios_precio: bool = False,
+    precios_confirmados: dict[int, Decimal] | None = None,
 ) -> Pedido:
     """Bloquea oferta e inventario y crea el pedido completo atómicamente."""
     # Las ofertas e inventarios se bloquean con SELECT ... FOR UPDATE ordenados por id para evitar deadlocks
@@ -77,6 +80,44 @@ def procesar_checkout(
     offers = {offer.id: offer for offer in locked_offers}
     if len(offers) != len(offer_ids):
         raise CheckoutError('Una oferta dejó de estar disponible.', 'OFFER_NOT_FOUND')
+
+    # El precio de Redis solo representa lo visto al agregar. MySQL sigue
+    # siendo la autoridad y se compara después de bloquear las ofertas para
+    # que el valor no cambie entre la validación y la creación del pedido.
+    if precios_esperados is not None:
+        cambios = [
+            offer_id
+            for offer_id, offer in offers.items()
+            if precios_esperados.get(offer_id) != offer.precio_actual
+        ]
+        precios_visibles_desactualizados = (
+            precios_confirmados is not None
+            and bool(precios_confirmados)
+            and any(
+                precios_confirmados.get(offer_id) != offer.precio_actual
+                for offer_id, offer in offers.items()
+            )
+        )
+        if precios_visibles_desactualizados:
+            raise CheckoutError(
+                'Uno o más precios cambiaron. Revisa el total y confirma nuevamente.',
+                'PRICE_CHANGED',
+            )
+        if cambios:
+            confirmados_coinciden = (
+                confirmar_cambios_precio
+                and precios_confirmados is not None
+                and all(offer_id in precios_confirmados for offer_id in offer_ids)
+                and all(
+                    precios_confirmados.get(offer_id) == offers[offer_id].precio_actual
+                    for offer_id in offer_ids
+                )
+            )
+            if not confirmados_coinciden:
+                raise CheckoutError(
+                    'Uno o más precios cambiaron. Revisa el total y confirma nuevamente.',
+                    'PRICE_CHANGED',
+                )
 
     inventories = (
         db.execute(

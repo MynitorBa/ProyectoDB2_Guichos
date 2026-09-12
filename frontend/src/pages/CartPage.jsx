@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Trash2, ShoppingBag, ArrowRight, AlertTriangle, XCircle } from 'lucide-react'
+import { Trash2, ShoppingBag, ArrowRight, AlertTriangle, XCircle, Minus, Plus } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useCart } from '../context/CartContext'
 import { Button } from '../components/ui/button'
@@ -12,7 +12,7 @@ const ease = [0.23, 1, 0.32, 1]
 const IVA_RATE = 0.12
 
 export default function CartPage() {
-  const { cart, loading, fetchCart, remove } = useCart()
+  const { cart, loading, fetchCart, remove, update } = useCart()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -182,6 +182,29 @@ export default function CartPage() {
                     <p className="font-mono font-bold text-base text-[var(--color-text-primary)]">
                       {formatQ(item.subtotal ?? item.precio * item.cantidad)}
                     </p>
+                  )}
+                  {!item.sin_stock && (
+                    <div className="flex items-center justify-end gap-1 mt-2">
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        aria-label={`Reducir cantidad de ${item.nombre}`}
+                        disabled={loading || item.cantidad <= 1}
+                        onClick={() => update(item.oferta_id, item.cantidad - 1)}
+                      >
+                        <Minus size={13} />
+                      </Button>
+                      <span className="w-8 text-center font-mono text-sm">{item.cantidad}</span>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        aria-label={`Aumentar cantidad de ${item.nombre}`}
+                        disabled={loading || item.cantidad >= item.stock_disponible}
+                        onClick={() => update(item.oferta_id, item.cantidad + 1)}
+                      >
+                        <Plus size={13} />
+                      </Button>
+                    </div>
                   )}
                   <Button
                     variant="ghost"

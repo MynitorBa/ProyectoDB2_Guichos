@@ -1,5 +1,6 @@
 import logging
 from datetime import timezone
+from decimal import Decimal, InvalidOperation
 
 import redis as redis_lib
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -17,7 +18,7 @@ from app.models.pedido import Pedido
 from app.models.pedido_vendedor import PedidoVendedor
 from app.models.vendedor import Vendedor
 from app.models.notificacion import Notificacion
-from app.schemas.checkout import CheckoutRequest, CheckoutResponse
+from app.schemas.checkout import CheckoutItem, CheckoutRequest, CheckoutResponse
 from app.services.checkout_service import procesar_checkout, CheckoutError
 from app.services.invoice_service import generar_factura_pdf
 from app.services.email_service import enviar_factura_por_correo
@@ -116,6 +117,33 @@ def checkout(
     mongo_db: Database = Depends(get_mongo_db),
     r: redis_lib.Redis = Depends(get_redis),
 ):
+    # La selección comprable se obtiene del carrito del usuario autenticado.
+    # Nunca se confía en una lista de ofertas enviada por el navegador.
+    try:
+        redis_items = rcs.obtener_carrito(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        logger.error('Redis no disponible antes del checkout: %s', exc)
+        raise HTTPException(
+            status_code=503,
+            detail={'detail': 'El carrito no está disponible temporalmente.', 'code': 'CART_UNAVAILABLE'},
+        ) from exc
+
+    try:
+        checkout_items = [
+            CheckoutItem(oferta_id=item['oferta_id'], cantidad=int(item['cantidad']))
+            for item in redis_items
+        ]
+        precios_carrito = {
+            item['oferta_id']: Decimal(str(item['precio_al_agregar']))
+            for item in redis_items
+        }
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+        logger.error('Carrito Redis inválido para usuario %d: %s', current_user.id, exc)
+        raise HTTPException(
+            status_code=409,
+            detail={'detail': 'El carrito contiene datos inválidos. Vacíalo e intenta nuevamente.', 'code': 'INVALID_CART'},
+        ) from exc
+
     try:
         pedido = procesar_checkout(
             db,
@@ -123,13 +151,25 @@ def checkout(
             usuario_id=current_user.id,
             direccion_id=payload.direccion_id,
             metodo_pago_id=payload.metodo_pago_id,
-            items=payload.items,
+            items=checkout_items,
+            precios_esperados=precios_carrito,
+            confirmar_cambios_precio=payload.confirmar_cambios_precio,
+            precios_confirmados=payload.precios_confirmados,
         )
     except CheckoutError as e:
-        raise HTTPException(status_code=422, detail={'detail': e.message, 'code': e.code})
+        db.rollback()
+        status = 409 if e.code == 'PRICE_CHANGED' else 422
+        raise HTTPException(status_code=status, detail={'detail': e.message, 'code': e.code})
 
-    # Limpiar el carrito Redis una vez que el pedido está confirmado en MySQL
-    rcs.vaciar_carrito(r, current_user.id)
+    # MySQL ya confirmó el pedido. Una falla al limpiar Redis se registra, pero
+    # nunca convierte una compra exitosa en un 500 engañoso para el usuario.
+    try:
+        rcs.vaciar_carrito(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        logger.error(
+            'Pedido #%d confirmado, pero no se pudo limpiar carrito Redis del usuario %d: %s',
+            pedido.id, current_user.id, exc,
+        )
 
     # Notify vendors (synchronous, exceptions are caught internally)
     _crear_notificaciones_vendedores(db, pedido, current_user)

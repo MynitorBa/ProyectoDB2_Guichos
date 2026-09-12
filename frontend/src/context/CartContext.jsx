@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react'
-import { getCart, addItem, removeItem } from '../api/cart'
+import { getCart, addItem, removeItem, updateCantidad } from '../api/cart'
 
 const CartContext = createContext(null)
 
@@ -20,20 +20,36 @@ export function CartProvider({ children }) {
 
   const add = async (oferta_id, cantidad = 1) => {
     setLoading(true)
-    await addItem(oferta_id, cantidad)
-    await fetchCart()
-    setLoading(false)
+    try {
+      await addItem(oferta_id, cantidad)
+      await fetchCart()
+    } finally {
+      setLoading(false)
+    }
   }
 
   const remove = async (item_id) => {
     setLoading(true)
-    await removeItem(item_id)
-    await fetchCart()
-    setLoading(false)
+    try {
+      await removeItem(item_id)
+      await fetchCart()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const update = async (oferta_id, cantidad) => {
+    setLoading(true)
+    try {
+      await updateCantidad(oferta_id, cantidad)
+      await fetchCart()
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <CartContext.Provider value={{ cart, loading, fetchCart, add, remove }}>
+    <CartContext.Provider value={{ cart, loading, fetchCart, add, remove, update }}>
       {children}
     </CartContext.Provider>
   )

@@ -72,6 +72,19 @@ if (-not $SkipDocker) {
     Start-Sleep 5
     $mongoHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_mongo 2>$null
     Write-Host "  MongoDB estado: $mongoHealth" -ForegroundColor Green
+
+    Write-Host "  Esperando Redis..." -ForegroundColor Yellow
+    $redisHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_redis 2>$null
+    $redisWaited = 0
+    while ($redisHealth -ne 'healthy' -and $redisWaited -lt 60) {
+        Start-Sleep 2
+        $redisWaited += 2
+        $redisHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_redis 2>$null
+    }
+    if ($redisHealth -ne 'healthy') {
+        throw 'Redis no estuvo disponible después de 60 segundos.'
+    }
+    Write-Host "  Redis listo." -ForegroundColor Green
 } else {
     Write-Host "[2/8] Docker: OMITIDO" -ForegroundColor Gray
 }
@@ -167,6 +180,9 @@ if ($LASTEXITCODE -ne 0) {
 
 & $python scripts\apply_fulfillment.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la migración de envíos parciales y solicitudes de variantes.' }
+
+& $python scripts\migrate_cart_to_redis.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a Redis.' }
 
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan

@@ -18,6 +18,13 @@ from app.services import redis_cart_service as rcs
 router = APIRouter(prefix='/cart', tags=['Carrito'])
 
 
+def _cart_unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={'detail': 'El carrito no está disponible temporalmente.', 'code': 'CART_UNAVAILABLE'},
+    )
+
+
 class CartItemRequest(BaseModel):
     oferta_id: int
     cantidad: int = 1
@@ -37,7 +44,10 @@ def ver_carrito(
     mongo_db: Database = Depends(get_mongo_db),
     r: redis_lib.Redis = Depends(get_redis),
 ):
-    items_raw = rcs.obtener_carrito(r, current_user.id)
+    try:
+        items_raw = rcs.obtener_carrito(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
     if not items_raw:
         return {'items': [], 'total': 0, 'tiene_alertas': False, 'ttl_segundos': -2}
 
@@ -57,7 +67,7 @@ def ver_carrito(
         offer = db.get(Oferta, oferta_id)
         current_price = offer.precio_actual if offer else precio_al_agregar
         available_stock = stocks.get(oferta_id, 0) if offer else 0
-        sin_stock = offer is None or offer.estado != 'activa' or available_stock == 0
+        sin_stock = offer is None or offer.estado != 'activa' or available_stock < cantidad
         precio_cambio = current_price != precio_al_agregar
         if sin_stock or precio_cambio:
             tiene_alertas = True
@@ -92,11 +102,16 @@ def ver_carrito(
             'subtotal': float(subtotal) if not sin_stock else 0.0,
         })
 
+    try:
+        ttl = rcs.ttl_restante(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
+
     return {
         'items': items,
         'total': float(total),
         'tiene_alertas': tiene_alertas,
-        'ttl_segundos': rcs.ttl_restante(r, current_user.id),
+        'ttl_segundos': ttl,
     }
 
 
@@ -118,18 +133,23 @@ def agregar_item(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    rcs.agregar_item(
-        r,
-        usuario_id=current_user.id,
-        oferta_id=offer.id,
-        cantidad=payload.cantidad,
-        precio_al_agregar=offer.precio_actual,
-        producto_ref=offer.producto_ref,
-    )
+    try:
+        nueva_cantidad = rcs.agregar_item(
+            r,
+            usuario_id=current_user.id,
+            oferta_id=offer.id,
+            cantidad=payload.cantidad,
+            precio_al_agregar=offer.precio_actual,
+            producto_ref=offer.producto_ref,
+        )
+        ttl = rcs.ttl_restante(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
     return {
         'mensaje': 'Oferta agregada al carrito.',
         'oferta_id': offer.id,
-        'ttl_segundos': rcs.ttl_restante(r, current_user.id),
+        'cantidad': nueva_cantidad,
+        'ttl_segundos': ttl,
     }
 
 
@@ -146,11 +166,18 @@ def actualizar_cantidad(
     if payload.cantidad < 1:
         raise HTTPException(status_code=422, detail='La cantidad debe ser positiva.')
 
-    ok = rcs.actualizar_cantidad(r, current_user.id, oferta_id, payload.cantidad)
+    try:
+        ok = rcs.actualizar_cantidad(r, current_user.id, oferta_id, payload.cantidad)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
     if not ok:
         raise HTTPException(status_code=404, detail='Ítem no encontrado en el carrito.')
 
-    return {'mensaje': 'Cantidad actualizada.', 'ttl_segundos': rcs.ttl_restante(r, current_user.id)}
+    try:
+        ttl = rcs.ttl_restante(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
+    return {'mensaje': 'Cantidad actualizada.', 'ttl_segundos': ttl}
 
 
 # ── DELETE /cart/items/{oferta_id} ────────────────────────────────────────────
@@ -162,7 +189,10 @@ def eliminar_item(
     current_user: Usuario = Depends(get_current_user),
     r: redis_lib.Redis = Depends(get_redis),
 ):
-    ok = rcs.eliminar_item(r, current_user.id, oferta_id)
+    try:
+        ok = rcs.eliminar_item(r, current_user.id, oferta_id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
     if not ok:
         raise HTTPException(status_code=404, detail='Ítem no encontrado en el carrito.')
 
@@ -175,4 +205,7 @@ def vaciar_carrito(
     current_user: Usuario = Depends(get_current_user),
     r: redis_lib.Redis = Depends(get_redis),
 ):
-    rcs.vaciar_carrito(r, current_user.id)
+    try:
+        rcs.vaciar_carrito(r, current_user.id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc

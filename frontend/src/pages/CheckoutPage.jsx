@@ -147,6 +147,7 @@ export default function CheckoutPage() {
   }, [])
 
   const items = cart?.items || []
+  const priceChanges = items.filter((item) => item.precio_cambio && !item.sin_stock)
 
   async function handleConfirm() {
     setError('')
@@ -160,11 +161,16 @@ export default function CheckoutPage() {
         direccion_id: Number(selectedAddress),
         metodo_pago_id: Number(selectedPayment),
         items: orderItems,
+        confirmar_cambios_precio: priceChanges.length > 0,
+        precios_confirmados: Object.fromEntries(
+          items.map((item) => [item.oferta_id, item.precio])
+        ),
       })
       setSuccessData(res.data)
       await fetchCart()
     } catch (err) {
       const raw = err?.response?.data?.detail
+      const code = typeof raw === 'object' ? raw?.code : err?.response?.data?.code
       const msg =
         typeof raw === 'string'
           ? raw
@@ -173,6 +179,14 @@ export default function CheckoutPage() {
           : Array.isArray(raw)
           ? 'Datos de envío inválidos. Verifica tu dirección y método de pago.'
           : 'No se pudo procesar el pedido. Intenta de nuevo.'
+      if (code === 'PRICE_CHANGED') {
+        try {
+          const refreshed = await getCart()
+          setCart(refreshed.data)
+        } catch {
+          // El mensaje original de cambio de precio sigue siendo el relevante.
+        }
+      }
       setError(msg)
       toast.error(msg)
     } finally {
@@ -381,6 +395,19 @@ export default function CheckoutPage() {
                 {error && (
                   <div className="rounded-[var(--radius-md)] bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 px-4 py-3">
                     <p className="text-sm font-sans text-[var(--color-error)]">{error}</p>
+                  </div>
+                )}
+
+                {priceChanges.length > 0 && (
+                  <div className="rounded-[var(--radius-md)] bg-[var(--color-warning,#f59e0b)]/10 border border-[var(--color-warning,#f59e0b)]/40 px-4 py-3">
+                    <p className="text-sm font-sans font-semibold text-[var(--color-warning,#f59e0b)]">
+                      {priceChanges.length === 1
+                        ? 'El precio de un artículo cambió.'
+                        : 'Los precios de algunos artículos cambiaron.'}
+                    </p>
+                    <p className="text-xs font-sans text-[var(--color-text-secondary)] mt-1">
+                      El total muestra los precios actuales. Al confirmar aceptas estos valores.
+                    </p>
                   </div>
                 )}
 

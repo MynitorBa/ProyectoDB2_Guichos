@@ -11,6 +11,18 @@ Write-Host "`nArrancar TiendaYa..." -ForegroundColor Cyan
 Write-Host "Levantando contenedores..." -ForegroundColor Yellow
 docker compose up -d
 
+Write-Host "Esperando Redis..." -ForegroundColor Yellow
+$redisReady = $false
+for ($attempt = 1; $attempt -le 30; $attempt++) {
+    $redisHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_redis 2>$null
+    if ($redisHealth -eq 'healthy') {
+        $redisReady = $true
+        break
+    }
+    Start-Sleep -Seconds 2
+}
+if (-not $redisReady) { throw 'Redis no estuvo disponible después de 60 segundos.' }
+
 # Un pull puede incorporar migraciones aditivas nuevas. Aplicarlas aquí evita
 # iniciar una API nueva contra un esquema anterior (la causa típica de 500 tras
 # actualizar la rama). Las operaciones son idempotentes.
@@ -42,6 +54,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de reglas del catálogo.' }
     & $python scripts\apply_fulfillment.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de envíos y variantes.' }
+    & $python scripts\migrate_cart_to_redis.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a Redis.' }
     & $python scripts\repair_catalog_data.py --apply
     if ($LASTEXITCODE -ne 0) { throw 'Falló la reconciliación de atributos.' }
 } finally {
@@ -66,6 +80,7 @@ Write-Host "  Frontend:     http://localhost:5173" -ForegroundColor Cyan
 Write-Host "  Backend API:  http://localhost:8000/docs" -ForegroundColor Cyan
 Write-Host "  Adminer:      http://localhost:8080  (server: mysql, user: tiendaya, pass: tiendaya123)" -ForegroundColor Cyan
 Write-Host "  Mongo Express: http://localhost:8081" -ForegroundColor Cyan
+Write-Host "  Redis Commander: http://localhost:8082" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Admin: admin@tiendaya.gt / password123" -ForegroundColor Yellow
 Write-Host ""
