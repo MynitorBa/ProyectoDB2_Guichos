@@ -194,6 +194,95 @@ function OfferForm({ offer }) {
   )
 }
 
+function localDateTime(minutesFromNow) {
+  const date = new Date(Date.now() + minutesFromNow * 60_000)
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
+  return date.toISOString().slice(0, 16)
+}
+
+function FlashSalePanel({ offer }) {
+  const [price, setPrice] = useState(Math.max(0.01, Number(offer.precio) * 0.9).toFixed(2))
+  const [units, setUnits] = useState(1)
+  const [starts, setStarts] = useState(localDateTime(0))
+  const [ends, setEnds] = useState(localDateTime(60))
+  const cache = useQueryClient()
+  const { data: promotions = [] } = useQuery({
+    queryKey: ['vendor-flash-sales'],
+    queryFn: () => api.get('/vendor/flash-sales').then(r => r.data),
+  })
+  const current = promotions.find(p => p.oferta_id === offer.id && ['programada', 'activa'].includes(p.estado))
+  const mutation = useMutation({
+    mutationFn: () => api.post('/vendor/flash-sales', {
+      oferta_id: offer.id,
+      precio_promocional: Number(price),
+      unidades: Number(units),
+      inicia_en: new Date(starts).toISOString(),
+      finaliza_en: new Date(ends).toISOString(),
+    }),
+    onSuccess: () => {
+      toast.success('Promoción flash creada y unidades apartadas.')
+      cache.invalidateQueries({ queryKey: ['vendor-flash-sales'] })
+      cache.invalidateQueries({ queryKey: ['vendor-offer'] })
+      cache.invalidateQueries({ queryKey: ['vendor-offers'] })
+    },
+    onError: e => toast.error(e.response?.data?.detail || 'No se pudo crear la promoción.'),
+  })
+  const cancelMutation = useMutation({
+    mutationFn: promotionId => api.post(`/vendor/flash-sales/${promotionId}/cancel`),
+    onSuccess: () => {
+      toast.success('Promoción cancelada; las unidades restantes volvieron al inventario normal.')
+      cache.invalidateQueries({ queryKey: ['vendor-flash-sales'] })
+      cache.invalidateQueries({ queryKey: ['vendor-offer'] })
+      cache.invalidateQueries({ queryKey: ['vendor-offers'] })
+    },
+    onError: e => toast.error(e.response?.data?.detail || 'No se pudo cancelar la promoción.'),
+  })
+
+  return (
+    <section className="border border-[var(--color-border)] rounded-xl p-5 space-y-4 bg-[var(--color-surface)]">
+      <div>
+        <h2 className="font-display font-semibold text-lg">Venta flash</h2>
+        <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+          Aparta unidades de esta oferta a un precio especial. Cada comprador podrá reservar una durante cinco minutos.
+        </p>
+      </div>
+      {current ? (
+        <div className="space-y-3">
+          <div className="rounded-lg bg-[var(--color-background)] border border-[var(--color-border)] p-4 grid sm:grid-cols-4 gap-3 text-sm">
+            <div><span className="text-[var(--color-text-muted)] block">Estado</span><Badge variant={current.estado === 'activa' ? 'success' : 'warning'}>{current.estado}</Badge></div>
+            <div><span className="text-[var(--color-text-muted)] block">Precio flash</span><strong>{formatQ(current.precio_promocional)}</strong></div>
+            <div><span className="text-[var(--color-text-muted)] block">Disponibles</span><strong>{current.unidades_disponibles} / {current.unidades_totales}</strong></div>
+            <div><span className="text-[var(--color-text-muted)] block">Finaliza</span><strong>{new Date(current.finaliza_en + 'Z').toLocaleString()}</strong></div>
+          </div>
+          <Button
+            type="button"
+            variant="destructive"
+            loading={cancelMutation.isPending}
+            onClick={() => {
+              if (window.confirm('¿Cancelar la promoción y liberar las unidades que no se vendieron?')) {
+                cancelMutation.mutate(current.id)
+              }
+            }}
+          >
+            Cancelar promoción
+          </Button>
+        </div>
+      ) : (
+        <form className="space-y-4" onSubmit={e => { e.preventDefault(); mutation.mutate() }}>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-1.5"><Label>Precio flash (GTQ)</Label><Input type="number" min="0.01" max={Math.max(0.01, Number(offer.precio) - 0.01)} step="0.01" required value={price} onChange={e => setPrice(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Unidades</Label><Input type="number" min="1" max={offer.stock} step="1" required value={units} onChange={e => setUnits(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Inicio</Label><Input type="datetime-local" required value={starts} onChange={e => setStarts(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Finalización</Label><Input type="datetime-local" required value={ends} onChange={e => setEnds(e.target.value)} /></div>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">Disponibles para apartar: {offer.stock}. Las unidades no vendidas regresan al inventario normal.</p>
+          <Button type="submit" loading={mutation.isPending} disabled={offer.stock < 1}>Crear promoción flash</Button>
+        </form>
+      )}
+    </section>
+  )
+}
+
 export default function VendorOfferPage() {
   const { id } = useParams()
   const { data, isLoading, isError, refetch } = useQuery({
@@ -210,6 +299,7 @@ export default function VendorOfferPage() {
       ) : (
         <>
           <OfferForm key={`${data.id}-${data.version}`} offer={data} />
+          <FlashSalePanel offer={data} />
           <Button variant="secondary" onClick={() => refetch()}>Recargar datos actuales</Button>
         </>
       )}

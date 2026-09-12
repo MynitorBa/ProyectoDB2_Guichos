@@ -156,12 +156,13 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Variantes dinámicas de producto](docs/22-variantes-dinamicas.md)
 - [Paneles, envíos parciales y solicitudes de variantes: instalación y pruebas](docs/23-paneles-envios-solicitudes-variantes.md)
 - [Carrito activo, concurrencia y checkout con Redis](docs/24-carrito-redis.md)
+- [Ventas flash por vendedor con reservas atómicas](docs/25-ventas-flash.md)
 
 ## Entregas del proyecto
 
 | Entrega | Estado | Contenido |
 |---|---|---|
 | **Entrega 1** | **Completada** | MySQL normalizado + migración a MongoDB + historial por eventos |
-| Entrega 2 | En progreso | Redis (carrito con TTL y base para promociones concurrentes) |
+| Entrega 2 | En progreso | Redis (carrito con TTL y ventas flash concurrentes por vendedor) |
 | Entrega 3 | Pendiente | Base de datos columnar/grafos (analytics, recomendaciones) |
 | Entrega 4 | Pendiente | Motor de búsqueda + base vectorial (búsqueda semántica) |

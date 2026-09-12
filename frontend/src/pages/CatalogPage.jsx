@@ -5,6 +5,7 @@ import {
   SlidersHorizontal, X, ChevronLeft, ChevronRight, Search,
   Monitor, Smartphone, Headphones, Shirt, Layers, ShoppingBag,
   BookOpen, Apple, Home, Dumbbell, Wrench, Gamepad2,
+  Zap,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { getProducts, getCategories } from '../api/products'
@@ -39,6 +40,8 @@ const SORT_OPTIONS = [
   { value: 'reciente',    label: 'Más recientes' },
   { value: 'precio_asc',  label: 'Precio: menor a mayor' },
   { value: 'precio_desc', label: 'Precio: mayor a menor' },
+  { value: 'mas_vendidos', label: 'Más vendidos' },
+  { value: 'descuento_desc', label: 'Mayor descuento flash' },
 ]
 
 function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
@@ -84,6 +87,24 @@ function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
           })}
         </div>
       </div>
+
+      <Separator />
+
+      {/* Promociones flash */}
+      <button
+        type="button"
+        onClick={() => onFilterChange('solo_flash', !filters.solo_flash)}
+        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border font-sans text-sm transition-all ${
+          filters.solo_flash
+            ? 'border-amber-400 bg-amber-50 text-amber-800 font-semibold'
+            : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-amber-300'
+        }`}
+      >
+        <span className="flex items-center gap-2"><Zap size={14} fill="currentColor" /> Solo ofertas flash</span>
+        <span className={`w-8 h-4 rounded-full p-0.5 transition-colors ${filters.solo_flash ? 'bg-amber-500' : 'bg-[var(--color-border)]'}`}>
+          <span className={`block w-3 h-3 bg-white rounded-full transition-transform ${filters.solo_flash ? 'translate-x-4' : ''}`} />
+        </span>
+      </button>
 
       <Separator />
 
@@ -146,35 +167,49 @@ export default function CatalogPage() {
 
   const categoria = searchParams.get('categoria') || ''
   const q = searchParams.get('q') || ''
+  const orderFromUrl = searchParams.get('orden') || 'reciente'
+  const flashFromUrl = searchParams.get('flash') === '1'
 
   const [localSearch, setLocalSearch] = useState(q)
   const [filters, setFilters] = useState({
     categoria,
     precio_min: '',
     precio_max: '',
-    sort: 'reciente',
+    sort: orderFromUrl,
+    solo_flash: flashFromUrl,
   })
 
   useEffect(() => {
-    setFilters((prev) => ({ ...prev, categoria }))
+    setFilters((prev) => ({
+      ...prev,
+      categoria,
+      sort: orderFromUrl,
+      solo_flash: flashFromUrl,
+    }))
     setPage(1)
-  }, [categoria])
+  }, [categoria, orderFromUrl, flashFromUrl])
 
   useEffect(() => { setLocalSearch(q) }, [q])
 
   function updateFilter(key, value) {
     setFilters((prev) => ({ ...prev, [key]: value }))
     setPage(1)
-    if (key === 'categoria') {
+    if (['categoria', 'sort', 'solo_flash'].includes(key)) {
       const next = new URLSearchParams(searchParams)
-      if (value) next.set('categoria', value)
-      else next.delete('categoria')
+      if (key === 'categoria') {
+        if (value) next.set('categoria', value)
+        else next.delete('categoria')
+      } else if (key === 'sort') {
+        if (value && value !== 'reciente') next.set('orden', value)
+        else next.delete('orden')
+      } else if (value) next.set('flash', '1')
+      else next.delete('flash')
       setSearchParams(next)
     }
   }
 
   function clearFilters() {
-    setFilters({ categoria: '', precio_min: '', precio_max: '', sort: 'reciente' })
+    setFilters({ categoria: '', precio_min: '', precio_max: '', sort: 'reciente', solo_flash: false })
     setLocalSearch('')
     setSearchParams({})
     setPage(1)
@@ -197,6 +232,7 @@ export default function CatalogPage() {
     ...(filters.precio_min && { precio_min: filters.precio_min }),
     ...(filters.precio_max && { precio_max: filters.precio_max }),
     ...(filters.sort && { orden: filters.sort }),
+    ...(filters.solo_flash && { solo_flash: true }),
   }
 
   const { data, isLoading, isError } = useQuery({
@@ -215,9 +251,9 @@ export default function CatalogPage() {
   const categories = categoriesData || []
 
   const activeCategory = categories.find((c) => c.slug === filters.categoria)
-  const hasActiveFilters = filters.categoria || filters.precio_min || filters.precio_max || q
+  const hasActiveFilters = filters.categoria || filters.precio_min || filters.precio_max || filters.solo_flash || q
 
-  const gridKey = `${filters.categoria}-${q}-${filters.sort}-${page}`
+  const gridKey = `${filters.categoria}-${q}-${filters.sort}-${filters.solo_flash}-${page}`
 
   // Páginas a mostrar (máx 5)
   function getPageRange() {
@@ -249,7 +285,7 @@ export default function CatalogPage() {
               TiendaYa
             </p>
             <h1 className="font-display font-bold text-white leading-tight" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', letterSpacing: '-0.02em' }}>
-              {activeCategory ? activeCategory.nombre : q ? `"${q}"` : 'Catálogo de productos'}
+              {filters.solo_flash ? 'Ofertas flash' : activeCategory ? activeCategory.nombre : q ? `"${q}"` : 'Catálogo de productos'}
             </h1>
             {data?.total !== undefined && (
               <p className="font-sans text-sm text-white/65 mt-1">
@@ -300,6 +336,12 @@ export default function CatalogPage() {
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold bg-[var(--color-border)] text-[var(--color-text-secondary)]">
                     Q{filters.precio_min || '0'} – Q{filters.precio_max || '∞'}
                     <button onClick={() => { updateFilter('precio_min', ''); updateFilter('precio_max', '') }} className="hover:opacity-70"><X size={11} /></button>
+                  </span>
+                )}
+                {filters.solo_flash && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold bg-amber-100 text-amber-800">
+                    <Zap size={11} fill="currentColor" /> Ofertas flash
+                    <button onClick={() => updateFilter('solo_flash', false)} className="hover:opacity-70"><X size={11} /></button>
                   </span>
                 )}
               </>

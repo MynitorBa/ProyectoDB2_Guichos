@@ -153,6 +153,22 @@ def main():
             else:
                 print('MySQL Fase 2: estructura aditiva instalada')
 
+            flash_tables = {'promociones_flash', 'reservas_flash'}
+            missing_flash = sorted(flash_tables - installed_tables)
+            flash_fks = {
+                'fk_pf_oferta', 'fk_pf_creador', 'fk_rf_promocion',
+                'fk_rf_usuario', 'fk_rf_pedido',
+            }
+            missing_flash_fks = sorted(flash_fks - installed_fks)
+            if missing_flash or missing_flash_fks:
+                print(
+                    f'MySQL ventas flash incompletas: tablas={missing_flash}, '
+                    f'FKs={missing_flash_fks}'
+                )
+                ok = False
+            else:
+                print('MySQL ventas flash: estructura e integridad listas')
+
             phase3_checks = {
                 'referencias sin oferta': """
                     SELECT COUNT(*) AS n

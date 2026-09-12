@@ -15,10 +15,12 @@ from app.models.pedido import Pedido, PedidoLinea
 from app.models.pedido_vendedor import PedidoDireccion, PedidoVendedor
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
+from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.schemas.checkout import CheckoutItem
 from app.services.offer_service import resolver_oferta_comprable
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.outbox_service import enqueue_outbox
+from app.core.time import utc_now
 
 IVA = Decimal('0.12')
 
@@ -41,6 +43,7 @@ def procesar_checkout(
     precios_esperados: dict[int, Decimal] | None = None,
     confirmar_cambios_precio: bool = False,
     precios_confirmados: dict[int, Decimal] | None = None,
+    promociones_flash: dict[int, dict] | None = None,
 ) -> Pedido:
     """Bloquea oferta e inventario y crea el pedido completo atómicamente."""
     # Las ofertas e inventarios se bloquean con SELECT ... FOR UPDATE ordenados por id para evitar deadlocks
@@ -81,6 +84,38 @@ def procesar_checkout(
     if len(offers) != len(offer_ids):
         raise CheckoutError('Una oferta dejó de estar disponible.', 'OFFER_NOT_FOUND')
 
+    promociones_flash = promociones_flash or {}
+    flash_context: dict[int, tuple[PromocionFlash, ReservaFlash]] = {}
+    applied_prices = {offer_id: offer.precio_actual for offer_id, offer in offers.items()}
+    now = utc_now()
+    for offer_id, context in promociones_flash.items():
+        if offer_id not in offers:
+            raise CheckoutError('La oferta flash dejó de estar disponible.', 'OFFER_NOT_FOUND')
+        promotion = db.execute(
+            select(PromocionFlash).where(
+                PromocionFlash.id == context['promocion_id']
+            ).with_for_update()
+        ).scalar_one_or_none()
+        reservation = db.execute(
+            select(ReservaFlash).where(
+                ReservaFlash.token == context['token']
+            ).with_for_update()
+        ).scalar_one_or_none()
+        if (
+            not promotion or not reservation
+            or promotion.oferta_id != offer_id
+            or promotion.estado not in {'programada', 'activa'}
+            or not (promotion.inicia_en <= now < promotion.finaliza_en)
+            or reservation.promocion_id != promotion.id
+            or reservation.usuario_id != usuario_id
+            or reservation.estado != 'reservada'
+            or reservation.expira_en <= now
+            or reservation.cantidad != quantities[offer_id]
+        ):
+            raise CheckoutError('La reserva flash venció o no es válida.', 'FLASH_RESERVATION_INVALID')
+        flash_context[offer_id] = (promotion, reservation)
+        applied_prices[offer_id] = reservation.precio_unitario
+
     # El precio de Redis solo representa lo visto al agregar. MySQL sigue
     # siendo la autoridad y se compara después de bloquear las ofertas para
     # que el valor no cambie entre la validación y la creación del pedido.
@@ -88,14 +123,14 @@ def procesar_checkout(
         cambios = [
             offer_id
             for offer_id, offer in offers.items()
-            if precios_esperados.get(offer_id) != offer.precio_actual
+            if precios_esperados.get(offer_id) != applied_prices[offer_id]
         ]
         precios_visibles_desactualizados = (
             precios_confirmados is not None
             and bool(precios_confirmados)
             and any(
-                precios_confirmados.get(offer_id) != offer.precio_actual
-                for offer_id, offer in offers.items()
+                precios_confirmados.get(offer_id) != applied_prices[offer_id]
+                for offer_id in offers
             )
         )
         if precios_visibles_desactualizados:
@@ -109,7 +144,7 @@ def procesar_checkout(
                 and precios_confirmados is not None
                 and all(offer_id in precios_confirmados for offer_id in offer_ids)
                 and all(
-                    precios_confirmados.get(offer_id) == offers[offer_id].precio_actual
+                    precios_confirmados.get(offer_id) == applied_prices[offer_id]
                     for offer_id in offer_ids
                 )
             )
@@ -138,7 +173,14 @@ def procesar_checkout(
                 f'Oferta id={offer_id} no tiene inventario registrado.',
                 'NO_INVENTORY',
             )
-        available = inventory.cantidad_disponible - inventory.cantidad_reservada
+        if offer_id in flash_context:
+            promotion, _ = flash_context[offer_id]
+            available = min(
+                inventory.cantidad_reservada,
+                promotion.unidades_totales - promotion.unidades_vendidas,
+            )
+        else:
+            available = inventory.cantidad_disponible - inventory.cantidad_reservada
         if available < quantity:
             raise CheckoutError(
                 f'Stock insuficiente para oferta id={offer_id}. '
@@ -157,7 +199,7 @@ def procesar_checkout(
     subtotal = Decimal('0')
     for offer_id, quantity in quantities.items():
         offer = offers[offer_id]
-        line_subtotal = offer.precio_actual * quantity
+        line_subtotal = applied_prices[offer_id] * quantity
         subtotal += line_subtotal
         subtotal_by_vendor[offer.vendedor_id] += line_subtotal
 
@@ -205,7 +247,7 @@ def procesar_checkout(
         offer = offers[offer_id]
         inventory = inventory_by_offer[offer_id]
         vendor = vendors[offer.vendedor_id]
-        line_subtotal = offer.precio_actual * quantity
+        line_subtotal = applied_prices[offer_id] * quantity
         product_name = offer.sku
         if mongo_db is not None and offer.producto_ref:
             try:
@@ -225,12 +267,21 @@ def procesar_checkout(
             sku_snapshot=offer.sku,
             producto_nombre=product_name,
             vendedor_nombre_snapshot=vendor.nombre_comercial,
-            precio_unitario=offer.precio_actual,
+            precio_unitario=applied_prices[offer_id],
             cantidad=quantity,
             subtotal_linea=line_subtotal,
         ))
 
         inventory.cantidad_disponible -= quantity
+        if offer_id in flash_context:
+            promotion, reservation = flash_context[offer_id]
+            inventory.cantidad_reservada -= quantity
+            promotion.unidades_vendidas += quantity
+            reservation.estado = 'convertida'
+            reservation.pedido_id = pedido.id
+            if promotion.unidades_vendidas >= promotion.unidades_totales:
+                promotion.estado = 'finalizada'
+            promotion.version += 1
         offer.version += 1  # Invalida ediciones de stock abiertas antes de la venta.
         projected_stock = max(0, inventory.cantidad_disponible)
         enqueue_outbox(
@@ -252,7 +303,7 @@ def procesar_checkout(
             inventario_id=inventory.id,
             tipo='salida',
             cantidad=quantity,
-            motivo='venta',
+            motivo='venta_flash' if offer_id in flash_context else 'venta',
             pedido_id=pedido.id,
             usuario_id=usuario_id,
         ))

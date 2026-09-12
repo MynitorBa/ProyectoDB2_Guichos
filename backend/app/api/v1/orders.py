@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import timezone
 from decimal import Decimal, InvalidOperation
 
@@ -23,6 +24,7 @@ from app.services.checkout_service import procesar_checkout, CheckoutError
 from app.services.invoice_service import generar_factura_pdf
 from app.services.email_service import enviar_factura_por_correo
 from app.services import redis_cart_service as rcs
+from app.services import flash_sale_service as flash
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/orders', tags=['Pedidos'])
@@ -144,6 +146,33 @@ def checkout(
             detail={'detail': 'El carrito contiene datos inválidos. Vacíalo e intenta nuevamente.', 'code': 'INVALID_CART'},
         ) from exc
 
+    flash_context = {}
+    for item in redis_items:
+        promotion_id = item.get('promocion_flash_id')
+        token = item.get('reserva_flash_token')
+        if promotion_id is None and token is None:
+            continue
+        if not promotion_id or not token:
+            raise HTTPException(
+                status_code=409,
+                detail={'detail': 'La reserva flash del carrito es inválida.', 'code': 'FLASH_RESERVATION_INVALID'},
+            )
+        reservation = flash.obtener_reserva(r, int(promotion_id), current_user.id)
+        if (
+            not reservation
+            or reservation.get('token') != token
+            or int(reservation.get('cantidad', 0)) != int(item['cantidad'])
+            or int(reservation.get('expira_ts', 0)) <= int(time.time())
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={'detail': 'La reserva flash venció. Retira el artículo y reserva nuevamente.', 'code': 'FLASH_RESERVATION_INVALID'},
+            )
+        flash_context[item['oferta_id']] = {
+            'promocion_id': int(promotion_id),
+            'token': token,
+        }
+
     try:
         pedido = procesar_checkout(
             db,
@@ -155,11 +184,27 @@ def checkout(
             precios_esperados=precios_carrito,
             confirmar_cambios_precio=payload.confirmar_cambios_precio,
             precios_confirmados=payload.precios_confirmados,
+            promociones_flash=flash_context,
         )
     except CheckoutError as e:
         db.rollback()
         status = 409 if e.code == 'PRICE_CHANGED' else 422
         raise HTTPException(status_code=status, detail={'detail': e.message, 'code': e.code})
+
+    # MySQL ya confirmó el pedido. Consumir la reserva no devuelve la unidad al
+    # cupo flash; la venta durable ya quedó registrada en MySQL.
+    for offer_id, context in flash_context.items():
+        try:
+            consumed = flash.consumir(
+                r, context['promocion_id'], current_user.id, context['token']
+            )
+            if not consumed:
+                logger.error(
+                    'Pedido #%d confirmado, reserva flash %s no estaba en Redis.',
+                    pedido.id, context['token'],
+                )
+        except redis_lib.RedisError as exc:
+            logger.error('Pedido #%d confirmado; falló cierre de reserva flash: %s', pedido.id, exc)
 
     # MySQL ya confirmó el pedido. Una falla al limpiar Redis se registra, pero
     # nunca convierte una compra exitosa en un 500 engañoso para el usuario.

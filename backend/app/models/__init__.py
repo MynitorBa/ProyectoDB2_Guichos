@@ -18,6 +18,7 @@ from app.models.oferta import Oferta, OfertaPrecioHistorial, OfertaEstadoHistori
 from app.models.pedido_vendedor import PedidoVendedor, PedidoDireccion
 from app.models.pedido_envio import PedidoEnvio, PedidoEnvioLinea
 from app.models.outbox import OutboxEvento
+from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.models.solicitud_catalogo import (
     SolicitudCatalogo, SolicitudCatalogoCategoria, SolicitudCatalogoImagen,
 )
@@ -37,6 +38,7 @@ __all__ = [
     'Oferta', 'OfertaPrecioHistorial', 'OfertaEstadoHistorial',
     'PedidoVendedor', 'PedidoDireccion',
     'OutboxEvento',
+    'PromocionFlash', 'ReservaFlash',
     'SolicitudCatalogo', 'SolicitudCatalogoCategoria',
     'SolicitudCatalogoImagen',
 ]

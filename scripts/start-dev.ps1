@@ -56,6 +56,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de envíos y variantes.' }
     & $python scripts\migrate_cart_to_redis.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a Redis.' }
+    & $python scripts\apply_flash_sales.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
     & $python scripts\repair_catalog_data.py --apply
     if ($LASTEXITCODE -ne 0) { throw 'Falló la reconciliación de atributos.' }
 } finally {

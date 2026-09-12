@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Zap } from 'lucide-react'
 import { motion, useInView } from 'motion/react'
 import { getProducts, getCategories } from '../api/products'
 import { ProductCard } from '../components/product/ProductCard'
@@ -29,7 +29,12 @@ export default function HomePage() {
   const navigate = useNavigate()
   const { data: featuredData, isLoading } = useQuery({
     queryKey: ['products', 'featured'],
-    queryFn: () => getProducts({ page_size: 8 }).then(r => r.data),
+    queryFn: () => getProducts({ page_size: 8, orden: 'mas_vendidos' }).then(r => r.data),
+  })
+  const { data: flashData } = useQuery({
+    queryKey: ['products', 'flash-home'],
+    queryFn: () => getProducts({ page_size: 8, solo_flash: true, orden: 'descuento_desc' }).then(r => r.data),
+    refetchInterval: 30_000,
   })
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
@@ -37,6 +42,7 @@ export default function HomePage() {
   })
 
   const products = featuredData?.items || []
+  const flashProducts = flashData?.items || []
   const categories = categoriesData || []
 
   function scrollCarousel(dir) {
@@ -126,6 +132,31 @@ export default function HomePage() {
         </div>
 
       </section>
+
+      {flashProducts.length > 0 && (
+        <section className="py-16 bg-gradient-to-br from-amber-50 to-orange-50 border-y border-amber-200">
+          <div className="max-w-[1320px] mx-auto px-6 lg:px-12">
+            <Reveal className="flex items-end justify-between mb-8">
+              <div>
+                <p className="flex items-center gap-1.5 font-sans text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700 mb-2">
+                  <Zap size={13} fill="currentColor" /> Por tiempo limitado
+                </p>
+                <h2 className="font-display font-bold text-[var(--color-text-primary)] text-3xl">Ofertas flash</h2>
+              </div>
+              <Button variant="secondary" size="sm" asChild>
+                <Link to="/catalog?flash=1&orden=descuento_desc">Ver todas <ArrowRight size={13} /></Link>
+              </Button>
+            </Reveal>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-5">
+              {flashProducts.map((product, index) => (
+                <motion.div key={product._id} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: (index % 4) * 0.06, duration: 0.5, ease }}>
+                  <ProductCard product={product} />
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
 
       {/* ══════════════════════════════════════════

@@ -65,6 +65,12 @@ if #values > 0 then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1])) end
 return values
 """
 
+_SET_FLASH_ITEM_LUA = """
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
+return 1
+"""
+
 
 def _key(usuario_id: int) -> str:
     return f"carrito:{usuario_id}"
@@ -107,6 +113,29 @@ def agregar_item(
         producto_ref or '',
         _TTL,
     ))
+
+
+def establecer_item_flash(
+    r: redis.Redis,
+    usuario_id: int,
+    oferta_id: int,
+    cantidad: int,
+    precio_promocional: Decimal,
+    producto_ref: str,
+    promocion_id: int,
+    reserva_token: str,
+) -> None:
+    """Coloca la reserva flash como la única selección de esa oferta."""
+    datos = json.dumps({
+        'cantidad': cantidad,
+        'precio_al_agregar': str(precio_promocional),
+        'producto_ref': producto_ref,
+        'promocion_flash_id': promocion_id,
+        'reserva_flash_token': reserva_token,
+    })
+    r.eval(
+        _SET_FLASH_ITEM_LUA, 1, _key(usuario_id), str(oferta_id), datos, _TTL
+    )
 
 
 def actualizar_cantidad(

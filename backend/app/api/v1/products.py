@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
+from app.core.db_redis import get_redis
 from app.models.producto_imagen import ProductoImagen
 from app.services import catalog_service
 
@@ -21,10 +22,12 @@ def listar_productos(
     q: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    orden: str = Query('precio_asc', enum=['precio_asc', 'precio_desc', 'nombre_asc', 'reciente']),
+    orden: str = Query('precio_asc', enum=['precio_asc', 'precio_desc', 'nombre_asc', 'reciente', 'mas_vendidos', 'descuento_desc']),
     vendedor_id: int | None = Query(None),
+    solo_flash: bool = Query(False),
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
+    redis_db = Depends(get_redis),
 ):
     return catalog_service.listar_productos(
         db,
@@ -38,6 +41,8 @@ def listar_productos(
         page_size=page_size,
         orden=orden,
         vendedor_id=vendedor_id,
+        solo_flash=solo_flash,
+        redis_db=redis_db,
     )
 
 

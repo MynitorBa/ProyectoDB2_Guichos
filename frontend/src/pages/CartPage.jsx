@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Trash2, ShoppingBag, ArrowRight, AlertTriangle, XCircle, Minus, Plus } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -10,6 +10,17 @@ import { formatQ } from '../lib/utils'
 
 const ease = [0.23, 1, 0.32, 1]
 const IVA_RATE = 0.12
+
+function FlashCountdown({ expiresAt }) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    const tick = () => setSeconds(Math.max(0, Math.floor((new Date(`${expiresAt}Z`).getTime() - Date.now()) / 1000)))
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [expiresAt])
+  return <>{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}</>
+}
 
 export default function CartPage() {
   const { cart, loading, fetchCart, remove, update } = useCart()
@@ -25,9 +36,10 @@ export default function CartPage() {
   const subtotal = total / (1 + IVA_RATE)
   const iva = total - subtotal
 
-  const itemsSinStock = items.filter((i) => i.sin_stock)
+  const reservasVencidas = items.filter((i) => i.reserva_flash_vencida)
+  const itemsSinStock = items.filter((i) => i.sin_stock && !i.reserva_flash_vencida)
   const itemsCambioPrecio = items.filter((i) => i.precio_cambio && !i.sin_stock)
-  const hayAlertas = itemsSinStock.length > 0 || itemsCambioPrecio.length > 0
+  const hayAlertas = reservasVencidas.length > 0 || itemsSinStock.length > 0 || itemsCambioPrecio.length > 0
 
   if (loading && items.length === 0) {
     return (
@@ -93,6 +105,17 @@ export default function CartPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease, delay: 0.1 }}
           >
+            {reservasVencidas.length > 0 && (
+              <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-amber-400 bg-amber-50 px-4 py-3">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-700" />
+                <div>
+                  <p className="font-sans font-semibold text-sm text-amber-800">La reserva flash venció</p>
+                  <p className="font-sans text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    {reservasVencidas.map((i) => i.nombre).join(', ')} — retírala y vuelve a reservar si la promoción continúa activa.
+                  </p>
+                </div>
+              </div>
+            )}
             {itemsSinStock.length > 0 && (
               <div className="flex items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-error)]/40 bg-[var(--color-error)]/8 px-4 py-3">
                 <XCircle size={18} className="mt-0.5 shrink-0 text-[var(--color-error)]" />
@@ -167,9 +190,17 @@ export default function CartPage() {
                         Precio actualizado
                       </span>
                     )}
-                    {item.sin_stock && (
+                    {item.sin_stock && !item.reserva_flash_vencida && (
                       <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[var(--color-error)]/15 text-[var(--color-error)]">
                         Sin stock
+                      </span>
+                    )}
+                    {item.reserva_flash_vencida && (
+                      <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Reserva flash vencida</span>
+                    )}
+                    {item.es_flash && !item.sin_stock && (
+                      <span className="font-sans text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                        Reserva flash · <FlashCountdown expiresAt={item.reserva_expira_en} />
                       </span>
                     )}
                   </div>
@@ -183,7 +214,7 @@ export default function CartPage() {
                       {formatQ(item.subtotal ?? item.precio * item.cantidad)}
                     </p>
                   )}
-                  {!item.sin_stock && (
+                  {!item.sin_stock && !item.es_flash && (
                     <div className="flex items-center justify-end gap-1 mt-2">
                       <Button
                         variant="secondary"

@@ -7,13 +7,14 @@ import {
   Monitor, Smartphone, Headphones, Shirt, Layers, ShoppingBag,
   BookOpen, Apple, Home, Dumbbell, Wrench, Gamepad2,
   Bell, Store,
+  Zap, TrendingUp, Sparkles, Grid2X2, MapPin,
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Sheet, SheetTrigger, SheetContent } from '../ui/sheet'
 import { useAuth } from '../../context/AuthContext'
 import { useCart } from '../../context/CartContext'
-import { getCategories } from '../../api/products'
+import { getCategories, getActiveFlashSales } from '../../api/products'
 import { getUnreadCount, getNotifications, markAllAsRead } from '../../api/notifications'
 import { cn } from '../../lib/utils'
 
@@ -357,9 +358,12 @@ export function Header() {
   })
   const categories = categoriesData || []
 
-  // Categoría activa desde la URL
-  const params = new URLSearchParams(location.search)
-  const activeSlug = location.pathname === '/catalog' ? params.get('categoria') : null
+  const { data: activeFlashes = [] } = useQuery({
+    queryKey: ['flash-sales', 'active'],
+    queryFn: () => getActiveFlashSales().then(r => r.data),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  })
 
   useEffect(() => { setMobileOpen(false) }, [location])
 
@@ -417,6 +421,23 @@ export function Header() {
               <div className="px-5 py-4 space-y-4">
                 <SearchBar onSearch={() => setMobileOpen(false)} />
                 <nav className="space-y-1">
+                  <p className="text-[10px] font-sans font-semibold text-[var(--color-text-muted)] uppercase tracking-wider px-2 py-1">Explorar</p>
+                  <Link to="/catalog" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)]">
+                    <Grid2X2 size={18} className="text-[#29B6F6]" /> Todos los productos
+                  </Link>
+                  <Link to="/catalog?flash=1&orden=descuento_desc" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-amber-50 hover:text-amber-700 transition-colors">
+                    <Zap size={18} className="text-amber-500" /> Ofertas flash
+                    {activeFlashes.length > 0 && <Badge variant="warning">{activeFlashes.length}</Badge>}
+                  </Link>
+                  <Link to="/catalog?orden=mas_vendidos" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)]">
+                    <TrendingUp size={18} className="text-[#29B6F6]" /> Más vendidos
+                  </Link>
+                  <Link to="/catalog?orden=reciente" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)]">
+                    <Sparkles size={18} className="text-[#29B6F6]" /> Novedades
+                  </Link>
+                  <Link to={user?.roles?.includes('vendedor') ? '/vendor' : user ? '/profile' : '/register'} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 px-2 py-2.5 rounded-[var(--radius-md)] font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-background)]">
+                    <Store size={18} className="text-[#29B6F6]" /> Vender en TiendaYa
+                  </Link>
                   <p className="text-[10px] font-sans font-semibold text-[var(--color-text-muted)] uppercase tracking-wider px-2 py-1">Categorías</p>
                   {categories.map(cat => {
                     const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
@@ -432,6 +453,9 @@ export function Header() {
                       </Link>
                     )
                   })}
+                  <div className="flex items-center gap-2 px-2 pt-3 mt-3 border-t border-[var(--color-border)] font-sans text-xs text-[var(--color-text-muted)]">
+                    <MapPin size={14} className="text-[#29B6F6]" /> Envíos a toda Guatemala
+                  </div>
                 </nav>
               </div>
             </SheetContent>
@@ -439,36 +463,35 @@ export function Header() {
         </div>
       </div>
 
-      {/* ── Barra de categorías — desktop ── */}
+      {/* ── Navegación comercial — desktop ── */}
       <div className="hidden md:block border-t border-[var(--color-border)]">
-        <div className="max-w-[1320px] mx-auto px-6 lg:px-12 h-10 flex items-center gap-2">
+        <div className="max-w-[1320px] mx-auto px-6 lg:px-12 h-10 flex items-center gap-3 lg:gap-5">
           <CategoryDropdown categories={categories} />
 
-          {categories.length > 0 && (
-            <span className="h-4 w-px bg-[var(--color-border)] shrink-0" />
-          )}
+          <span className="h-4 w-px bg-[var(--color-border)] shrink-0" />
 
-          <div className="flex items-center gap-0.5 overflow-x-auto flex-1 scrollbar-none">
-            {categories.map(cat => {
-              const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
-              const isActive = activeSlug === cat.slug
-              return (
-                <Link
-                  key={cat.slug}
-                  to={`/catalog?categoria=${cat.slug}`}
-                  className={cn(
-                    'shrink-0 flex items-center gap-1.5 px-3 h-7 rounded-full font-sans text-[12px] font-medium transition-all duration-150 whitespace-nowrap',
-                    isActive
-                      ? 'text-white'
-                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)]'
-                  )}
-                  style={isActive ? { backgroundColor: '#29B6F6' } : undefined}
-                >
-                  <Icon size={12} strokeWidth={1.5} />
-                  {cat.nombre}
-                </Link>
-              )
-            })}
+          <nav className="flex items-center gap-2 lg:gap-4 overflow-x-auto flex-1 scrollbar-none">
+            <Link to="/catalog" className="shrink-0 flex items-center gap-1.5 px-2 h-7 rounded-full font-sans text-[12px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors">
+              <Grid2X2 size={12} /> Todos los productos
+            </Link>
+            <Link to="/catalog?flash=1&orden=descuento_desc" className="shrink-0 flex items-center gap-1.5 px-3 h-7 rounded-full font-sans text-[12px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
+              <Zap size={12} fill="currentColor" /> Ofertas flash
+              {activeFlashes.length > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] flex items-center justify-center">{activeFlashes.length}</span>}
+            </Link>
+            <Link to="/catalog?orden=mas_vendidos" className="shrink-0 flex items-center gap-1.5 px-3 h-7 rounded-full font-sans text-[12px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors">
+              <TrendingUp size={12} /> Más vendidos
+            </Link>
+            <Link to="/catalog?orden=reciente" className="shrink-0 flex items-center gap-1.5 px-3 h-7 rounded-full font-sans text-[12px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors">
+              <Sparkles size={12} /> Novedades
+            </Link>
+            <Link to={user?.roles?.includes('vendedor') ? '/vendor' : user ? '/profile' : '/register'} className="shrink-0 flex items-center gap-1.5 px-2 h-7 rounded-full font-sans text-[12px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-border)] transition-colors">
+              <Store size={12} /> Vender en TiendaYa
+            </Link>
+          </nav>
+
+          <div className="hidden xl:flex shrink-0 items-center gap-1.5 pl-4 border-l border-[var(--color-border)] font-sans text-[11px] font-medium text-[var(--color-text-muted)] whitespace-nowrap">
+            <MapPin size={12} className="text-[#29B6F6]" />
+            Envíos a toda Guatemala
           </div>
         </div>
       </div>

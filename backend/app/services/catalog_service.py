@@ -10,10 +10,43 @@ from pymongo.database import Database
 from bson import ObjectId
 from bson.decimal128 import Decimal128
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.time import utc_now
 from app.services.product_history_service import registrar_evento
 from app.services.offer_service import listar_ofertas_por_referencias, oferta_principal
+from app.models.promocion_flash import PromocionFlash
+from app.models.pedido import Pedido, PedidoLinea
+from app.services import flash_sale_service as flash_sales
+
+
+def _active_flash_by_offer(mysql_db: Session, redis_db, offer_ids: list[int]) -> dict[int, dict]:
+    """Obtiene promociones realmente activas y con cupo visible en Redis."""
+    if redis_db is None or not offer_ids:
+        return {}
+    now = utc_now()
+    rows = mysql_db.query(PromocionFlash).filter(
+        PromocionFlash.oferta_id.in_(offer_ids),
+        PromocionFlash.estado == 'activa',
+        PromocionFlash.inicia_en <= now,
+        PromocionFlash.finaliza_en > now,
+    ).all()
+    result = {}
+    for promotion in rows:
+        try:
+            state = flash_sales.obtener_estado(redis_db, promotion.id)
+        except Exception:
+            continue
+        available = int(state.get('disponibles', 0))
+        if available < 1:
+            continue
+        result[promotion.oferta_id] = {
+            'id': promotion.id,
+            'precio': float(promotion.precio_promocional),
+            'unidades_disponibles': available,
+            'finaliza_en': promotion.finaliza_en.isoformat(),
+        }
+    return result
 
 
 def _to_json(value):
@@ -60,6 +93,8 @@ def listar_productos(
     orden: str = 'precio_asc',
     estado: str | None = 'activo',
     vendedor_id: int | None = None,
+    solo_flash: bool = False,
+    redis_db=None,
 ) -> dict:
     filtro: dict[str, Any] = {}
     if estado:
@@ -90,6 +125,18 @@ def listar_productos(
         offers_by_ref = listar_ofertas_por_referencias(
             mysql_db, [str(doc['_id']) for doc in docs]
         )
+        all_offers = [offer for offers in offers_by_ref.values() for offer in offers]
+        flash_by_offer = _active_flash_by_offer(
+            mysql_db, redis_db, [offer['oferta_id'] for offer in all_offers]
+        )
+        sales_by_ref = {}
+        if orden == 'mas_vendidos':
+            sales_by_ref = dict(mysql_db.query(
+                PedidoLinea.producto_ref,
+                func.coalesce(func.sum(PedidoLinea.cantidad), 0),
+            ).join(Pedido, Pedido.id == PedidoLinea.pedido_id).filter(
+                Pedido.estado.notin_(['cancelado', 'reembolsado'])
+            ).group_by(PedidoLinea.producto_ref).all())
         mismatches = 0
         enriched = []
         for doc in docs:
@@ -106,8 +153,28 @@ def listar_productos(
                 offers = [o for o in offers if o['vendedor_id'] == vendedor_id]
                 if not offers:
                     continue
+            active_flashes = [
+                (offer, flash_by_offer[offer['oferta_id']])
+                for offer in offers
+                if offer['oferta_id'] in flash_by_offer
+            ]
             primary = oferta_principal(offers)
             stock_total = sum(o['stock'] for o in offers)
+            lowest_normal_price = min(
+                (o['precio'] for o in offers if o['disponible']),
+                default=float('inf'),
+            )
+            best_flash = min(
+                active_flashes,
+                key=lambda pair: (pair[1]['precio'], pair[0]['oferta_id']),
+                default=None,
+            )
+            winning_flash = (
+                best_flash if best_flash and best_flash[1]['precio'] < lowest_normal_price
+                else None
+            )
+            if solo_flash and not winning_flash:
+                continue
             if primary:
                 item.update({
                     'oferta_id': primary['oferta_id'],
@@ -120,7 +187,31 @@ def listar_productos(
                     'vendedor_nombre': primary['vendedor_nombre'],
                     'ofertas_count': len(offers),
                     'es_tiendaya': primary.get('es_tiendaya', False),
+                    'ventas': int(sales_by_ref.get(item['_id'], 0)),
+                    'tiene_flash_activa': bool(active_flashes),
                 })
+                if winning_flash:
+                    flash_offer, promotion = winning_flash
+                    normal_price = flash_offer['precio']
+                    item.update({
+                        'oferta_id': flash_offer['oferta_id'],
+                        'precio': promotion['precio'],
+                        'precio_normal': normal_price,
+                        'stock': promotion['unidades_disponibles'],
+                        'disponible': True,
+                        'vendedor_id': flash_offer['vendedor_id'],
+                        'vendedor_usuario_id': flash_offer['vendedor_usuario_id'],
+                        'vendedor_nombre': flash_offer['vendedor_nombre'],
+                        'es_tiendaya': flash_offer.get('es_tiendaya', False),
+                        'flash': {
+                            **promotion,
+                            'oferta_id': flash_offer['oferta_id'],
+                            'vendedor_nombre': flash_offer['vendedor_nombre'],
+                            'descuento_porcentaje': round(
+                                (1 - promotion['precio'] / normal_price) * 100
+                            ) if normal_price else 0,
+                        },
+                    })
                 if (
                     float(legacy['precio'] or 0) != primary['precio']
                     or int(legacy['stock'] or 0) != stock_total
@@ -148,8 +239,10 @@ def listar_productos(
             'precio_desc': lambda item: (-item.get('precio', 0), item.get('nombre', '')),
             'nombre_asc': lambda item: item.get('nombre', ''),
             'reciente': lambda item: item.get('fecha_creacion', datetime.min),
+            'mas_vendidos': lambda item: item.get('ventas', 0),
+            'descuento_desc': lambda item: item.get('flash', {}).get('descuento_porcentaje', 0),
         }.get(orden)
-        enriched.sort(key=sort_key, reverse=orden == 'reciente')
+        enriched.sort(key=sort_key, reverse=orden in {'reciente', 'mas_vendidos', 'descuento_desc'})
         total = len(enriched)
         skip = (page - 1) * page_size
         return {

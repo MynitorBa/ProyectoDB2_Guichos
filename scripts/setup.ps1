@@ -184,6 +184,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la migración de envíos parciales y so
 & $python scripts\migrate_cart_to_redis.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a Redis.' }
 
+& $python scripts\apply_flash_sales.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
+
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan
 & $python scripts\sync_mongo_projections.py

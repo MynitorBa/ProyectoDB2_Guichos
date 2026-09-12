@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch, Store, ShieldCheck } from 'lucide-react'
+import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch, Store, ShieldCheck, Zap } from 'lucide-react'
 import { motion, useInView } from 'motion/react'
 import { useRef } from 'react'
 import { toast } from 'sonner'
-import { getProduct } from '../api/products'
+import { getProduct, getActiveFlashSales, reserveFlashSale } from '../api/products'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { ProductImage } from '../components/product/ProductImage'
@@ -65,7 +65,7 @@ export default function ProductDetailPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const desdeTienda = searchParams.get('desde_tienda')
-  const { add, loading: cartLoading } = useCart()
+  const { add, fetchCart, loading: cartLoading } = useCart()
   const { user } = useAuth()
   const [selectedImg, setSelectedImg] = useState(0)
   const [cantidad, setCantidad] = useState(1)
@@ -76,6 +76,18 @@ export default function ProductDetailPage() {
     queryKey: ['product', id],
     queryFn: () => getProduct(id).then((r) => r.data),
   })
+  const activeOfferId = selectedOfferId || data?.ofertas?.[0]?.oferta_id
+  const { data: flashRows = [], refetch: refetchFlash } = useQuery({
+    queryKey: ['flash-sale', activeOfferId],
+    queryFn: () => getActiveFlashSales(activeOfferId).then(r => r.data),
+    enabled: Boolean(activeOfferId),
+    refetchInterval: 10_000,
+  })
+  const [clock, setClock] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!desdeTienda || !data?.ofertas?.length) return
@@ -104,6 +116,26 @@ export default function ProductDetailPage() {
       toast.success(`${product.nombre} agregado al carrito`)
     } catch {
       toast.error('No se pudo agregar al carrito')
+    }
+  }
+
+  async function handleFlashReserve() {
+    if (!user) {
+      toast.error('Inicia sesión para reservar la promoción')
+      navigate('/login')
+      return
+    }
+    const promotion = flashRows[0]
+    if (!promotion) return
+    try {
+      await reserveFlashSale(promotion.id)
+      await fetchCart()
+      await refetchFlash()
+      toast.success('Unidad flash reservada durante cinco minutos.')
+      navigate('/cart')
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'No se pudo reservar la unidad flash.')
+      refetchFlash()
     }
   }
 
@@ -164,8 +196,9 @@ export default function ProductDetailPage() {
   const selectedVariant = variantesAgrupadas.find(v => v.variante_id === selectedVariantId) ?? variantesAgrupadas[0]
   const ofertasVariante = selectedVariant?.ofertas ?? rawOfertas
   const selectedOffer = ofertasVariante.find(o => o.oferta_id === selectedOfferId) ?? ofertasVariante[0]
+  const flashSale = flashRows.find(row => row.oferta_id === selectedOffer?.oferta_id)
   const atributos = { ...(product.atributos || {}), ...(selectedVariant?.atributos || {}) }
-  const displayPrice = selectedOffer?.precio ?? product.precio
+  const displayPrice = flashSale?.precio_promocional ?? selectedOffer?.precio ?? product.precio
   const displayStock = selectedOffer?.stock ?? 0
   const displayAvailable = selectedOffer != null
     ? ((selectedOffer.disponible ?? false) || (selectedOffer.stock ?? 0) > 0)
@@ -294,6 +327,31 @@ export default function ProductDetailPage() {
                 <span className="font-sans text-sm text-[var(--color-text-muted)] mb-1">{product.moneda}</span>
               )}
             </div>
+
+            {flashSale && (
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-amber-700 font-display font-bold">
+                    <Zap size={18} fill="currentColor" /> Venta flash de {flashSale.vendedor_nombre}
+                  </div>
+                  <span className="font-mono text-sm text-amber-800">
+                    {Math.max(0, Math.ceil((new Date(flashSale.finaliza_en + 'Z').getTime() - clock) / 1000))} s
+                  </span>
+                </div>
+                <p className="text-sm text-amber-900">
+                  <span className="line-through opacity-60 mr-2">{formatQ(flashSale.precio_normal)}</span>
+                  <strong>{flashSale.unidades_disponibles} unidades promocionales disponibles</strong>
+                </p>
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={cartLoading || flashSale.unidades_disponibles < 1}
+                  onClick={handleFlashReserve}
+                >
+                  <Zap size={15} /> Reservar una unidad por 5 minutos
+                </Button>
+              </div>
+            )}
 
             {/* Vendedor */}
             {displayVendor && (
@@ -430,12 +488,12 @@ export default function ProductDetailPage() {
                 {/* Botón agregar */}
                 <button
                   onClick={handleAdd}
-                  disabled={!displayAvailable || cartLoading}
+                  disabled={!displayAvailable || cartLoading || Boolean(flashSale)}
                   className="flex-1 h-11 flex items-center justify-center gap-2 rounded-full font-sans font-bold text-sm text-white shadow-[0_4px_20px_rgba(41,182,246,0.35)] transition-all duration-200 hover:shadow-[0_6px_28px_rgba(41,182,246,0.45)] hover:-translate-y-0.5 active:scale-[.97] disabled:opacity-50 disabled:pointer-events-none"
                   style={{ background: 'linear-gradient(135deg, #29B6F6, #0288D1)' }}
                 >
                   <ShoppingCart size={17} />
-                  {displayAvailable ? 'Agregar al carrito' : 'Sin stock'}
+                  {flashSale ? 'Usa la reserva flash' : displayAvailable ? 'Agregar al carrito' : 'Sin stock'}
                 </button>
               </div>
 
@@ -559,7 +617,7 @@ export default function ProductDetailPage() {
       </div>
 
       {/* ── Barra sticky móvil ── */}
-      {displayAvailable && (
+      {displayAvailable && !flashSale && (
         <motion.div
           className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-[var(--color-surface)]/95 backdrop-blur-md border-t border-[var(--color-border)] shadow-[0_-4px_24px_rgba(0,0,0,0.08)] px-4 py-3 flex items-center gap-3"
           initial={{ y: 80, opacity: 0 }}

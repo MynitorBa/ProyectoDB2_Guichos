@@ -10,6 +10,12 @@ export const getAdminProducts = (params) =>
 export const getProduct = (id) =>
   api.get(`/products/${id}`)
 
+export const getActiveFlashSales = (ofertaId) =>
+  api.get('/flash-sales/active', { params: { oferta_id: ofertaId } })
+
+export const reserveFlashSale = (promotionId) =>
+  api.post(`/flash-sales/${promotionId}/reserve`, { cantidad: 1 })
+
 export const getCategories = () =>
   api.get('/categories')
 

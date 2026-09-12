@@ -6,6 +6,10 @@ Pruebas del servicio de checkout:
 """
 import threading
 import time
+from datetime import timedelta
+from decimal import Decimal
+from uuid import uuid4
+
 import pytest
 from bson import ObjectId
 from pymongo import MongoClient
@@ -14,6 +18,8 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from app.services.checkout_service import procesar_checkout, CheckoutError
 from app.schemas.checkout import CheckoutItem
+from app.core.time import utc_now
+from app.models.promocion_flash import PromocionFlash, ReservaFlash
 
 # ── Configuración de la base de datos de pruebas ─────────────────────────────
 # En CI o local, conecta a la misma base que tiene datos del seed.
@@ -47,13 +53,15 @@ def reset_stock():
     """Aísla stock y elimina únicamente pedidos creados por esta prueba."""
     created_order_ids: list[int] = []
     with engine.connect() as conn:
-        original_stock = conn.execute(
+        original_inventory = conn.execute(
             text("""
-                SELECT cantidad_disponible FROM inventario
+                SELECT cantidad_disponible, cantidad_reservada FROM inventario
                 WHERE oferta_id = :oid AND bodega = 'principal'
             """),
             {'oid': OFERTA_TEST_ID},
-        ).scalar_one()
+        ).one()
+        original_stock = original_inventory.cantidad_disponible
+        original_reserved = original_inventory.cantidad_reservada
         inventory_id = conn.execute(
             text("""
                 SELECT id FROM inventario
@@ -144,17 +152,27 @@ def reset_stock():
                 UPDATE inventario_saldos_historial
                 SET vigente_hasta = NULL,
                     cantidad_disponible = :stock,
-                    cantidad_reservada = 0
+                    cantidad_reservada = :reserved
                 WHERE id = :original_id
             """),
-            {'stock': original_stock, 'original_id': original_balance_id},
+            {
+                'stock': original_stock,
+                'reserved': original_reserved,
+                'original_id': original_balance_id,
+            },
         )
         conn.execute(
             text("""
-                UPDATE inventario SET cantidad_disponible = :stock
+                UPDATE inventario
+                SET cantidad_disponible = :stock,
+                    cantidad_reservada = :reserved
                 WHERE oferta_id = :oid AND bodega = 'principal'
             """),
-            {'stock': original_stock, 'oid': OFERTA_TEST_ID},
+            {
+                'stock': original_stock,
+                'reserved': original_reserved,
+                'oid': OFERTA_TEST_ID,
+            },
         )
         conn.commit()
     mongo_products.update_one(
@@ -343,6 +361,99 @@ def test_checkout_acepta_precio_actual_confirmado(reset_stock):
         reset_stock.append(pedido.id)
         assert pedido.total == precio_actual
     finally:
+        db.close()
+
+
+def test_checkout_flash_convierte_reserva_y_descuenta_pool(reset_stock):
+    """La compra flash usa el precio promocional y consume el cupo reservado."""
+    db: Session = TestSession()
+    promotion = None
+    reservation = None
+    try:
+        seller_user_id = db.execute(
+            text("""
+                SELECT v.usuario_id
+                FROM ofertas o
+                JOIN vendedores v ON v.id = o.vendedor_id
+                WHERE o.id = :offer_id
+            """),
+            {'offer_id': OFERTA_TEST_ID},
+        ).scalar_one()
+        now = utc_now()
+        promotion = PromocionFlash(
+            oferta_id=OFERTA_TEST_ID,
+            creado_por=seller_user_id,
+            precio_promocional=Decimal('1.00'),
+            unidades_totales=1,
+            unidades_vendidas=0,
+            max_por_usuario=1,
+            segundos_reserva=300,
+            inicia_en=now - timedelta(seconds=5),
+            finaliza_en=now + timedelta(minutes=10),
+            estado='activa',
+        )
+        db.add(promotion)
+        db.flush()
+        reservation = ReservaFlash(
+            token=str(uuid4()),
+            promocion_id=promotion.id,
+            usuario_id=USUARIO_COMPRADOR_ID,
+            cantidad=1,
+            precio_unitario=Decimal('1.00'),
+            estado='reservada',
+            expira_en=now + timedelta(minutes=5),
+        )
+        db.add(reservation)
+        db.execute(
+            text("""
+                UPDATE inventario
+                SET cantidad_reservada = cantidad_reservada + 1
+                WHERE oferta_id = :offer_id AND bodega = 'principal'
+            """),
+            {'offer_id': OFERTA_TEST_ID},
+        )
+        db.commit()
+
+        pedido = procesar_checkout(
+            db,
+            usuario_id=USUARIO_COMPRADOR_ID,
+            direccion_id=DIRECCION_ID,
+            metodo_pago_id=METODO_PAGO_ID,
+            items=[CheckoutItem(oferta_id=OFERTA_TEST_ID, cantidad=1)],
+            promociones_flash={
+                OFERTA_TEST_ID: {
+                    'promocion_id': promotion.id,
+                    'token': reservation.token,
+                }
+            },
+        )
+        reset_stock.append(pedido.id)
+
+        db.refresh(promotion)
+        db.refresh(reservation)
+        inventory = db.execute(
+            text("""
+                SELECT cantidad_disponible, cantidad_reservada
+                FROM inventario
+                WHERE oferta_id = :offer_id AND bodega = 'principal'
+            """),
+            {'offer_id': OFERTA_TEST_ID},
+        ).one()
+        assert pedido.total == Decimal('1.00')
+        assert promotion.unidades_vendidas == 1
+        assert promotion.estado == 'finalizada'
+        assert reservation.estado == 'convertida'
+        assert reservation.pedido_id == pedido.id
+        assert inventory.cantidad_disponible == 29
+        assert inventory.cantidad_reservada == 0
+    finally:
+        db.rollback()
+        if reservation is not None:
+            db.delete(reservation)
+            db.commit()
+        if promotion is not None:
+            db.delete(promotion)
+            db.commit()
         db.close()
 
 
