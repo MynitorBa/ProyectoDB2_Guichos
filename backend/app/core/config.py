@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_CART_TTL: int = 1800  # segundos de inactividad antes de expirar el carrito
 
+    # Cassandra (proyección analítica; nunca participa en el checkout transaccional)
+    CASSANDRA_HOST: str = 'localhost'
+    CASSANDRA_PORT: int = 9042
+    CASSANDRA_KEYSPACE: str = 'tiendaya_analytics'
+    CASSANDRA_LOCAL_DC: str = 'datacenter1'
+
     # Email (SMTP) — dejar vacío para deshabilitar envío de correos
     SMTP_HOST: str = 'smtp.gmail.com'
     SMTP_PORT: int = 587

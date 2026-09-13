@@ -199,6 +199,16 @@ def admin_status(db, order_id, user, target):
         part.estado = target
     db.add(Notificacion(usuario_id=order.usuario_id, tipo='pedido', titulo=f'Pedido #{order.id} {target}',
         mensaje='Actualización administrativa del pedido. Los pagos de esta aplicación son simulados.'))
+    if target in {'cancelado', 'reembolsado'}:
+        from app.services.outbox_service import enqueue_outbox
+        enqueue_outbox(
+            db,
+            tipo_evento='analytics.pedido_actualizado',
+            agregado_tipo='pedido',
+            agregado_id=order.id,
+            producto_ref=None,
+            payload={'motivo': target},
+        )
     db.commit()
 
 

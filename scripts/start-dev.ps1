@@ -23,6 +23,18 @@ for ($attempt = 1; $attempt -le 30; $attempt++) {
 }
 if (-not $redisReady) { throw 'Redis no estuvo disponible después de 60 segundos.' }
 
+Write-Host "Esperando Cassandra..." -ForegroundColor Yellow
+$cassandraReady = $false
+for ($attempt = 1; $attempt -le 36; $attempt++) {
+    $cassandraHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_cassandra 2>$null
+    if ($cassandraHealth -eq 'healthy') {
+        $cassandraReady = $true
+        break
+    }
+    Start-Sleep -Seconds 5
+}
+if (-not $cassandraReady) { throw 'Cassandra no estuvo disponible después de 180 segundos.' }
+
 # Un pull puede incorporar migraciones aditivas nuevas. Aplicarlas aquí evita
 # iniciar una API nueva contra un esquema anterior (la causa típica de 500 tras
 # actualizar la rama). Las operaciones son idempotentes.
@@ -58,6 +70,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a Redis.' }
     & $python scripts\apply_flash_sales.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
+    & $python -c "from app.core.db_cassandra import cassandra_health, close_cassandra; print(cassandra_health()); close_cassandra()"
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de Cassandra.' }
     & $python scripts\repair_catalog_data.py --apply
     if ($LASTEXITCODE -ne 0) { throw 'Falló la reconciliación de atributos.' }
 } finally {
@@ -83,6 +97,7 @@ Write-Host "  Backend API:  http://localhost:8000/docs" -ForegroundColor Cyan
 Write-Host "  Adminer:      http://localhost:8080  (server: mysql, user: tiendaya, pass: tiendaya123)" -ForegroundColor Cyan
 Write-Host "  Mongo Express: http://localhost:8081" -ForegroundColor Cyan
 Write-Host "  Redis Commander: http://localhost:8082" -ForegroundColor Cyan
+Write-Host "  Cassandra CQL: localhost:9042 (cqlsh dentro de tiendaya_cassandra)" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Admin: admin@tiendaya.gt / password123" -ForegroundColor Yellow
 Write-Host ""

@@ -85,6 +85,19 @@ if (-not $SkipDocker) {
         throw 'Redis no estuvo disponible después de 60 segundos.'
     }
     Write-Host "  Redis listo." -ForegroundColor Green
+
+    Write-Host "  Esperando Cassandra (el primer arranque puede tardar hasta 3 minutos)..." -ForegroundColor Yellow
+    $cassandraHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_cassandra 2>$null
+    $cassandraWaited = 0
+    while ($cassandraHealth -ne 'healthy' -and $cassandraWaited -lt 180) {
+        Start-Sleep 5
+        $cassandraWaited += 5
+        $cassandraHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_cassandra 2>$null
+    }
+    if ($cassandraHealth -ne 'healthy') {
+        throw 'Cassandra no estuvo disponible después de 180 segundos.'
+    }
+    Write-Host "  Cassandra lista." -ForegroundColor Green
 } else {
     Write-Host "[2/8] Docker: OMITIDO" -ForegroundColor Gray
 }
@@ -186,6 +199,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a
 
 & $python scripts\apply_flash_sales.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
+
+& $python scripts\backfill_cassandra_analytics.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
 
 # ── 5. Sincronizar MongoDB ────────────────────────────────────────────────────
 Write-Host "`n[5/8] Instalando índices y sincronizando proyecciones MongoDB..." -ForegroundColor Cyan

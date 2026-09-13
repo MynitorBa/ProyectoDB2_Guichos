@@ -877,6 +877,34 @@ def main():
         print(f'MongoDB: ERROR - {e}')
         ok = False
 
+    # ── Cassandra ─────────────────────────────────────────────────────────────
+    try:
+        from app.core.db_cassandra import cassandra_health, close_cassandra, get_cassandra_session
+        from app.core.db_mysql import SessionLocal
+        from app.services.analytics_service import _paid_lines
+        cassandra = get_cassandra_session()
+        info = cassandra_health()
+        with SessionLocal() as analytics_db:
+            expected_lines = len(_paid_lines(analytics_db))
+        projected_lines = cassandra.execute(
+            'SELECT COUNT(*) FROM ventas_producto_semana'
+        ).one()[0]
+        if projected_lines != expected_lines:
+            print(
+                'Cassandra analítica: proyección divergente '
+                f'(MySQL={expected_lines}, Cassandra={projected_lines})'
+            )
+            ok = False
+        else:
+            print(
+                f'Cassandra analítica: {projected_lines} líneas pagadas '
+                f'proyectadas; versión {info["version"]}'
+            )
+        close_cassandra()
+    except Exception as e:
+        print(f'Cassandra: ERROR - {e}')
+        ok = False
+
     print(f'\n{"[OK] Setup completo." if ok else "[ERROR] Hay problemas que corregir."}')
     sys.exit(0 if ok else 1)
 

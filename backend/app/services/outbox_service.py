@@ -76,6 +76,10 @@ def _append_history_idempotent(mongo, event: OutboxEvento, history: dict) -> Non
 
 def project_event(event: OutboxEvento) -> None:
     """Operaciones idempotentes: `$set` y upsert por `outbox_id`."""
+    if event.tipo_evento == 'analytics.pedido_actualizado':
+        from app.services.analytics_service import project_order
+        project_order(int(event.agregado_id))
+        return
     if not event.producto_ref:
         return
     mongo = get_mongo_db()

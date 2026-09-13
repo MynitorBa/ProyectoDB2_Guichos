@@ -74,6 +74,27 @@ services:
     environment:
       REDIS_HOSTS: local:redis:6379
 
+  cassandra:
+    image: cassandra:4.1.12
+    container_name: tiendaya_cassandra
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: TiendaYa Analytics
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT release_version FROM system.local' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 60s
+
   adminer:
     image: adminer:4
     container_name: tiendaya_adminer
@@ -105,3 +126,4 @@ volumes:
   mysql_data:
   mongo_data:
   redis_data:
+  cassandra_data:

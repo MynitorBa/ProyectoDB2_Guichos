@@ -237,14 +237,22 @@ def test_checkout_por_oferta_crea_subpedido_y_snapshots(reset_stock):
         assert row['sku_snapshot']
         assert row['vendedor_nombre_snapshot']
         assert row['receptor_nombre']
-        event = db.execute(text("""
+        events = db.execute(text("""
             SELECT estado, tipo_evento, producto_ref
             FROM outbox_eventos
             WHERE agregado_tipo = 'pedido' AND agregado_id = :pedido_id
-        """), {'pedido_id': str(pedido.id)}).mappings().one()
-        assert event['estado'] in {'pendiente', 'procesando', 'procesado'}
-        assert event['tipo_evento'] == 'inventario.actualizado'
-        assert event['producto_ref']
+        """), {'pedido_id': str(pedido.id)}).mappings().all()
+        by_type = {event['tipo_evento']: event for event in events}
+        assert set(by_type) == {
+            'inventario.actualizado',
+            'analytics.pedido_actualizado',
+        }
+        assert all(
+            event['estado'] in {'pendiente', 'procesando', 'procesado'}
+            for event in events
+        )
+        assert by_type['inventario.actualizado']['producto_ref']
+        assert by_type['analytics.pedido_actualizado']['producto_ref'] is None
         movimiento_inventario = db.execute(text("""
             SELECT inventario_id FROM movimientos_inventario
             WHERE pedido_id = :pedido_id

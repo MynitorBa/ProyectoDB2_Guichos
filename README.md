@@ -1,7 +1,9 @@
 # TiendaYa — Portal de E-Commerce Políglota
 
 Proyecto del curso **Bases de Datos 2** — UNIS, Segundo Semestre 2026.
-Portal de e-commerce con arquitectura políglota: MySQL 8 para datos relacionales y MongoDB 7 para el catálogo de productos con atributos variables.
+Portal de e-commerce con arquitectura políglota: MySQL 8 para operaciones,
+MongoDB 7 para el catálogo, Redis 7 para datos efímeros y Cassandra 4.1 para
+analítica temporal.
 
 ## Arquitectura actual (inicio de Entrega 2)
 
@@ -9,6 +11,7 @@ Portal de e-commerce con arquitectura políglota: MySQL 8 para datos relacionale
 React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inventario, outbox)
                                 → MongoDB 7 (catálogo documental, proyecciones, eventos)
                                 → Redis 7   (carritos activos con expiración)
+                                → Cassandra 4.1 (ventas y tendencias semanales)
 ```
 
 ## Requisitos
@@ -28,6 +31,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 | Adminer (MySQL) | http://localhost:8080 |
 | Mongo Express | http://localhost:8081 |
 | Redis Commander | http://localhost:8082 |
+| Cassandra CQL | localhost:9042 |
 
 ## Credenciales de prueba
 
@@ -43,10 +47,11 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 
 ```
 proyecto/
-├─ docker-compose.yml          # MySQL, MongoDB, Adminer, Mongo Express
+├─ docker-compose.yml          # MySQL, MongoDB, Redis, Cassandra e interfaces
 ├─ database/
 │  ├─ mysql/                   # DDL, índices, seed y migraciones versionadas
-│  └─ mongo/                   # Init collections, índices, ejemplos aggregation
+│  ├─ mongo/                   # Init collections, índices, ejemplos aggregation
+│  └─ cassandra/               # Esquema orientado a consultas analíticas
 ├─ backend/                    # FastAPI + Python
 │  ├─ app/
 │  │  ├─ api/v1/               # Endpoints REST
@@ -89,6 +94,14 @@ idempotente la migración de carritos SQL heredados. El carrito activo vive en
 Redis durante 30 minutos de inactividad. En el checkout, Redis aporta las
 ofertas y cantidades elegidas; MySQL vuelve a validar y bloquear precio,
 estado e inventario antes de guardar el pedido definitivo.
+
+También esperan a Cassandra, crean su esquema y reconstruyen sus proyecciones
+analíticas de forma idempotente. Cassandra solo recibe ventas cuyo pago ya fue
+confirmado; los reembolsos se conservan separados para reportar ingresos
+brutos, reembolsados y netos. Si Cassandra no está disponible, el checkout
+sigue confirmándose en MySQL y el evento pendiente se reintenta mediante el
+outbox. Consulte [`docs/26-decision-grafos-columnar.md`](docs/26-decision-grafos-columnar.md)
+y [`docs/27-analitica-cassandra.md`](docs/27-analitica-cassandra.md).
 
 La migración de Fase 1 no elimina datos. Antes de crear las nuevas claves
 foráneas comprueba que no existan referencias huérfanas y aborta si encuentra
@@ -157,12 +170,14 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Paneles, envíos parciales y solicitudes de variantes: instalación y pruebas](docs/23-paneles-envios-solicitudes-variantes.md)
 - [Carrito activo, concurrencia y checkout con Redis](docs/24-carrito-redis.md)
 - [Ventas flash por vendedor con reservas atómicas](docs/25-ventas-flash.md)
+- [Decisión entre grafos y base columnar](docs/26-decision-grafos-columnar.md)
+- [Analítica temporal con Cassandra](docs/27-analitica-cassandra.md)
 
 ## Entregas del proyecto
 
 | Entrega | Estado | Contenido |
 |---|---|---|
 | **Entrega 1** | **Completada** | MySQL normalizado + migración a MongoDB + historial por eventos |
-| Entrega 2 | En progreso | Redis (carrito con TTL y ventas flash concurrentes por vendedor) |
-| Entrega 3 | Pendiente | Base de datos columnar/grafos (analytics, recomendaciones) |
-| Entrega 4 | Pendiente | Motor de búsqueda + base vectorial (búsqueda semántica) |
+| Entrega 2 | En progreso | Redis (carrito y ventas flash) + comparación grafos/columnar + Cassandra para analítica temporal |
+| Entrega 3 | Pendiente | Motor de búsqueda y estrategia de consistencia distribuida |
+| Entrega final | Pendiente | Base vectorial, seguridad NoSQL e integración completa |

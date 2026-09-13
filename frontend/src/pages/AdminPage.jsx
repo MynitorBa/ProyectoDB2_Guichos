@@ -25,9 +25,11 @@ import { Separator } from '../components/ui/separator'
 import { formatQ, formatDate, cn } from '../lib/utils'
 import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequestsSection'
 import { AdminVendorsSection } from './AdminVendorPage'
+import { getAdminTrends } from '../api/analytics'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
+  { id: 'analytics',  label: 'Tendencias',   icon: TrendingUp     },
   { id: 'products',   label: 'Productos',    icon: Package        },
   { id: 'categories', label: 'Categorías',   icon: FolderTree     },
   { id: 'users',      label: 'Usuarios',     icon: Users          },
@@ -659,6 +661,78 @@ export function ProductFormModal({ open, onOpenChange, product, onDuplicateFound
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function currentMonday() {
+  const now = new Date()
+  const day = (now.getDay() + 6) % 7
+  now.setDate(now.getDate() - day)
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function AnalyticsSection() {
+  const [week, setWeek] = useState(currentMonday)
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['cassandra-trends', week],
+    queryFn: () => getAdminTrends(week).then(r => r.data),
+    retry: false,
+  })
+  const rows = data?.items || []
+  const chart = rows.slice(0, 10).map(item => ({
+    nombre: item.producto_nombre?.slice(0, 24),
+    unidades: item.unidades,
+    anterior: item.unidades_semana_anterior,
+  }))
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="font-display font-semibold text-lg">Demanda por semana</h3>
+          <p className="font-sans text-sm text-[var(--color-text-secondary)]">Proyección analítica de ventas pagadas en Cassandra, de lunes a domingo.</p>
+        </div>
+        <label className="font-sans text-xs text-[var(--color-text-secondary)]">
+          Semana que inicia
+          <Input type="date" value={week} onChange={e => setWeek(e.target.value)} className="mt-1" />
+        </label>
+      </div>
+      {isLoading ? <Skeleton className="h-72 w-full" /> : isError ? (
+        <p role="alert" className="text-sm text-[var(--color-error)]">{error?.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-[var(--color-text-muted)] py-10 text-center">No hay ventas pagadas en esta semana.</p>
+      ) : <>
+        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
+          <h4 className="font-display font-semibold mb-4">Top productos y comparación anterior</h4>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chart} margin={{ left: 4, right: 12 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+              <XAxis dataKey="nombre" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={70} />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="unidades" name="Semana seleccionada" fill="var(--color-action)" radius={[4,4,0,0]} />
+              <Bar dataKey="anterior" name="Semana anterior" fill="var(--color-jade)" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-[var(--color-background)]">
+              {['Producto','Unidades','Anterior','Variación','Ingresos netos','Ofertas','Flash'].map(h => <th key={h} className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">{h}</th>)}
+            </tr></thead>
+            <tbody>{rows.map(item => <tr key={item.producto_ref} className="border-t border-[var(--color-border)]">
+              <td className="px-4 py-3 font-semibold">{item.producto_nombre}</td>
+              <td className="px-4 py-3 font-mono">{item.unidades}</td>
+              <td className="px-4 py-3 font-mono">{item.unidades_semana_anterior}</td>
+              <td className={cn('px-4 py-3 font-mono font-semibold', item.variacion_unidades >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]')}>{item.variacion_unidades >= 0 ? '+' : ''}{item.variacion_unidades}</td>
+              <td className="px-4 py-3 font-mono">{formatQ(item.ingresos_netos)}</td>
+              <td className="px-4 py-3 font-mono">{item.ofertas}</td>
+              <td className="px-4 py-3 font-mono">{item.unidades_flash}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </>}
+    </section>
   )
 }
 
@@ -2108,6 +2182,7 @@ export default function AdminPage() {
             {NAV_ITEMS.find((n) => n.id === activeSection)?.label}
           </h2>
           {activeSection === 'stats'      && <StatsSection />}
+          {activeSection === 'analytics'  && <AnalyticsSection />}
           {activeSection === 'products'   && <ProductsSection />}
           {activeSection === 'categories' && <CategoriesSection />}
           {activeSection === 'users'      && <UsersSection />}

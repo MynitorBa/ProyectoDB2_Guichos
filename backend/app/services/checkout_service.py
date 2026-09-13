@@ -322,6 +322,16 @@ def procesar_checkout(
         estado='aprobado',
         referencia_transaccion=f'TXN-{pedido.id:08d}-{int(total * 100)}',
     ))
+    # Cassandra es una proyección eventual: el evento se confirma en la misma
+    # transacción MySQL, pero el worker lo procesa después del checkout.
+    enqueue_outbox(
+        db,
+        tipo_evento='analytics.pedido_actualizado',
+        agregado_tipo='pedido',
+        agregado_id=pedido.id,
+        producto_ref=None,
+        payload={'motivo': 'pago_aprobado'},
+    )
     db.commit()
 
     db.refresh(pedido)

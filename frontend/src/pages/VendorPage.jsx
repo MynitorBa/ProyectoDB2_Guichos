@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Bell, Package, ClipboardList, Store, TrendingUp } from 'lucide-react'
 import { getVendorStats, getVendorOrders } from '../api/vendor'
 import { getNotifications, markAllAsRead } from '../api/notifications'
@@ -10,6 +11,7 @@ import { formatQ, formatDate } from '../lib/utils'
 import { CatalogRequestsSection } from '../components/vendor/CatalogRequestsSection'
 import { VendorOffers } from '../components/vendor/VendorOffers'
 import { orderStateLabel } from './OrderWorkspacePage'
+import { getVendorTrends } from '../api/analytics'
 
 const ESTADO_BADGE = {
   pendiente:         'warning',
@@ -25,6 +27,7 @@ const ESTADO_BADGE = {
 const NAV_TABS = [
   { key: 'orders',        label: 'Mis pedidos',             icon: ClipboardList },
   { key: 'offers',        label: 'Mis ofertas',             icon: TrendingUp    },
+  { key: 'trends',        label: 'Mis tendencias',          icon: TrendingUp    },
   { key: 'requests',      label: 'Solicitudes de catálogo', icon: Store         },
   { key: 'notifications', label: 'Notificaciones',          icon: Bell          },
 ]
@@ -34,6 +37,11 @@ export default function VendorPage() {
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') || 'orders'
   const [page, setPage] = useState(1)
+  const [analyticsWeek, setAnalyticsWeek] = useState(() => {
+    const now = new Date()
+    now.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
   const cache = useQueryClient()
 
   const { data: stats, error } = useQuery({
@@ -50,6 +58,12 @@ export default function VendorPage() {
     queryKey: ['vendor-notifications'],
     queryFn: () => getNotifications().then(r => r.data),
     enabled: tab === 'notifications',
+  })
+  const { data: trends, isLoading: trendsLoading, error: trendsError } = useQuery({
+    queryKey: ['vendor-cassandra-trends', analyticsWeek],
+    queryFn: () => getVendorTrends(analyticsWeek).then(r => r.data),
+    enabled: tab === 'trends',
+    retry: false,
   })
 
   if (error) {
@@ -113,6 +127,44 @@ export default function VendorPage() {
       {/* ── Contenido de cada pestaña ── */}
       {tab === 'offers' && <VendorOffers />}
       {tab === 'requests' && <CatalogRequestsSection />}
+
+      {tab === 'trends' && (
+        <section className="space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-display font-semibold text-xl">Rendimiento de mis ofertas</h2>
+              <p className="font-sans text-sm text-[var(--color-text-secondary)] mt-1">Ventas pagadas proyectadas en Cassandra.</p>
+            </div>
+            <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semana que inicia
+              <input type="date" value={analyticsWeek} onChange={e => setAnalyticsWeek(e.target.value)} className="block mt-1 h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3" />
+            </label>
+          </div>
+          {trendsLoading ? <p className="text-sm text-[var(--color-text-muted)]">Cargando tendencias…</p> : trendsError ? (
+            <p role="alert" className="text-sm text-[var(--color-error)]">{trendsError.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
+          ) : trends?.items?.length ? <>
+            <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-5">
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={trends.items.slice(0, 10)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis dataKey="sku" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip formatter={(value, name) => [name === 'ingresos_netos' ? formatQ(value) : value, name === 'ingresos_netos' ? 'Ingresos netos' : 'Unidades']} />
+                  <Bar dataKey="unidades" fill="var(--color-action)" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]">
+              <table className="w-full text-sm"><thead><tr className="bg-[var(--color-background)]">
+                {['Oferta','Producto','SKU','Unidades','Ingreso neto','Flash'].map(h => <th key={h} className="px-3 py-2.5 text-left text-xs uppercase text-[var(--color-text-muted)]">{h}</th>)}
+              </tr></thead><tbody>{trends.items.map(item => <tr key={item.oferta_id} className="border-t border-[var(--color-border)]">
+                <td className="px-3 py-3 font-mono">#{item.oferta_id}</td><td className="px-3 py-3 font-semibold">{item.producto_nombre}</td>
+                <td className="px-3 py-3 font-mono">{item.sku}</td><td className="px-3 py-3 font-mono">{item.unidades}</td>
+                <td className="px-3 py-3 font-mono">{formatQ(item.ingresos_netos)}</td><td className="px-3 py-3 font-mono">{item.unidades_flash}</td>
+              </tr>)}</tbody></table>
+            </div>
+          </> : <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">No tienes ventas pagadas en esta semana.</p>}
+        </section>
+      )}
 
       {tab === 'orders' && (
         <section className="space-y-4">

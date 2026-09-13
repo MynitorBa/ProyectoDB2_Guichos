@@ -7,10 +7,11 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
+from app.core.db_cassandra import close_cassandra
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
-from app.api.v1 import backoffice, stores, flash_sales
+from app.api.v1 import backoffice, stores, flash_sales, analytics
 
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ app.include_router(catalog_requests.admin_router, prefix='/api/v1')
 app.include_router(stores.router, prefix='/api/v1')
 app.include_router(flash_sales.router, prefix='/api/v1')
 app.include_router(flash_sales.vendor_router, prefix='/api/v1')
+app.include_router(analytics.router, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
@@ -83,6 +85,7 @@ def shutdown():
     stop_flash_worker()
     stop_outbox_worker()
     close_mongo()
+    close_cassandra()
 
 
 @app.get('/health')
