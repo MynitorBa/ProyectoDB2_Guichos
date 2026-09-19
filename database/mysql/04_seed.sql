@@ -69,7 +69,8 @@ INSERT INTO vendedores (id, usuario_id, nombre_comercial, nit, estado_verificaci
   (2, 3, 'ModaExpress GT',       '2345678-9', 'verificado'),
   (3, 4, 'HogarIdeal',          '3456789-0', 'verificado'),
   (4, 5, 'LibroMundo GT',       '4567890-1', 'verificado'),
-  (5, 6, 'SportMax Guatemala',  '5678901-2', 'verificado');
+  (5, 6, 'SportMax Guatemala',  '5678901-2', 'verificado'),
+  (6, 1, 'TiendaYa',            '35416515',  'verificado');
 
 -- ─── CATEGORÍAS (8 raíces + subcategorías) ───────────────────────────────────
 INSERT INTO categorias (id, categoria_padre_id, nombre, slug, descripcion, activa, orden) VALUES

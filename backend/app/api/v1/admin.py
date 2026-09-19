@@ -1672,11 +1672,14 @@ def set_vendor_profile(
     if v:
         v.nombre_comercial = payload.nombre_comercial.strip()
         v.nit = payload.nit.strip()
+        if v.estado_verificacion == 'pendiente':
+            v.estado_verificacion = 'verificado'
     else:
         v = Vendedor(
             usuario_id=user_id,
             nombre_comercial=payload.nombre_comercial.strip(),
             nit=payload.nit.strip(),
+            estado_verificacion='verificado',
         )
         db.add(v)
     try:

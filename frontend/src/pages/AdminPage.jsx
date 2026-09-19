@@ -1392,6 +1392,7 @@ function CategoriesSection() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [searchCat, setSearchCat] = useState('')
 
   const [newNombre, setNewNombre] = useState('')
   const [newSlug, setNewSlug] = useState('')
@@ -1464,6 +1465,16 @@ function CategoriesSection() {
 
   function openEdit(cat) { navigate('/admin/categories/'+cat.slug) }
 
+  const q = searchCat.trim().toLowerCase()
+  const filteredCats = q
+    ? cats.filter((c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        c.slug.toLowerCase().includes(q) ||
+        (c.sku_prefix || '').toLowerCase().includes(q) ||
+        (cats.find((p) => p.id === c.padre_id)?.nombre || '').toLowerCase().includes(q)
+      )
+    : cats
+
   function handleDelete(cat) {
     if (!window.confirm(`¿Eliminar categoría "${cat.nombre}"? Esto también eliminará su esquema de campos.`)) return
     deleteMut.mutate(cat.slug)
@@ -1475,7 +1486,16 @@ function CategoriesSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex items-center gap-3 justify-between">
+        <div className="relative w-64">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <Input
+            value={searchCat}
+            onChange={(e) => setSearchCat(e.target.value)}
+            placeholder="Buscar por nombre, slug o SKU…"
+            className="pl-8 h-8 text-sm"
+          />
+        </div>
         <Button size="sm" onClick={() => navigate('/admin/categories/new')}><Plus size={14} /> Nueva categoría</Button>
       </div>
 
@@ -1489,7 +1509,7 @@ function CategoriesSection() {
             </tr>
           </thead>
           <tbody>
-            {cats.map((cat, idx) => (
+            {filteredCats.map((cat, idx) => (
               <tr key={cat.id} className={cn('border-b border-[var(--color-border)] last:border-0', idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]')}>
                 <td className="px-4 py-3 font-display font-semibold text-[var(--color-text-primary)]">
                   <Link to={'/admin/categories/'+cat.slug} className="text-[var(--color-action)]">{cat.nombre}</Link>
@@ -1518,8 +1538,10 @@ function CategoriesSection() {
                 </td>
               </tr>
             ))}
-            {cats.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">No hay categorías todavía.</td></tr>
+            {filteredCats.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">
+                {q ? `Sin resultados para "${searchCat}".` : 'No hay categorías todavía.'}
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -1749,6 +1771,7 @@ function OrdersSection() {
 function UsersSection() {
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
+  const [searchUser, setSearchUser] = useState('')
   const queryClient = useQueryClient()
 
   const [vpOpen, setVpOpen] = useState(false)
@@ -1811,12 +1834,31 @@ function UsersSection() {
   const users = data?.items || []
   const totalPages = data?.total_pages || 1
 
+  const uq = searchUser.trim().toLowerCase()
+  const filteredUsers = uq
+    ? users.filter((u) =>
+        `${u.nombre} ${u.apellido}`.toLowerCase().includes(uq) ||
+        u.email.toLowerCase().includes(uq) ||
+        u.roles.some((r) => r.toLowerCase().includes(uq)) ||
+        (vendorByUserId[u.id]?.nombre_comercial || '').toLowerCase().includes(uq)
+      )
+    : users
+
   if (isLoading) return (
     <div className="space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
   )
 
   return (
-    <div>
+    <div className="space-y-4">
+      <div className="relative w-72">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+        <Input
+          value={searchUser}
+          onChange={(e) => { setSearchUser(e.target.value); setPage(1) }}
+          placeholder="Buscar por nombre, email o rol…"
+          className="pl-8 h-8 text-sm"
+        />
+      </div>
       <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1828,7 +1870,12 @@ function UsersSection() {
               </tr>
             </thead>
             <tbody>
-              {users.map((user, idx) => (
+              {filteredUsers.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center font-sans text-sm text-[var(--color-text-muted)]">
+                  {uq ? `Sin resultados para "${searchUser}".` : 'No hay usuarios todavía.'}
+                </td></tr>
+              )}
+              {filteredUsers.map((user, idx) => (
                 <tr key={user.id} className={cn('border-b border-[var(--color-border)] last:border-0', idx % 2 === 0 ? 'bg-[var(--color-surface)]' : 'bg-[var(--color-background)]')}>
                   <td className="px-4 py-3">
                     <p className="font-display font-semibold text-[var(--color-text-primary)]"><Link to={'/admin/users/'+user.id} className="text-[var(--color-action)]">{user.nombre} {user.apellido}</Link></p>
@@ -1893,8 +1940,8 @@ function UsersSection() {
         </div>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 mt-5">
+      {!uq && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
           <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
           <span className="font-sans text-sm text-[var(--color-text-secondary)]">{page} / {totalPages}</span>
           <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Siguiente</Button>

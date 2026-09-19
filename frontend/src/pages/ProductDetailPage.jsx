@@ -76,13 +76,14 @@ export default function ProductDetailPage() {
     queryKey: ['product', id],
     queryFn: () => getProduct(id).then((r) => r.data),
   })
-  const activeOfferId = selectedOfferId || data?.ofertas?.[0]?.oferta_id
-  const { data: flashRows = [], refetch: refetchFlash } = useQuery({
-    queryKey: ['flash-sale', activeOfferId],
-    queryFn: () => getActiveFlashSales(activeOfferId).then(r => r.data),
-    enabled: Boolean(activeOfferId),
+  const { data: allFlashRows = [], refetch: refetchFlash } = useQuery({
+    queryKey: ['flash-sales-product', id],
+    queryFn: () => getActiveFlashSales().then(r => r.data),
+    enabled: Boolean(data),
     refetchInterval: 10_000,
   })
+  const allOfferIds = new Set((data?.ofertas || []).map(o => o.oferta_id))
+  const flashRows = allFlashRows.filter(f => allOfferIds.has(f.oferta_id))
   const [clock, setClock] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000)
@@ -125,10 +126,9 @@ export default function ProductDetailPage() {
       navigate('/login')
       return
     }
-    const promotion = flashRows[0]
-    if (!promotion) return
+    if (!flashSale) return
     try {
-      await reserveFlashSale(promotion.id)
+      await reserveFlashSale(flashSale.id)
       await fetchCart()
       await refetchFlash()
       toast.success('Unidad flash reservada durante cinco minutos.')
@@ -175,8 +175,16 @@ export default function ProductDetailPage() {
   const resenas = product.resumen_resenas || {}
 
   const rawOfertas = product.ofertas || []
+  const flashByOfferId = Object.fromEntries(flashRows.map(f => [f.oferta_id, f]))
+  const sortedOfertas = [...rawOfertas].sort((a, b) => {
+    if (a.es_tiendaya !== b.es_tiendaya) return (b.es_tiendaya ? 1 : 0) - (a.es_tiendaya ? 1 : 0)
+    const aFlash = Boolean(flashByOfferId[a.oferta_id])
+    const bFlash = Boolean(flashByOfferId[b.oferta_id])
+    if (aFlash !== bFlash) return (bFlash ? 1 : 0) - (aFlash ? 1 : 0)
+    return a.precio - b.precio
+  })
   const variantMap = new Map()
-  rawOfertas.forEach(offer => {
+  sortedOfertas.forEach(offer => {
     const vid = offer.producto_variante_id
     if (!variantMap.has(vid)) {
       variantMap.set(vid, { variante_id: vid, atributos: offer.variante_atributos || {}, ofertas: [] })
@@ -335,7 +343,15 @@ export default function ProductDetailPage() {
                     <Zap size={18} fill="currentColor" /> Venta flash de {flashSale.vendedor_nombre}
                   </div>
                   <span className="font-mono text-sm text-amber-800">
-                    {Math.max(0, Math.ceil((new Date(flashSale.finaliza_en + 'Z').getTime() - clock) / 1000))} s
+                    {(() => {
+                      const secs = Math.max(0, Math.ceil((new Date(flashSale.finaliza_en + 'Z').getTime() - clock) / 1000))
+                      const h = Math.floor(secs / 3600)
+                      const m = Math.floor((secs % 3600) / 60)
+                      const s = secs % 60
+                      return h > 0
+                        ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+                        : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+                    })()}
                   </span>
                 </div>
                 <p className="text-sm text-amber-900">
@@ -433,15 +449,25 @@ export default function ProductDetailPage() {
                           : { borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }
                         }
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <Store size={13} style={{ color: isSelected ? '#0288D1' : 'var(--color-text-muted)' }} strokeWidth={1.5} />
                           <span className="font-sans text-sm font-medium">{offer.vendedor_nombre}</span>
-                          {(offer.stock ?? 0) > 0 && (offer.stock ?? 0) <= 5 && (
+                          {offer.es_tiendaya && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--color-action)]/10 text-[var(--color-action)]">TiendaYa</span>
+                          )}
+                          {flashByOfferId[offer.oferta_id] && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                              <Zap size={9} fill="currentColor" /> {formatQ(flashByOfferId[offer.oferta_id].precio_promocional)}
+                            </span>
+                          )}
+                          {(offer.stock ?? 0) > 0 && (offer.stock ?? 0) <= 5 && !flashByOfferId[offer.oferta_id] && (
                             <span className="text-[10px] text-amber-500 font-medium">¡Últimas {offer.stock}!</span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm font-bold" style={{ color: '#0277BD' }}>{formatQ(offer.precio)}</span>
+                          <span className="font-mono text-sm font-bold" style={{ color: flashByOfferId[offer.oferta_id] ? '#b45309' : '#0277BD' }}>
+                            {flashByOfferId[offer.oferta_id] ? formatQ(flashByOfferId[offer.oferta_id].precio_promocional) : formatQ(offer.precio)}
+                          </span>
                           <span className="font-sans text-xs text-[var(--color-text-muted)]">{offer.stock} disp.</span>
                         </div>
                       </button>
