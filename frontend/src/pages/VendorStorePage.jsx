@@ -8,11 +8,13 @@ import {
 } from 'lucide-react'
 import api from '../api/client'
 import { getProducts, getCategories } from '../api/products'
+import { getPublicStoreConfig } from '../api/store'
 import { ProductCard } from '../components/product/ProductCard'
 import { ProductCardSkeleton } from '../components/ui/skeleton'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { formatDate } from '../lib/utils'
+import StoreRenderer from '../components/store/StoreRenderer'
 
 const CATEGORY_ICONS = {
   computadoras: Monitor,
@@ -50,6 +52,16 @@ export default function VendorStorePage() {
     queryKey: ['store-profile', vendedorId],
     queryFn: () => api.get(`/stores/${vendedorId}`).then(r => r.data),
   })
+
+  const { data: storeConfig } = useQuery({
+    queryKey: ['store-config-public', vendedorId],
+    queryFn: () => getPublicStoreConfig(vendedorId).then(r => r.data),
+    enabled: !!vendor,
+    staleTime: 30_000,
+  })
+
+  // Si la tienda tiene secciones configuradas, delegar al StoreRenderer
+  const hasCustomLayout = storeConfig?.secciones?.length > 0
 
   const { data: productsData, isLoading: loadingProducts } = useQuery({
     queryKey: ['store-products', vendedorId, page, categoria, q],
@@ -109,6 +121,11 @@ export default function VendorStorePage() {
         </Button>
       </div>
     )
+  }
+
+  // Tienda personalizada: delegar completamente al StoreRenderer
+  if (hasCustomLayout) {
+    return <StoreRenderer config={storeConfig} vendedorId={Number(vendedorId)} />
   }
 
   return (

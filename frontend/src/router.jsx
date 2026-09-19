@@ -21,6 +21,7 @@ import AdminCategoryPage from './pages/AdminCategoryPage'
 import AdminVendorPage from './pages/AdminVendorPage'
 import AdminUserPage from './pages/AdminUserPage'
 import VendorStorePage from './pages/VendorStorePage'
+import StoreEditorPage from './pages/StoreEditorPage'
 
 // Guarda de ruta: redirige al login si no hay sesión, o a "/" si el usuario no tiene el rol requerido
 function PrivateRoute({ children, roles }) {
@@ -45,6 +46,7 @@ export default function Router() {
       <Route path="/admin/vendors/:id" element={<PrivateRoute roles={['administrador']}><AdminVendorPage/></PrivateRoute>} />
       <Route path="/admin/users/:id" element={<PrivateRoute roles={['administrador']}><AdminUserPage/></PrivateRoute>} />
       <Route path="/tienda/:vendedorId" element={<VendorStorePage />} />
+      <Route path="/vendor/store/editor" element={<PrivateRoute roles={['vendedor','administrador']}><StoreEditorPage /></PrivateRoute>} />
       <Route path="/" element={<HomePage />} />
       <Route path="/catalog" element={<CatalogPage />} />
       <Route path="/login" element={<LoginPage />} />

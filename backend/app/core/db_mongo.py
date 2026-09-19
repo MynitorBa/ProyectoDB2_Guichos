@@ -78,6 +78,14 @@ def ensure_indexes(db: Database) -> None:
         background=True,
     )
 
+    # ── tiendas_config ────────────────────────────────────────────────────────
+    db.tiendas_config.create_index(
+        [('vendedor_id', ASCENDING)],
+        name='uidx_tienda_vendedor',
+        unique=True,
+        background=True,
+    )
+
 
 def close_mongo():
     global _client

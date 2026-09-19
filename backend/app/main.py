@@ -12,6 +12,7 @@ from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
 from app.api.v1 import backoffice, stores, flash_sales, analytics
+from app.api.v1 import store_editor
 
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ app.include_router(stores.router, prefix='/api/v1')
 app.include_router(flash_sales.router, prefix='/api/v1')
 app.include_router(flash_sales.vendor_router, prefix='/api/v1')
 app.include_router(analytics.router, prefix='/api/v1')
+app.include_router(store_editor.router, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox

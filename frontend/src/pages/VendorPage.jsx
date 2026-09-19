@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { Bell, Package, ClipboardList, Store, TrendingUp } from 'lucide-react'
+import { Bell, Package, ClipboardList, Store, TrendingUp, Paintbrush } from 'lucide-react'
 import { getVendorStats, getVendorOrders } from '../api/vendor'
 import { getNotifications, markAllAsRead } from '../api/notifications'
 import { Button } from '../components/ui/button'
@@ -29,6 +29,7 @@ const NAV_TABS = [
   { key: 'offers',        label: 'Mis ofertas',             icon: TrendingUp    },
   { key: 'trends',        label: 'Mis tendencias',          icon: TrendingUp    },
   { key: 'requests',      label: 'Solicitudes de catálogo', icon: Store         },
+  { key: 'store',         label: 'Mi tienda',               icon: Paintbrush    },
   { key: 'notifications', label: 'Notificaciones',          icon: Bell          },
 ]
 
@@ -127,6 +128,32 @@ export default function VendorPage() {
       {/* ── Contenido de cada pestaña ── */}
       {tab === 'offers' && <VendorOffers />}
       {tab === 'requests' && <CatalogRequestsSection />}
+      {tab === 'store' && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="font-display font-semibold text-xl text-[var(--color-text-primary)]">Mi tienda</h2>
+            <p className="font-sans text-sm text-[var(--color-text-secondary)] mt-1">
+              Personaliza el aspecto de tu página pública: colores, fuentes, secciones y más.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Link to="/vendor/store/editor"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-[var(--radius-lg)] font-display font-semibold text-sm text-white shadow-sm hover:opacity-90 transition-opacity"
+              style={{ background: 'linear-gradient(135deg, var(--color-action), var(--color-jade))' }}>
+              <Paintbrush size={16} /> Abrir editor de tienda
+            </Link>
+            {stats?.nombre_comercial && (
+              <Link to={`/tienda/${stats.vendedor_id || ''}`} target="_blank"
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-[var(--radius-lg)] font-display font-semibold text-sm border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] hover:border-[var(--color-action)] transition-colors">
+                <Store size={16} /> Ver mi tienda pública
+              </Link>
+            )}
+          </div>
+          <p className="font-sans text-xs text-[var(--color-text-muted)]">
+            Los cambios se publican en tu tienda pública al hacer clic en "Guardar" dentro del editor.
+          </p>
+        </section>
+      )}
 
       {tab === 'trends' && (
         <section className="space-y-5">
