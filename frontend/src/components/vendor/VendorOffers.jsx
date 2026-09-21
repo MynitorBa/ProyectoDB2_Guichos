@@ -203,6 +203,7 @@ function localDateTime(minutesFromNow) {
 function FlashSalePanel({ offer }) {
   const [price, setPrice] = useState(Math.max(0.01, Number(offer.precio) * 0.9).toFixed(2))
   const [units, setUnits] = useState(1)
+  const [maxPerUser, setMaxPerUser] = useState(1)
   const [starts, setStarts] = useState(localDateTime(0))
   const [ends, setEnds] = useState(localDateTime(60))
   const cache = useQueryClient()
@@ -216,6 +217,7 @@ function FlashSalePanel({ offer }) {
       oferta_id: offer.id,
       precio_promocional: Number(price),
       unidades: Number(units),
+      max_por_usuario: Number(maxPerUser),
       inicia_en: new Date(starts).toISOString(),
       finaliza_en: new Date(ends).toISOString(),
     }),
@@ -248,10 +250,11 @@ function FlashSalePanel({ offer }) {
       </div>
       {current ? (
         <div className="space-y-3">
-          <div className="rounded-lg bg-[var(--color-background)] border border-[var(--color-border)] p-4 grid sm:grid-cols-4 gap-3 text-sm">
+          <div className="rounded-lg bg-[var(--color-background)] border border-[var(--color-border)] p-4 grid sm:grid-cols-5 gap-3 text-sm">
             <div><span className="text-[var(--color-text-muted)] block">Estado</span><Badge variant={current.estado === 'activa' ? 'success' : 'warning'}>{current.estado}</Badge></div>
             <div><span className="text-[var(--color-text-muted)] block">Precio flash</span><strong>{formatQ(current.precio_promocional)}</strong></div>
             <div><span className="text-[var(--color-text-muted)] block">Disponibles</span><strong>{current.unidades_disponibles} / {current.unidades_totales}</strong></div>
+            <div><span className="text-[var(--color-text-muted)] block">Máx. por pedido</span><strong>{current.max_por_usuario}</strong></div>
             <div><span className="text-[var(--color-text-muted)] block">Finaliza</span><strong>{new Date(current.finaliza_en + 'Z').toLocaleString()}</strong></div>
           </div>
           <Button
@@ -271,7 +274,8 @@ function FlashSalePanel({ offer }) {
         <form className="space-y-4" onSubmit={e => { e.preventDefault(); mutation.mutate() }}>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-1.5"><Label>Precio flash (GTQ)</Label><Input type="number" min="0.01" max={Math.max(0.01, Number(offer.precio) - 0.01)} step="0.01" required value={price} onChange={e => setPrice(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Unidades</Label><Input type="number" min="1" max={offer.stock} step="1" required value={units} onChange={e => setUnits(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Unidades</Label><Input type="number" min="1" max={offer.stock} step="1" required value={units} onChange={e => { setUnits(e.target.value); if (Number(maxPerUser) > Number(e.target.value)) setMaxPerUser(e.target.value) }} /></div>
+            <div className="space-y-1.5"><Label>Máx. por pedido</Label><Input type="number" min="1" max={Number(units)} step="1" required value={maxPerUser} onChange={e => setMaxPerUser(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Inicio</Label><Input type="datetime-local" required value={starts} onChange={e => setStarts(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Finalización</Label><Input type="datetime-local" required value={ends} onChange={e => setEnds(e.target.value)} /></div>
           </div>

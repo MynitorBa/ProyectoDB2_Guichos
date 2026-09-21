@@ -170,7 +170,7 @@ def listar_productos(
                 default=None,
             )
             winning_flash = (
-                best_flash if best_flash and best_flash[1]['precio'] < lowest_normal_price
+                best_flash if best_flash and best_flash[1]['precio'] < best_flash[0]['precio']
                 else None
             )
             if solo_flash and not winning_flash:

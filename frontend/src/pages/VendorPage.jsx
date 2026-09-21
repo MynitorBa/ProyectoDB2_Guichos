@@ -160,7 +160,7 @@ export default function VendorPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="font-display font-semibold text-xl">Rendimiento de mis ofertas</h2>
-              <p className="font-sans text-sm text-[var(--color-text-secondary)] mt-1">Ventas pagadas proyectadas en Cassandra.</p>
+              <p className="font-sans text-sm text-[var(--color-text-secondary)] mt-1">Ventas pagadas, por semana.</p>
             </div>
             <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semana que inicia
               <input type="date" value={analyticsWeek} onChange={e => setAnalyticsWeek(e.target.value)} className="block mt-1 h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3" />

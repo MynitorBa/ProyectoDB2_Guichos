@@ -33,12 +33,13 @@ class FlashCreate(BaseModel):
     oferta_id: int
     precio_promocional: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     unidades: int = Field(gt=0, le=2147483647, strict=True)
+    max_por_usuario: int = Field(default=1, ge=1, strict=True)
     inicia_en: datetime
     finaliza_en: datetime
 
 
 class FlashReserve(BaseModel):
-    cantidad: int = Field(default=1, ge=1, le=1, strict=True)
+    cantidad: int = Field(default=1, ge=1, strict=True)
 
 
 def _naive_utc(value: datetime) -> datetime:
@@ -187,6 +188,8 @@ def create_flash_sale(
     )
     if available < payload.unidades:
         raise HTTPException(409, f'Solo hay {available} unidades libres para apartar.')
+    if payload.max_por_usuario > payload.unidades:
+        raise HTTPException(422, 'El máximo por usuario no puede ser mayor que las unidades totales de la promoción.')
 
     promotion = PromocionFlash(
         oferta_id=offer.id,
@@ -194,7 +197,7 @@ def create_flash_sale(
         precio_promocional=payload.precio_promocional,
         unidades_totales=payload.unidades,
         unidades_vendidas=0,
-        max_por_usuario=1,
+        max_por_usuario=payload.max_por_usuario,
         segundos_reserva=300,
         inicia_en=starts,
         finaliza_en=ends,
@@ -218,7 +221,7 @@ def create_flash_sale(
             r,
             promocion_id=promotion.id,
             unidades=payload.unidades,
-            max_por_usuario=1,
+            max_por_usuario=payload.max_por_usuario,
             inicia_ts=int(starts.replace(tzinfo=timezone.utc).timestamp()),
             finaliza_ts=int(ends.replace(tzinfo=timezone.utc).timestamp()),
             precio=payload.precio_promocional,

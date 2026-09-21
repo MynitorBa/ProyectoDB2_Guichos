@@ -13,8 +13,8 @@ export const getProduct = (id) =>
 export const getActiveFlashSales = (ofertaId) =>
   api.get('/flash-sales/active', { params: { oferta_id: ofertaId } })
 
-export const reserveFlashSale = (promotionId) =>
-  api.post(`/flash-sales/${promotionId}/reserve`, { cantidad: 1 })
+export const reserveFlashSale = (promotionId, cantidad = 1) =>
+  api.post(`/flash-sales/${promotionId}/reserve`, { cantidad })
 
 export const getCategories = () =>
   api.get('/categories')

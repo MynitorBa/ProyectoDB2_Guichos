@@ -69,6 +69,7 @@ export default function ProductDetailPage() {
   const { user } = useAuth()
   const [selectedImg, setSelectedImg] = useState(0)
   const [cantidad, setCantidad] = useState(1)
+  const [flashCantidad, setFlashCantidad] = useState(1)
   const [selectedOfferId, setSelectedOfferId] = useState(null)
   const [selectedVariantId, setSelectedVariantId] = useState(null)
 
@@ -100,6 +101,8 @@ export default function ProductDetailPage() {
     }
   }, [data, desdeTienda])
 
+  useEffect(() => { setFlashCantidad(1) }, [selectedOfferId])
+
   const product = data
 
   async function handleAdd() {
@@ -128,10 +131,10 @@ export default function ProductDetailPage() {
     }
     if (!flashSale) return
     try {
-      await reserveFlashSale(flashSale.id)
+      await reserveFlashSale(flashSale.id, flashCantidad)
       await fetchCart()
       await refetchFlash()
-      toast.success('Unidad flash reservada durante cinco minutos.')
+      toast.success(`${flashCantidad} unidad${flashCantidad > 1 ? 'es' : ''} flash reservada${flashCantidad > 1 ? 's' : ''} durante cinco minutos.`)
       navigate('/cart')
     } catch (error) {
       toast.error(error.response?.data?.detail || 'No se pudo reservar la unidad flash.')
@@ -207,7 +210,7 @@ export default function ProductDetailPage() {
   const flashSale = flashRows.find(row => row.oferta_id === selectedOffer?.oferta_id)
   const atributos = { ...(product.atributos || {}), ...(selectedVariant?.atributos || {}) }
   const displayPrice = flashSale?.precio_promocional ?? selectedOffer?.precio ?? product.precio
-  const displayStock = selectedOffer?.stock ?? 0
+  const displayStock = (selectedOffer?.stock ?? 0) + (flashSale ? (flashSale.unidades_disponibles ?? 0) : 0)
   const displayAvailable = selectedOffer != null
     ? ((selectedOffer.disponible ?? false) || (selectedOffer.stock ?? 0) > 0)
     : (product.disponible ?? false)
@@ -358,13 +361,32 @@ export default function ProductDetailPage() {
                   <span className="line-through opacity-60 mr-2">{formatQ(flashSale.precio_normal)}</span>
                   <strong>{flashSale.unidades_disponibles} unidades promocionales disponibles</strong>
                 </p>
+                {flashSale.max_por_usuario > 1 && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-amber-800 font-medium">Cantidad:</span>
+                    <div className="flex items-center border border-amber-300 rounded-lg overflow-hidden bg-white">
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-amber-700 hover:bg-amber-100 transition-colors font-bold"
+                        onClick={() => setFlashCantidad(c => Math.max(1, c - 1))}
+                      >−</button>
+                      <span className="px-4 py-1.5 font-mono font-semibold text-amber-900 text-sm min-w-[2.5rem] text-center">{flashCantidad}</span>
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 text-amber-700 hover:bg-amber-100 transition-colors font-bold"
+                        onClick={() => setFlashCantidad(c => Math.min(flashSale.max_por_usuario, flashSale.unidades_disponibles, c + 1))}
+                      >+</button>
+                    </div>
+                    <span className="text-xs text-amber-700">Máx. {flashSale.max_por_usuario} por pedido</span>
+                  </div>
+                )}
                 <Button
                   type="button"
                   className="w-full"
                   disabled={cartLoading || flashSale.unidades_disponibles < 1}
                   onClick={handleFlashReserve}
                 >
-                  <Zap size={15} /> Reservar una unidad por 5 minutos
+                  <Zap size={15} /> Reservar {flashSale.max_por_usuario > 1 ? `${flashCantidad} unidad${flashCantidad > 1 ? 'es' : ''}` : 'una unidad'} por 5 minutos
                 </Button>
               </div>
             )}
@@ -460,15 +482,13 @@ export default function ProductDetailPage() {
                               <Zap size={9} fill="currentColor" /> {formatQ(flashByOfferId[offer.oferta_id].precio_promocional)}
                             </span>
                           )}
-                          {(offer.stock ?? 0) > 0 && (offer.stock ?? 0) <= 5 && !flashByOfferId[offer.oferta_id] && (
-                            <span className="text-[10px] text-amber-500 font-medium">¡Últimas {offer.stock}!</span>
-                          )}
+                          {(() => { const totalStock = (offer.stock ?? 0) + (flashByOfferId[offer.oferta_id]?.unidades_disponibles ?? 0); return totalStock > 0 && totalStock <= 5 && !flashByOfferId[offer.oferta_id] && <span className="text-[10px] text-amber-500 font-medium">¡Últimas {totalStock}!</span> })()}
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm font-bold" style={{ color: flashByOfferId[offer.oferta_id] ? '#b45309' : '#0277BD' }}>
                             {flashByOfferId[offer.oferta_id] ? formatQ(flashByOfferId[offer.oferta_id].precio_promocional) : formatQ(offer.precio)}
                           </span>
-                          <span className="font-sans text-xs text-[var(--color-text-muted)]">{offer.stock} disp.</span>
+                          <span className="font-sans text-xs text-[var(--color-text-muted)]">{(offer.stock ?? 0) + (flashByOfferId[offer.oferta_id]?.unidades_disponibles ?? 0)} disp.</span>
                         </div>
                       </button>
                       <Link
