@@ -881,13 +881,28 @@ def main():
     try:
         from app.core.db_cassandra import cassandra_health, close_cassandra, get_cassandra_session
         from app.core.db_mysql import SessionLocal
-        from app.services.analytics_service import _paid_lines
+        from app.services.analytics_service import _paid_lines, _week_for_row
         cassandra = get_cassandra_session()
         info = cassandra_health()
         with SessionLocal() as analytics_db:
-            expected_lines = len(_paid_lines(analytics_db))
+            analytics_rows = _paid_lines(analytics_db)
+            expected_lines = len(analytics_rows)
+            expected_product_weeks = len({
+                (_week_for_row(row), row['producto_ref'])
+                for row in analytics_rows
+            })
+            expected_vendor_product_weeks = len({
+                (row['vendedor_id'], row['producto_ref'], _week_for_row(row))
+                for row in analytics_rows
+            })
         projected_lines = cassandra.execute(
             'SELECT COUNT(*) FROM ventas_producto_semana'
+        ).one()[0]
+        projected_product_weeks = cassandra.execute(
+            'SELECT COUNT(*) FROM tendencia_producto_semana'
+        ).one()[0]
+        projected_vendor_product_weeks = cassandra.execute(
+            'SELECT COUNT(*) FROM tendencia_producto_vendedor_semana'
         ).one()[0]
         if projected_lines != expected_lines:
             print(
@@ -899,6 +914,29 @@ def main():
             print(
                 f'Cassandra analítica: {projected_lines} líneas pagadas '
                 f'proyectadas; versión {info["version"]}'
+            )
+        if projected_product_weeks != expected_product_weeks:
+            print(
+                'Cassandra tendencias por producto: proyección divergente '
+                f'(MySQL={expected_product_weeks}, Cassandra={projected_product_weeks})'
+            )
+            ok = False
+        else:
+            print(
+                'Cassandra tendencias por producto: '
+                f'{projected_product_weeks} resúmenes semanales proyectados'
+            )
+        if projected_vendor_product_weeks != expected_vendor_product_weeks:
+            print(
+                'Cassandra tendencias vendedor/producto: proyección divergente '
+                f'(MySQL={expected_vendor_product_weeks}, '
+                f'Cassandra={projected_vendor_product_weeks})'
+            )
+            ok = False
+        else:
+            print(
+                'Cassandra tendencias vendedor/producto: '
+                f'{projected_vendor_product_weeks} resúmenes semanales proyectados'
             )
         close_cassandra()
     except Exception as e:

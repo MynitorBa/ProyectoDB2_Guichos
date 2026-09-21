@@ -25,7 +25,8 @@ import { Separator } from '../components/ui/separator'
 import { formatQ, formatDate, cn } from '../lib/utils'
 import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequestsSection'
 import { AdminVendorsSection } from './AdminVendorPage'
-import { getAdminTrends } from '../api/analytics'
+import { getAdminProductTrend, getAdminTrends } from '../api/analytics'
+import ProductPicker from '../components/ProductPicker'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
@@ -671,67 +672,112 @@ function currentMonday() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
 
+function shiftWeek(week, amount) {
+  const value = new Date(`${week}T12:00:00`)
+  value.setDate(value.getDate() + amount * 7)
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+const loadAdminAnalyticsProducts = (params) => getAdminProducts({ ...params, estado: 'todos' })
+const ANALYTICS_COLORS = ['var(--color-action)', 'var(--color-jade)', '#f59e0b', '#8b5cf6', '#64748b']
+
 function AnalyticsSection() {
   const [week, setWeek] = useState(currentMonday)
+  const [comparisonWeeks, setComparisonWeeks] = useState(1)
+  const [onlyWithoutSales, setOnlyWithoutSales] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState(null)
+  const [fromWeek, setFromWeek] = useState(() => shiftWeek(currentMonday(), -11))
+  const [toWeek, setToWeek] = useState(currentMonday)
+  const productRef = selectedProduct?._id || ''
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['cassandra-trends', week],
-    queryFn: () => getAdminTrends(week).then(r => r.data),
+    queryKey: ['cassandra-trends', week, comparisonWeeks, onlyWithoutSales],
+    queryFn: () => getAdminTrends(week, comparisonWeeks, onlyWithoutSales).then(r => r.data),
+    retry: false,
+  })
+  const { data: productTrend, isLoading: productTrendLoading, isError: productTrendError, error: productTrendRequestError } = useQuery({
+    queryKey: ['cassandra-product-trend', productRef, fromWeek, toWeek],
+    queryFn: () => getAdminProductTrend(productRef, fromWeek, toWeek).then(r => r.data),
+    enabled: !!productRef && !!fromWeek && !!toWeek && fromWeek <= toWeek,
     retry: false,
   })
   const rows = data?.items || []
+  const productRows = productTrend?.items || []
+  const comparedWeeks = rows[0]?.semanas?.map(item => item.semana_inicio) || []
   const chart = rows.slice(0, 10).map(item => ({
     nombre: item.producto_nombre?.slice(0, 24),
-    unidades: item.unidades,
-    anterior: item.unidades_semana_anterior,
+    ...Object.fromEntries((item.semanas || []).map(value => [value.semana_inicio, value.unidades])),
   }))
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 className="font-display font-semibold text-lg">Demanda por semana</h3>
-          <p className="font-sans text-sm text-[var(--color-text-secondary)]">Proyección analítica de ventas pagadas en Cassandra, de lunes a domingo.</p>
+          <p className="font-sans text-sm text-[var(--color-text-secondary)]">Ventas pagadas proyectadas en Cassandra, de lunes a domingo.</p>
         </div>
-        <label className="font-sans text-xs text-[var(--color-text-secondary)]">
-          Semana que inicia
-          <Input type="date" value={week} onChange={e => setWeek(e.target.value)} className="mt-1" />
-        </label>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semanas anteriores
+            <Select value={String(comparisonWeeks)} onValueChange={value => setComparisonWeeks(Number(value))}>
+              <SelectTrigger className="mt-1 w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>{[0,1,2,3,4].map(value => <SelectItem key={value} value={String(value)}>{value === 0 ? 'Solo la actual' : `${value} anterior${value > 1 ? 'es' : ''}`}</SelectItem>)}</SelectContent>
+            </Select>
+          </label>
+          <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semana que inicia
+            <Input type="date" min="2020-01-06" step="7" value={week} onChange={e => setWeek(e.target.value)} className="mt-1" />
+          </label>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button variant={!onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(false)}>Con actividad</Button>
+        <Button variant={onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(true)}>Sin ventas</Button>
       </div>
       {isLoading ? <Skeleton className="h-72 w-full" /> : isError ? (
         <p role="alert" className="text-sm text-[var(--color-error)]">{error?.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-muted)] py-10 text-center">No hay ventas pagadas en esta semana.</p>
+        <p className="text-sm text-[var(--color-text-muted)] py-10 text-center">{onlyWithoutSales ? 'Todos los productos registraron ventas esta semana.' : 'No hay ventas pagadas en el período seleccionado.'}</p>
+      ) : onlyWithoutSales ? (
+        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]">
+          <table className="w-full text-sm"><thead><tr className="bg-[var(--color-background)]">
+            {['Producto','SKU','Categorías','Estado','Resultado'].map(header => <th key={header} className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">{header}</th>)}
+          </tr></thead><tbody>{rows.map(item => <tr key={item.producto_ref} className="border-t border-[var(--color-border)] bg-red-50">
+            <td className="px-4 py-3 font-semibold">{item.producto_nombre}</td><td className="px-4 py-3 font-mono">{item.sku || '—'}</td>
+            <td className="px-4 py-3">{item.categorias?.join(', ') || 'Sin categoría'}</td><td className="px-4 py-3 capitalize">{item.estado || '—'}</td>
+            <td className="px-4 py-3 font-semibold text-[var(--color-error)]">0 · Sin ventas</td>
+          </tr>)}</tbody></table>
+        </div>
       ) : <>
         <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5">
-          <h4 className="font-display font-semibold mb-4">Top productos y comparación anterior</h4>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chart} margin={{ left: 4, right: 12 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="nombre" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={70} />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="unidades" name="Semana seleccionada" fill="var(--color-action)" radius={[4,4,0,0]} />
-              <Bar dataKey="anterior" name="Semana anterior" fill="var(--color-jade)" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h4 className="font-display font-semibold mb-4">Top productos — semana actual y comparaciones</h4>
+          <ResponsiveContainer width="100%" height={300}><BarChart data={chart} margin={{ left: 4, right: 12 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" /><XAxis dataKey="nombre" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={70} /><YAxis allowDecimals={false} /><Tooltip /><Legend />
+            {comparedWeeks.map((value, index) => <Bar key={value} dataKey={value} name={index === 0 ? `Actual · ${value}` : `${index} sem. antes · ${value}`} fill={ANALYTICS_COLORS[index]} radius={[4,4,0,0]} />)}
+          </BarChart></ResponsiveContainer>
         </div>
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-[var(--color-background)]">
-              {['Producto','Unidades','Anterior','Variación','Ingresos netos','Ofertas','Flash'].map(h => <th key={h} className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">{h}</th>)}
-            </tr></thead>
-            <tbody>{rows.map(item => <tr key={item.producto_ref} className="border-t border-[var(--color-border)]">
-              <td className="px-4 py-3 font-semibold">{item.producto_nombre}</td>
-              <td className="px-4 py-3 font-mono">{item.unidades}</td>
-              <td className="px-4 py-3 font-mono">{item.unidades_semana_anterior}</td>
-              <td className={cn('px-4 py-3 font-mono font-semibold', item.variacion_unidades >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]')}>{item.variacion_unidades >= 0 ? '+' : ''}{item.variacion_unidades}</td>
-              <td className="px-4 py-3 font-mono">{formatQ(item.ingresos_netos)}</td>
-              <td className="px-4 py-3 font-mono">{item.ofertas}</td>
-              <td className="px-4 py-3 font-mono">{item.unidades_flash}</td>
-            </tr>)}</tbody>
-          </table>
-        </div>
+        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]"><table className="w-full text-sm">
+          <thead><tr className="bg-[var(--color-background)]"><th className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">Producto</th>
+            {comparedWeeks.map((value, index) => <th key={value} className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">{index === 0 ? 'Actual' : `Hace ${index} sem.`}</th>)}
+            {comparisonWeeks > 0 && <th className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">Variación</th>}
+            {['Ingresos netos','Ofertas','Flash'].map(header => <th key={header} className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">{header}</th>)}
+          </tr></thead><tbody>{rows.map(item => <tr key={item.producto_ref} className={cn('border-t border-[var(--color-border)]', item.unidades === 0 && 'bg-red-50')}>
+            <td className="px-4 py-3 font-semibold">{item.producto_nombre}</td>
+            {(item.semanas || []).map(value => <td key={value.semana_inicio} className={cn('px-4 py-3 font-mono', value.unidades === 0 && 'text-[var(--color-error)]')}>{value.unidades}</td>)}
+            {comparisonWeeks > 0 && <td className={cn('px-4 py-3 font-mono font-semibold', item.variacion_unidades >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]')}>{item.variacion_unidades >= 0 ? '+' : ''}{item.variacion_unidades}</td>}
+            <td className="px-4 py-3 font-mono">{formatQ(item.ingresos_netos)}</td><td className="px-4 py-3 font-mono">{item.ofertas}</td><td className="px-4 py-3 font-mono">{item.unidades_flash}</td>
+          </tr>)}</tbody>
+        </table></div>
       </>}
+
+      <div className="border-t border-[var(--color-border)] pt-6 space-y-5">
+        <div><h3 className="font-display font-semibold text-lg">Seguimiento semanal por producto</h3><p className="font-sans text-sm text-[var(--color-text-secondary)]">Busca visualmente un producto y consulta su serie continua; las semanas sin ventas aparecen en cero.</p></div>
+        <ProductPicker value={selectedProduct} onSelect={setSelectedProduct} loadProducts={loadAdminAnalyticsProducts} queryKey="admin-analytics-product-picker" title="Producto para seguimiento" description="Busca por nombre o SKU y selecciona el producto por su imagen." />
+        <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
+          <label className="font-sans text-xs text-[var(--color-text-secondary)]">Desde (lunes)<Input type="date" min="2020-01-06" step="7" value={fromWeek} onChange={event => setFromWeek(event.target.value)} className="mt-1" /></label>
+          <label className="font-sans text-xs text-[var(--color-text-secondary)]">Hasta (lunes)<Input type="date" min="2020-01-06" step="7" value={toWeek} onChange={event => setToWeek(event.target.value)} className="mt-1" /></label>
+        </div>
+        {fromWeek > toWeek ? <p role="alert" className="text-sm text-[var(--color-error)]">La semana inicial no puede ser posterior a la final.</p> : !productRef ? <p className="text-sm text-[var(--color-text-muted)] py-8 text-center">Selecciona un producto para consultar su evolución.</p> : productTrendLoading ? <Skeleton className="h-72 w-full" /> : productTrendError ? <p role="alert" className="text-sm text-[var(--color-error)]">{productTrendRequestError?.response?.data?.detail || 'No se pudo consultar el seguimiento del producto.'}</p> : <>
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-5"><h4 className="font-display font-semibold mb-4">{productTrend?.producto_nombre}</h4><ResponsiveContainer width="100%" height={280}><LineChart data={productRows} margin={{ left: 4, right: 12 }}><CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" /><XAxis dataKey="semana_inicio" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="unidades" name="Unidades vendidas" stroke="var(--color-action)" strokeWidth={3} dot={{ r: 4 }} /></LineChart></ResponsiveContainer></div>
+          <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]"><table className="w-full text-sm"><thead><tr className="bg-[var(--color-background)]">{['Semana','Unidades','Variación','Ingresos netos','Pedidos','Ofertas','Flash'].map(header => <th key={header} className="px-4 py-3 text-left text-xs uppercase text-[var(--color-text-muted)]">{header}</th>)}</tr></thead><tbody>{productRows.map(item => <tr key={item.semana_inicio} className={cn('border-t border-[var(--color-border)]', item.unidades === 0 && 'bg-red-50')}><td className="px-4 py-3 font-semibold">{item.semana_inicio}</td><td className={cn('px-4 py-3 font-mono font-semibold', item.unidades === 0 && 'text-[var(--color-error)]')}>{item.unidades === 0 ? '0 · Sin ventas' : item.unidades}</td><td className={cn('px-4 py-3 font-mono font-semibold', item.variacion_unidades >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]')}>{item.variacion_unidades >= 0 ? '+' : ''}{item.variacion_unidades}</td><td className="px-4 py-3 font-mono">{formatQ(item.ingresos_netos)}</td><td className="px-4 py-3 font-mono">{item.pedidos}</td><td className="px-4 py-3 font-mono">{item.ofertas}</td><td className="px-4 py-3 font-mono">{item.unidades_flash}</td></tr>)}</tbody></table></div>
+        </>}
+      </div>
     </section>
   )
 }

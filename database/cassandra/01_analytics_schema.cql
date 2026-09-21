@@ -45,6 +45,44 @@ CREATE TABLE IF NOT EXISTS resumen_productos_semana (
     PRIMARY KEY ((semana_inicio), producto_ref)
 );
 
+-- Seguimiento de un producto a través del tiempo. Aunque repite el resumen
+-- semanal, cambia la partición para responder eficientemente la consulta
+-- "¿cómo se comportó este producto entre dos semanas?" sin ALLOW FILTERING.
+CREATE TABLE IF NOT EXISTS tendencia_producto_semana (
+    producto_ref text,
+    semana_inicio date,
+    producto_nombre_snapshot text,
+    imagen_snapshot text,
+    unidades_vendidas bigint,
+    ingresos_brutos decimal,
+    ingresos_reembolsados decimal,
+    ingresos_netos decimal,
+    pedidos_distintos bigint,
+    vendedores_distintos bigint,
+    ofertas_distintas bigint,
+    unidades_flash bigint,
+    actualizado_en timestamp,
+    PRIMARY KEY ((producto_ref), semana_inicio)
+) WITH CLUSTERING ORDER BY (semana_inicio DESC);
+
+-- La misma evolución, aislada por vendedor. Permite que cada vendedor consulte
+-- únicamente sus productos sin filtrar ni exponer ventas de terceros.
+CREATE TABLE IF NOT EXISTS tendencia_producto_vendedor_semana (
+    vendedor_id bigint,
+    producto_ref text,
+    semana_inicio date,
+    producto_nombre_snapshot text,
+    unidades_vendidas bigint,
+    ingresos_brutos decimal,
+    ingresos_reembolsados decimal,
+    ingresos_netos decimal,
+    pedidos_distintos bigint,
+    ofertas_distintas bigint,
+    unidades_flash bigint,
+    actualizado_en timestamp,
+    PRIMARY KEY ((vendedor_id, producto_ref), semana_inicio)
+) WITH CLUSTERING ORDER BY (semana_inicio DESC);
+
 -- Panel privado del vendedor, desglosado por cada oferta.
 CREATE TABLE IF NOT EXISTS resumen_ofertas_vendedor_semana (
     vendedor_id bigint,

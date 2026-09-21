@@ -174,3 +174,20 @@ Tras la corrección, `verify_setup.py` finaliza con `[OK] Setup completo.`
 cd backend
 .\venv\Scripts\python.exe scripts\verify_setup.py
 ```
+
+---
+
+## Seguimiento semanal por producto — 21 de septiembre de 2026
+
+- Backend: **89 pruebas automatizadas aprobadas** (89 passed in 22.06s).
+- Frontend: compilación de producción aprobada.
+- Setup integral: `[OK] Setup completo.`
+- Nueva prueba: un producto que vendió la semana anterior y ahora tiene cero
+  ventas permanece en la comparación con variación de -100 %.
+- Nueva prueba: el historial por producto genera una serie continua y completa
+  con cero las semanas en las que no existieron ventas.
+- Nueva prueba: la comparación acepta de cero a cuatro semanas anteriores y
+  conserva una columna independiente por semana.
+- Prueba API real: `El hombre más rico de Babilonia` se consultó en un rango de
+  34 semanas; Cassandra devolvió 3 semanas con ventas y la API completó las 31
+  semanas restantes con cero.

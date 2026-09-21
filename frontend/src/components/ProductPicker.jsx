@@ -6,7 +6,14 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dial
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 
-export default function ProductPicker({ value, onSelect }) {
+export default function ProductPicker({
+  value,
+  onSelect,
+  loadProducts = (params) => getProducts(params),
+  queryKey = 'product-picker',
+  title = 'Seleccionar producto',
+  description = 'Busca por nombre y reconoce el producto por su imagen.',
+}) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
@@ -18,9 +25,9 @@ export default function ProductPicker({ value, onSelect }) {
   }, [search])
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['product-picker', q, page],
+    queryKey: [queryKey, q, page],
     enabled: open,
-    queryFn: () => getProducts({ q, page, page_size: 12, orden: 'nombre_asc' }).then(r => r.data),
+    queryFn: () => loadProducts({ q, page, page_size: 12, orden: 'nombre_asc' }).then(r => r.data),
   })
 
   return (
@@ -39,9 +46,9 @@ export default function ProductPicker({ value, onSelect }) {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl">
-          <DialogTitle>Seleccionar producto</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Busca por nombre y reconoce el producto por su imagen. Después elegirás o propondrás una variante.
+            {description}
           </DialogDescription>
 
           <Input

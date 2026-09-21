@@ -1,17 +1,35 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line } from 'recharts'
 import { Bell, Package, ClipboardList, Store, TrendingUp, Paintbrush } from 'lucide-react'
 import { getVendorStats, getVendorOrders } from '../api/vendor'
 import { getNotifications, markAllAsRead } from '../api/notifications'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Badge } from '../components/ui/badge'
-import { formatQ, formatDate } from '../lib/utils'
+import { formatQ, formatDate, cn } from '../lib/utils'
 import { CatalogRequestsSection } from '../components/vendor/CatalogRequestsSection'
 import { VendorOffers } from '../components/vendor/VendorOffers'
 import { orderStateLabel } from './OrderWorkspacePage'
-import { getVendorTrends } from '../api/analytics'
+import { getVendorAnalyticsProducts, getVendorProductTrend, getVendorTrends } from '../api/analytics'
+import ProductPicker from '../components/ProductPicker'
+
+function mondayNow() {
+  const now = new Date()
+  now.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function moveWeek(week, amount) {
+  const value = new Date(`${week}T12:00:00`)
+  value.setDate(value.getDate() + amount * 7)
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+const loadVendorAnalyticsProducts = (params) => getVendorAnalyticsProducts(params)
+const TREND_COLORS = ['var(--color-action)', 'var(--color-jade)', '#f59e0b', '#8b5cf6', '#64748b']
 
 const ESTADO_BADGE = {
   pendiente:         'warning',
@@ -38,11 +56,12 @@ export default function VendorPage() {
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') || 'orders'
   const [page, setPage] = useState(1)
-  const [analyticsWeek, setAnalyticsWeek] = useState(() => {
-    const now = new Date()
-    now.setDate(now.getDate() - ((now.getDay() + 6) % 7))
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  })
+  const [analyticsWeek, setAnalyticsWeek] = useState(mondayNow)
+  const [comparisonWeeks, setComparisonWeeks] = useState(1)
+  const [onlyWithoutSales, setOnlyWithoutSales] = useState(false)
+  const [selectedTrendProduct, setSelectedTrendProduct] = useState(null)
+  const [trendFrom, setTrendFrom] = useState(() => moveWeek(mondayNow(), -11))
+  const [trendTo, setTrendTo] = useState(mondayNow)
   const cache = useQueryClient()
 
   const { data: stats, error } = useQuery({
@@ -61,9 +80,15 @@ export default function VendorPage() {
     enabled: tab === 'notifications',
   })
   const { data: trends, isLoading: trendsLoading, error: trendsError } = useQuery({
-    queryKey: ['vendor-cassandra-trends', analyticsWeek],
-    queryFn: () => getVendorTrends(analyticsWeek).then(r => r.data),
+    queryKey: ['vendor-cassandra-trends', analyticsWeek, comparisonWeeks, onlyWithoutSales],
+    queryFn: () => getVendorTrends(analyticsWeek, comparisonWeeks, onlyWithoutSales).then(r => r.data),
     enabled: tab === 'trends',
+    retry: false,
+  })
+  const { data: productTrend, isLoading: productTrendLoading, error: productTrendError } = useQuery({
+    queryKey: ['vendor-product-trend', selectedTrendProduct?._id, trendFrom, trendTo],
+    queryFn: () => getVendorProductTrend(selectedTrendProduct._id, trendFrom, trendTo).then(r => r.data),
+    enabled: tab === 'trends' && !!selectedTrendProduct?._id && trendFrom <= trendTo,
     retry: false,
   })
 
@@ -160,36 +185,61 @@ export default function VendorPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="font-display font-semibold text-xl">Rendimiento de mis ofertas</h2>
-              <p className="font-sans text-sm text-[var(--color-text-secondary)] mt-1">Ventas pagadas, por semana.</p>
+              <p className="font-sans text-sm text-[var(--color-text-secondary)] mt-1">Solo tus ventas pagadas y tus productos, por semana.</p>
             </div>
-            <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semana que inicia
-              <input type="date" value={analyticsWeek} onChange={e => setAnalyticsWeek(e.target.value)} className="block mt-1 h-10 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3" />
-            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semanas anteriores
+                <Select value={String(comparisonWeeks)} onValueChange={value => setComparisonWeeks(Number(value))}>
+                  <SelectTrigger className="mt-1 w-44"><SelectValue /></SelectTrigger>
+                  <SelectContent>{[0,1,2,3,4].map(value => <SelectItem key={value} value={String(value)}>{value === 0 ? 'Solo la actual' : `${value} anterior${value > 1 ? 'es' : ''}`}</SelectItem>)}</SelectContent>
+                </Select>
+              </label>
+              <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semana que inicia
+                <Input type="date" min="2020-01-06" step="7" value={analyticsWeek} onChange={e => setAnalyticsWeek(e.target.value)} className="mt-1" />
+              </label>
+            </div>
           </div>
+          <div className="flex gap-2"><Button variant={!onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(false)}>Con actividad</Button><Button variant={onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(true)}>Sin ventas</Button></div>
           {trendsLoading ? <p className="text-sm text-[var(--color-text-muted)]">Cargando tendencias…</p> : trendsError ? (
             <p role="alert" className="text-sm text-[var(--color-error)]">{trendsError.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
+          ) : trends?.items?.length && onlyWithoutSales ? (
+            <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]"><table className="w-full text-sm"><thead><tr className="bg-[var(--color-background)]">
+              {['Oferta','Producto','SKU','Estado','Precio','Stock','Resultado'].map(header => <th key={header} className="px-3 py-2.5 text-left text-xs uppercase text-[var(--color-text-muted)]">{header}</th>)}
+            </tr></thead><tbody>{trends.items.map(item => <tr key={item.oferta_id} className="border-t border-[var(--color-border)] bg-red-50">
+              <td className="px-3 py-3 font-mono">#{item.oferta_id}</td><td className="px-3 py-3 font-semibold">{item.producto_nombre}</td><td className="px-3 py-3 font-mono">{item.sku}</td><td className="px-3 py-3 capitalize">{item.estado}</td><td className="px-3 py-3 font-mono">{formatQ(item.precio)}</td><td className="px-3 py-3 font-mono">{item.stock}</td><td className="px-3 py-3 font-semibold text-[var(--color-error)]">0 · Sin ventas</td>
+            </tr>)}</tbody></table></div>
           ) : trends?.items?.length ? <>
             <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-5">
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={trends.items.slice(0, 10)}>
+                <BarChart data={trends.items.slice(0, 10).map(item => ({ sku: item.sku, ...Object.fromEntries((item.semanas || []).map(value => [value.semana_inicio, value.unidades])) }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="sku" tick={{ fontSize: 10 }} />
                   <YAxis allowDecimals={false} />
-                  <Tooltip formatter={(value, name) => [name === 'ingresos_netos' ? formatQ(value) : value, name === 'ingresos_netos' ? 'Ingresos netos' : 'Unidades']} />
-                  <Bar dataKey="unidades" fill="var(--color-action)" radius={[4,4,0,0]} />
+                  <Tooltip /><Legend />
+                  {(trends.items[0]?.semanas || []).map((value, index) => <Bar key={value.semana_inicio} dataKey={value.semana_inicio} name={index === 0 ? `Actual · ${value.semana_inicio}` : `${index} sem. antes · ${value.semana_inicio}`} fill={TREND_COLORS[index]} radius={[4,4,0,0]} />)}
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]">
               <table className="w-full text-sm"><thead><tr className="bg-[var(--color-background)]">
-                {['Oferta','Producto','SKU','Unidades','Ingreso neto','Flash'].map(h => <th key={h} className="px-3 py-2.5 text-left text-xs uppercase text-[var(--color-text-muted)]">{h}</th>)}
+                {['Oferta','Producto','SKU',...(trends.items[0]?.semanas || []).map((_, index) => index === 0 ? 'Actual' : `Hace ${index} sem.`),'Ingreso neto','Flash'].map(h => <th key={h} className="px-3 py-2.5 text-left text-xs uppercase text-[var(--color-text-muted)]">{h}</th>)}
               </tr></thead><tbody>{trends.items.map(item => <tr key={item.oferta_id} className="border-t border-[var(--color-border)]">
                 <td className="px-3 py-3 font-mono">#{item.oferta_id}</td><td className="px-3 py-3 font-semibold">{item.producto_nombre}</td>
-                <td className="px-3 py-3 font-mono">{item.sku}</td><td className="px-3 py-3 font-mono">{item.unidades}</td>
+                <td className="px-3 py-3 font-mono">{item.sku}</td>{(item.semanas || []).map(value => <td key={value.semana_inicio} className={cn('px-3 py-3 font-mono', value.unidades === 0 && 'text-[var(--color-error)]')}>{value.unidades}</td>)}
                 <td className="px-3 py-3 font-mono">{formatQ(item.ingresos_netos)}</td><td className="px-3 py-3 font-mono">{item.unidades_flash}</td>
               </tr>)}</tbody></table>
             </div>
-          </> : <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">No tienes ventas pagadas en esta semana.</p>}
+          </> : <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">{onlyWithoutSales ? 'Todas tus ofertas registraron ventas esta semana.' : 'No tienes ventas pagadas en el período seleccionado.'}</p>}
+
+          <div className="border-t border-[var(--color-border)] pt-6 space-y-5">
+            <div><h3 className="font-display font-semibold text-lg">Seguimiento de uno de mis productos</h3><p className="text-sm text-[var(--color-text-secondary)]">La consulta suma únicamente las ofertas que te pertenecen.</p></div>
+            <ProductPicker value={selectedTrendProduct} onSelect={setSelectedTrendProduct} loadProducts={loadVendorAnalyticsProducts} queryKey="vendor-analytics-product-picker" title="Seleccionar uno de mis productos" description="Solo aparecen productos asociados a tus ofertas." />
+            <div className="grid gap-3 sm:grid-cols-2 max-w-xl"><label className="text-xs text-[var(--color-text-secondary)]">Desde (lunes)<Input type="date" min="2020-01-06" step="7" value={trendFrom} onChange={event => setTrendFrom(event.target.value)} className="mt-1" /></label><label className="text-xs text-[var(--color-text-secondary)]">Hasta (lunes)<Input type="date" min="2020-01-06" step="7" value={trendTo} onChange={event => setTrendTo(event.target.value)} className="mt-1" /></label></div>
+            {trendFrom > trendTo ? <p className="text-sm text-[var(--color-error)]">La semana inicial no puede ser posterior a la final.</p> : !selectedTrendProduct ? <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">Selecciona un producto para consultar su evolución.</p> : productTrendLoading ? <p className="text-sm text-[var(--color-text-muted)]">Cargando seguimiento…</p> : productTrendError ? <p className="text-sm text-[var(--color-error)]">{productTrendError.response?.data?.detail || 'No se pudo consultar el seguimiento.'}</p> : <>
+              <div className="border border-[var(--color-border)] rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-5"><h4 className="font-display font-semibold mb-4">{productTrend?.producto_nombre}</h4><ResponsiveContainer width="100%" height={260}><LineChart data={productTrend?.items || []}><CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" /><XAxis dataKey="semana_inicio" tick={{ fontSize: 10 }} /><YAxis allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="unidades" name="Unidades vendidas" stroke="var(--color-action)" strokeWidth={3} dot={{ r: 4 }} /></LineChart></ResponsiveContainer></div>
+              <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-lg)]"><table className="w-full text-sm"><thead><tr className="bg-[var(--color-background)]">{['Semana','Unidades','Variación','Ingreso neto','Pedidos','Ofertas','Flash'].map(header => <th key={header} className="px-3 py-2.5 text-left text-xs uppercase text-[var(--color-text-muted)]">{header}</th>)}</tr></thead><tbody>{(productTrend?.items || []).map(item => <tr key={item.semana_inicio} className={cn('border-t border-[var(--color-border)]', item.unidades === 0 && 'bg-red-50')}><td className="px-3 py-3 font-semibold">{item.semana_inicio}</td><td className={cn('px-3 py-3 font-mono font-semibold', item.unidades === 0 && 'text-[var(--color-error)]')}>{item.unidades === 0 ? '0 · Sin ventas' : item.unidades}</td><td className={cn('px-3 py-3 font-mono', item.variacion_unidades < 0 && 'text-[var(--color-error)]')}>{item.variacion_unidades >= 0 ? '+' : ''}{item.variacion_unidades}</td><td className="px-3 py-3 font-mono">{formatQ(item.ingresos_netos)}</td><td className="px-3 py-3 font-mono">{item.pedidos}</td><td className="px-3 py-3 font-mono">{item.ofertas}</td><td className="px-3 py-3 font-mono">{item.unidades_flash}</td></tr>)}</tbody></table></div>
+            </>}
+          </div>
         </section>
       )}
 
