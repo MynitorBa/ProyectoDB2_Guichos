@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     CASSANDRA_KEYSPACE: str = 'tiendaya_analytics'
     CASSANDRA_LOCAL_DC: str = 'datacenter1'
 
+    # Neo4j (grafo de reseñas y detección de fraude)
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "tiendaya123"
+
     # Email (SMTP) — dejar vacío para deshabilitar envío de correos
     SMTP_HOST: str = 'smtp.gmail.com'
     SMTP_PORT: int = 587

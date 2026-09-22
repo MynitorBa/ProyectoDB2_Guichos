@@ -9,7 +9,7 @@ import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
   TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
-  Inbox, GitBranch, Star,
+  Inbox, GitBranch, Star, AlertTriangle, CheckCircle, XCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
@@ -27,6 +27,7 @@ import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequests
 import { AdminVendorsSection } from './AdminVendorPage'
 import { getAdminProductTrend, getAdminTrends } from '../api/analytics'
 import ProductPicker from '../components/ProductPicker'
+import { getFraudSummary, getFraudSinCompra, moderateReview } from '../api/reviews'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { id: 'orders',     label: 'Pedidos',      icon: ClipboardList  },
   { id: 'sales',      label: 'Ventas',       icon: TrendingUp     },
   { id: 'requests',   label: 'Solicitudes',  icon: Inbox          },
+  { id: 'fraud',      label: 'Fraude & Reseñas', icon: AlertTriangle },
 ]
 
 const ESTADO_BADGE = {
@@ -712,7 +714,7 @@ function AnalyticsSection() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 className="font-display font-semibold text-lg">Demanda por semana</h3>
-          <p className="font-sans text-sm text-[var(--color-text-secondary)]">Ventas pagadas proyectadas en Cassandra, de lunes a domingo.</p>
+          <p className="font-sans text-sm text-[var(--color-text-secondary)]">Ventas pagadas de lunes a domingo.</p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <label className="font-sans text-xs text-[var(--color-text-secondary)]">Semanas anteriores
@@ -2239,6 +2241,137 @@ function SalesSection() {
   )
 }
 
+// ── FraudSection ──
+function FraudSection() {
+  const qc = useQueryClient()
+
+  const { data: fraudData, isLoading: fraudLoading } = useQuery({
+    queryKey: ['fraud-summary'],
+    queryFn: () => getFraudSummary().then(r => r.data),
+  })
+
+  const { data: sinCompraData, isLoading: sinCompraLoading } = useQuery({
+    queryKey: ['fraud-sin-compra'],
+    queryFn: () => getFraudSinCompra().then(r => r.data),
+  })
+
+  const moderateMutation = useMutation({
+    mutationFn: ({ resenaId, estado }) => moderateReview(resenaId, estado),
+    onSuccess: () => {
+      toast.success('Estado de reseña actualizado.')
+      qc.invalidateQueries({ queryKey: ['fraud-sin-compra'] })
+      qc.invalidateQueries({ queryKey: ['fraud-summary'] })
+    },
+    onError: () => toast.error('No se pudo actualizar la reseña.'),
+  })
+
+  const FRAUD_CARDS = [
+    { key: 'bombardeo',             label: 'Bombardeo',              color: 'text-red-600 bg-red-50 border-red-200'     },
+    { key: 'sin_compra_verificada', label: 'Sin compra verificada',  color: 'text-amber-600 bg-amber-50 border-amber-200' },
+    { key: 'reviewer_unico_vendedor', label: 'Reviewer único vendedor', color: 'text-orange-600 bg-orange-50 border-orange-200' },
+    { key: 'cluster_coordinado',    label: 'Cluster coordinado',     color: 'text-purple-600 bg-purple-50 border-purple-200' },
+  ]
+
+  return (
+    <div className="space-y-8">
+      {/* Tarjetas de resumen */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {FRAUD_CARDS.map(({ key, label, color }) => {
+          const item = fraudData?.[key]
+          return (
+            <div key={key} className={`rounded-[var(--radius-lg)] border p-4 ${color}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle size={15} />
+                <span className="font-sans text-xs font-bold uppercase tracking-wide">{label}</span>
+              </div>
+              {fraudLoading
+                ? <Skeleton className="h-8 w-16 mt-1" />
+                : <p className="font-mono font-bold text-3xl">{item?.count ?? 0}</p>
+              }
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Tabla de reseñas sin compra verificada */}
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--color-border)]">
+          <h3 className="font-display font-semibold text-base text-[var(--color-text-primary)]">
+            Reseñas pendientes / sin compra verificada
+          </h3>
+          <p className="font-sans text-xs text-[var(--color-text-muted)] mt-0.5">
+            Usuarios que reseñaron sin haber comprado el producto — requieren moderación manual
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[var(--color-background)]">
+                {['Usuario', 'Producto', 'Cal.', 'Fecha', 'Reseña ID', 'Acciones'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)] whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sinCompraLoading
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}><td colSpan={6} className="px-4 py-2"><Skeleton className="h-7 w-full" /></td></tr>
+                  ))
+                : !sinCompraData?.length
+                  ? <tr><td colSpan={6} className="px-4 py-10 text-center font-sans text-sm text-[var(--color-text-muted)]">No hay reseñas sin compra verificada actualmente.</td></tr>
+                  : sinCompraData.map((r) => (
+                      <tr key={r.resena_id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)]/60">
+                        <td className="px-4 py-3">
+                          <p className="font-display font-semibold text-xs">{r.usuario_nombre}</p>
+                          <p className="font-mono text-[10px] text-[var(--color-text-muted)]">ID {r.usuario_id}</p>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-muted)] max-w-[120px] truncate" title={r.producto_ref}>
+                          {r.producto_nombre || r.producto_ref}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-0.5">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} size={11} className={r.calificacion >= n ? 'fill-amber-400 text-amber-400' : 'text-gray-200'} />
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-sans text-xs text-[var(--color-text-muted)] whitespace-nowrap">
+                          {r.fecha ? new Date(r.fecha).toLocaleDateString('es-GT') : '—'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[10px] text-[var(--color-text-muted)] max-w-[100px] truncate" title={r.resena_id}>
+                          {r.resena_id}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                              disabled={moderateMutation.isPending}
+                              onClick={() => moderateMutation.mutate({ resenaId: r.resena_id, estado: 'aprobada' })}
+                              title="Aprobar reseña"
+                            >
+                              <CheckCircle size={14} /> Aprobar
+                            </button>
+                            <button
+                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:text-red-600 disabled:opacity-50"
+                              disabled={moderateMutation.isPending}
+                              onClick={() => moderateMutation.mutate({ resenaId: r.resena_id, estado: 'rechazada' })}
+                              title="Rechazar reseña"
+                            >
+                              <XCircle size={14} /> Rechazar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── AdminPage ──
 // Panel de administrador: estadísticas con gráficas, CRUD de productos y categorías, gestión de usuarios/roles/pedidos/ventas y solicitudes de catálogo
 export default function AdminPage() {
@@ -2283,6 +2416,7 @@ export default function AdminPage() {
           {activeSection === 'orders'     && <OrdersSection />}
           {activeSection === 'sales'      && <SalesSection />}
           {activeSection === 'requests'   && <AdminCatalogRequestsSection />}
+          {activeSection === 'fraud'      && <FraudSection />}
         </main>
       </div>
     </div>

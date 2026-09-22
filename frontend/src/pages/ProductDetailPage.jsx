@@ -10,6 +10,7 @@ import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { ProductImage } from '../components/product/ProductImage'
 import { CategoryAttrPanel } from '../components/product/CategoryAttrPanel'
+import ReviewSection from '../components/product/ReviewSection'
 import { StarRating } from '../components/ui/star-rating'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -607,57 +608,15 @@ export default function ProductDetailPage() {
             </>
           )}
 
-          {/* Reseñas */}
-          <Reveal delay={0.05}>
-            <section>
-              <h2 className="font-display font-bold text-xl text-[var(--color-text-primary)] mb-6">Reseñas de clientes</h2>
-              {resenas.total > 0 ? (
-                <div className="flex flex-col sm:flex-row gap-8">
-                  <div className="flex flex-col items-center justify-center gap-2 sm:min-w-[160px] bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-6">
-                    <span className="font-mono font-bold text-5xl leading-none" style={{ color: '#0277BD' }}>
-                      {resenas.promedio?.toFixed(1)}
-                    </span>
-                    <StarRating value={resenas.promedio} size={18} showValue={false} />
-                    <span className="font-sans text-sm text-[var(--color-text-muted)]">
-                      {resenas.total} reseña{resenas.total !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <div className="flex-1 space-y-2.5">
-                    {starCounts.map(({ stars, count }) => {
-                      const pct = resenas.total ? Math.round((count / resenas.total) * 100) : 0
-                      return (
-                        <div key={stars} className="flex items-center gap-3">
-                          <div className="flex items-center gap-1 w-14 shrink-0">
-                            <span className="font-sans text-sm font-medium text-[var(--color-text-secondary)]">{stars}</span>
-                            <Star size={13} className="fill-amber-400 text-amber-400" />
-                          </div>
-                          <div className="flex-1 h-2.5 rounded-full bg-[var(--color-border)] overflow-hidden">
-                            <motion.div
-                              className="h-full rounded-full"
-                              style={{ background: 'linear-gradient(to right, #29B6F6, #0288D1)' }}
-                              initial={{ width: 0 }}
-                              whileInView={{ width: `${pct}%` }}
-                              viewport={{ once: true }}
-                              transition={{ duration: 0.8, ease, delay: stars * 0.05 }}
-                            />
-                          </div>
-                          <span className="font-sans text-xs text-[var(--color-text-muted)] w-8 text-right tabular-nums">
-                            {pct}%
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-                  <Star size={36} className="mx-auto mb-3 text-[var(--color-border-strong)]" />
-                  <p className="font-sans text-sm text-[var(--color-text-muted)]">
-                    Este producto aún no tiene reseñas.
-                  </p>
-                </div>
-              )}
-            </section>
+          {/* Reseñas Neo4j */}
+          <Reveal className="mt-10">
+            <div className="border-t border-[var(--color-border)] pt-8">
+              <h2 className="font-display font-bold text-xl mb-6">Reseñas del producto</h2>
+              <ReviewSection
+                productoRef={product?._id}
+                vendedorId={selectedOffer?.vendedor_id}
+              />
+            </div>
           </Reveal>
         </div>
       </div>

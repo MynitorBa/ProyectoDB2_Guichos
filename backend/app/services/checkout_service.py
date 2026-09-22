@@ -334,5 +334,35 @@ def procesar_checkout(
     )
     db.commit()
 
+    # Registrar compras en Neo4j para habilitar reseñas verificadas.
+    # No crítico: si Neo4j falla el checkout ya fue confirmado en MySQL.
+    try:
+        from app.core.db_neo4j import get_driver
+        from app.services.review_service import ensure_usuario, ensure_producto, ensure_vendedor, registrar_compra
+        fecha_compra = utc_now().isoformat()
+        with get_driver().session() as neo4j_s:
+            ensure_usuario(neo4j_s, usuario_id,
+                           f"{usuario.nombre} {usuario.apellido}".strip(), usuario.email)
+            for offer_id, quantity in quantities.items():
+                offer = offers[offer_id]
+                if not offer.producto_ref:
+                    continue
+                vendor = vendors[offer.vendedor_id]
+                product_name = offer.sku
+                if mongo_db is not None:
+                    try:
+                        mp = mongo_db.productos.find_one(
+                            {'_id': ObjectId(offer.producto_ref)}, {'nombre': 1})
+                        if mp and mp.get('nombre'):
+                            product_name = mp['nombre']
+                    except Exception:
+                        pass
+                ensure_producto(neo4j_s, offer.producto_ref, product_name)
+                ensure_vendedor(neo4j_s, offer.vendedor_id, vendor.nombre_comercial)
+                registrar_compra(neo4j_s, usuario_id, offer.producto_ref,
+                                 pedido.id, offer.id, fecha_compra)
+    except Exception:
+        pass
+
     db.refresh(pedido)
     return pedido

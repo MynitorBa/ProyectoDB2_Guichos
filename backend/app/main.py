@@ -8,11 +8,13 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.core.db_cassandra import close_cassandra
+from app.core.db_neo4j import close_driver as close_neo4j
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
 from app.api.v1 import backoffice, stores, flash_sales, analytics
 from app.api.v1 import store_editor
+from app.api.v1.reviews import router as reviews_router
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,7 @@ async def generic_error_handler(request: Request, exc: Exception):
 
 # Archivos estáticos (imágenes de productos)
 os.makedirs('static/products', exist_ok=True)
+os.makedirs('static/reviews', exist_ok=True)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 
 # Routers
@@ -72,6 +75,7 @@ app.include_router(flash_sales.router, prefix='/api/v1')
 app.include_router(flash_sales.vendor_router, prefix='/api/v1')
 app.include_router(analytics.router, prefix='/api/v1')
 app.include_router(store_editor.router, prefix='/api/v1')
+app.include_router(reviews_router, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
@@ -88,6 +92,7 @@ def shutdown():
     stop_outbox_worker()
     close_mongo()
     close_cassandra()
+    close_neo4j()
 
 
 @app.get('/health')
