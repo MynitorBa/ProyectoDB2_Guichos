@@ -148,6 +148,57 @@ def test_resultados_traen_precio_autoritativo_de_mysql():
     assert 'dual_read' not in item
 
 
+# ── Búsqueda dentro de una tienda ─────────────────────────────────────────────
+
+def _vendedor_con_laptops():
+    from app.core.db_mysql import SessionLocal
+    from app.models.oferta import Oferta
+    from app.models.vendedor import Vendedor
+
+    with SessionLocal() as db:
+        ref = get_mongo_ref('TECH-LAP-001')
+        oferta = db.query(Oferta).filter_by(producto_ref=ref, estado='activa').first()
+        return db.get(Vendedor, oferta.vendedor_id)
+
+
+def get_mongo_ref(sku):
+    from app.core.db_mongo import get_mongo_db
+    return str(get_mongo_db().productos.find_one({'sku': sku}, {'_id': 1})['_id'])
+
+
+def test_busqueda_en_tienda_solo_devuelve_ofertas_del_vendedor():
+    vendedor = _vendedor_con_laptops()
+    global_ = buscar(q='lapto')
+    tienda = buscar(q='lapto', vendedor_id=vendedor.id)
+    assert 0 < tienda['total'] <= global_['total']
+    assert all(item['vendedor_id'] == vendedor.id for item in tienda['items'])
+    # Los conteos de las facetas también respetan el alcance de la tienda.
+    assert {v['valor'] for v in tienda['facetas']['vendedores']} >= {vendedor.nombre_comercial}
+    assert sum(r['conteo'] for r in tienda['facetas']['precio']['rangos']) == tienda['total']
+
+
+def test_busqueda_en_tienda_sin_coincidencias_no_sugiere_productos_ajenos():
+    from app.core.db_mysql import SessionLocal
+    from app.models.oferta import Oferta
+
+    ref_macbook = get_mongo_ref('TECH-LAP-003')
+    with SessionLocal() as db:
+        con_macbook = {o.vendedor_id for o in db.query(Oferta).filter_by(producto_ref=ref_macbook)}
+        from app.models.vendedor import Vendedor
+        sin_macbook = next(v for v in db.query(Vendedor).all() if v.id not in con_macbook)
+    resultado = buscar(q='macbok', vendedor_id=sin_macbook.id)
+    assert resultado['total'] == 0
+    assert resultado['sugerencia'] is None
+
+
+def test_busqueda_en_tienda_degradada_conserva_el_alcance(elasticsearch_caido):
+    vendedor = _vendedor_con_laptops()
+    resultado = buscar(q='Laptop', vendedor_id=vendedor.id)
+    assert resultado['degradado'] is True
+    assert resultado['items']
+    assert all(item['vendedor_id'] == vendedor.id for item in resultado['items'])
+
+
 # ── Autocompletado ────────────────────────────────────────────────────────────
 
 def test_autocompletado_por_prefijo_palabra_intermedia_y_errores():

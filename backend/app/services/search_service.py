@@ -57,6 +57,9 @@ class ParametrosBusqueda:
     orden: str | None = None
     page: int = 1
     page_size: int = 20
+    # Búsqueda dentro de una tienda: limita a productos con ofertas de este
+    # vendedor y muestra el precio de su oferta, no el de la oferta principal.
+    vendedor_id: int | None = None
 
     @property
     def texto(self) -> str:
@@ -141,7 +144,10 @@ def filtros_posteriores(p: ParametrosBusqueda) -> dict[str, dict]:
             rango['lte'] = p.precio_max
         filtros['precio'] = {'range': {'precio': rango}}
     if p.solo_stock:
-        filtros['stock'] = {'term': {'tiene_stock': True}}
+        filtros['stock'] = (
+            {'term': {'vendedores_con_stock': p.vendedor_id}} if p.vendedor_id is not None
+            else {'term': {'tiene_stock': True}}
+        )
     if p.solo_flash:
         filtros['flash'] = {'term': {'tiene_flash': True}}
     if p.solo_tiendaya:
@@ -219,8 +225,12 @@ def _orden(orden: str) -> list:
 def construir_consulta(p: ParametrosBusqueda) -> dict:
     """Cuerpo completo de la búsqueda; separado para probarlo y medirlo."""
     filtros = filtros_posteriores(p)
+    alcance = [{'term': {'estado': 'activo'}}]
+    if p.vendedor_id is not None:
+        # El alcance de tienda no es una faceta: también limita los conteos.
+        alcance.append({'term': {'vendedor_ids': p.vendedor_id}})
     base = {'bool': {
-        'filter': [{'term': {'estado': 'activo'}}],
+        'filter': alcance,
         'must': [_consulta_texto(p.texto)] if p.texto else [],
     }}
     cuerpo = {
@@ -262,9 +272,13 @@ def construir_consulta(p: ParametrosBusqueda) -> dict:
                 'direct_generator': [{
                     'field': 'nombre.sugeridor', 'suggest_mode': 'always', 'min_word_length': 3,
                 }],
-                # Solo sugerir frases que de verdad devuelven productos.
-                'collate': {'query': {'source': {'match': {
-                    'nombre': {'query': '{{suggestion}}', 'operator': 'and', 'fuzziness': 0},
+                # Solo sugerir frases que de verdad devuelven productos (de la
+                # tienda, si la búsqueda es dentro de una).
+                'collate': {'query': {'source': {'bool': {
+                    'must': {'match': {
+                        'nombre': {'query': '{{suggestion}}', 'operator': 'and', 'fuzziness': 0},
+                    }},
+                    'filter': alcance,
                 }}}, 'prune': False},
             }},
         }
@@ -384,14 +398,19 @@ def _sugerencia(respuesta: dict, q: str, nombres: list[str]) -> str | None:
     return None
 
 
-def _hidratar(ids: list[str], resaltados: dict[str, dict], mysql_db: Session, mongo: Database, redis_db) -> list[dict]:
+def _hidratar(
+    ids: list[str], resaltados: dict[str, dict], mysql_db: Session, mongo: Database, redis_db,
+    vendedor_id: int | None = None,
+) -> list[dict]:
     """Página de resultados con precio, stock y flash autoritativos de MySQL/Redis."""
     docs = {
         str(doc['_id']): doc
         for doc in mongo.productos.find({'_id': {'$in': [ObjectId(i) for i in ids]}})
     }
     ordenados = [docs[i] for i in ids if i in docs]
-    items, _ = catalog_service.enriquecer_productos(ordenados, mysql_db, redis_db)
+    items, _ = catalog_service.enriquecer_productos(
+        ordenados, mysql_db, redis_db, vendedor_id=vendedor_id
+    )
     for item in items:
         if item['_id'] in resaltados:
             item['resaltado'] = resaltados[item['_id']]
@@ -418,7 +437,7 @@ def buscar(
         for hit in hits if hit.get('highlight')
     }
     total = respuesta['hits']['total']['value']
-    items = _hidratar(ids, resaltados, mysql_db, mongo, redis_db)
+    items = _hidratar(ids, resaltados, mysql_db, mongo, redis_db, p.vendedor_id)
     return {
         'items': items,
         'total': total,
@@ -462,6 +481,7 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
         page=p.page,
         page_size=p.page_size,
         orden=ORDEN_RESPALDO[p.orden_efectivo],
+        vendedor_id=p.vendedor_id,
         solo_flash=p.solo_flash,
         redis_db=redis_db,
     )

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ShoppingBag, Search as SearchIcon, Loader2, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { getProducts } from '../../api/products'
+import { searchProducts } from '../../api/search'
 import { ProductCard } from '../product/ProductCard'
 import { ProductCardSkeleton } from '../ui/skeleton'
 
@@ -198,7 +199,7 @@ export function TextSection({ config = {}, tema = {} }) {
 export function ProductsSection({ config = {}, tema = {}, vendedorId }) {
   const { titulo = 'Nuestros productos', cantidad = 8 } = config
   const [page, setPage] = useState(1)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const q = searchParams.get('q') || ''
 
   // Vuelve a página 1 si cambia la cantidad o la búsqueda
@@ -208,9 +209,14 @@ export function ProductsSection({ config = {}, tema = {}, vendedorId }) {
   const bodyFont  = tema.fuente_cuerpo  ? `'${tema.fuente_cuerpo}', sans-serif`  : 'var(--store-font-body, Inter, sans-serif)'
   const primary   = tema.color_primario || '#0288D1'
 
+  // Con texto (del BuscadorSection, vía ?q=) busca en Elasticsearch dentro de
+  // las ofertas de esta tienda; sin texto conserva el listado por precio.
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['store-section-products', vendedorId, cantidad, page, q],
-    queryFn: () => getProducts({ vendedor_id: vendedorId, page, page_size: cantidad, disponible: true, ...(q && { q }) }).then(r => r.data),
+    queryFn: () => (q
+      ? searchProducts({ q, vendedor_id: vendedorId, solo_stock: true, page, page_size: cantidad })
+      : getProducts({ vendedor_id: vendedorId, page, page_size: cantidad, disponible: true })
+    ).then(r => r.data),
     enabled: Boolean(vendedorId),
     staleTime: 60_000,
     keepPreviousData: true,
@@ -237,6 +243,19 @@ export function ProductsSection({ config = {}, tema = {}, vendedorId }) {
           <h2 style={{ fontFamily: titleFont, fontWeight: 700, marginBottom: '2rem', textAlign: 'center', fontSize: 'clamp(1.3rem, 3vw, 2rem)', color: primary }}>
             {titulo}
           </h2>
+        )}
+
+        {q && data?.sugerencia && (
+          <p style={{ fontFamily: bodyFont, fontSize: '0.875rem', textAlign: 'center', marginTop: '-1.25rem', marginBottom: '1.5rem' }}>
+            ¿Quisiste decir{' '}
+            <button
+              onClick={() => setSearchParams({ q: data.sugerencia }, { replace: true })}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: primary, fontWeight: 700, textDecoration: 'underline', fontFamily: bodyFont, fontSize: '0.875rem' }}
+            >
+              {data.sugerencia}
+            </button>
+            ?
+          </p>
         )}
 
         {isLoading ? (

@@ -28,6 +28,7 @@ def buscar_productos(
     solo_stock: bool = Query(False),
     solo_flash: bool = Query(False),
     solo_tiendaya: bool = Query(False),
+    vendedor_id: int | None = Query(None, description='Buscar solo dentro de la tienda de este vendedor'),
     orden: str | None = Query(None, enum=list(ORDENES)),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -46,7 +47,7 @@ def buscar_productos(
         q=q, categoria=categoria, vendedores=vendedor,
         precio_min=precio_min, precio_max=precio_max, atributos=atributos,
         solo_stock=solo_stock, solo_flash=solo_flash, solo_tiendaya=solo_tiendaya,
-        orden=orden, page=page, page_size=page_size,
+        orden=orden, page=page, page_size=page_size, vendedor_id=vendedor_id,
     )
     return search_service.buscar(es, mysql_db, mongo, parametros, redis_db)
 

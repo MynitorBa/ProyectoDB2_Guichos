@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import api from '../api/client'
 import { getProducts, getCategories } from '../api/products'
+import { searchProducts } from '../api/search'
 import { getPublicStoreConfig } from '../api/store'
 import { ProductCard } from '../components/product/ProductCard'
 import { ProductCardSkeleton } from '../components/ui/skeleton'
@@ -63,16 +64,28 @@ export default function VendorStorePage() {
   // Si la tienda tiene secciones configuradas, delegar al StoreRenderer
   const hasCustomLayout = storeConfig?.secciones?.length > 0
 
+  // Con texto, la tienda busca en Elasticsearch (tolera errores y ordena por
+  // relevancia) limitado a las ofertas de este vendedor; sin texto conserva el
+  // listado por precio.
   const { data: productsData, isLoading: loadingProducts } = useQuery({
     queryKey: ['store-products', vendedorId, page, categoria, q],
-    queryFn: () => getProducts({
-      vendedor_id: vendedorId,
-      page,
-      page_size: 12,
-      disponible: true,
-      ...(categoria && { categoria }),
-      ...(q && { q }),
-    }).then(r => r.data),
+    queryFn: () => (q
+      ? searchProducts({
+          q,
+          vendedor_id: vendedorId,
+          solo_stock: true,
+          categoria: categoria || '',
+          page,
+          page_size: 12,
+        })
+      : getProducts({
+          vendedor_id: vendedorId,
+          page,
+          page_size: 12,
+          disponible: true,
+          ...(categoria && { categoria }),
+        })
+    ).then(r => r.data),
     enabled: !!vendor,
   })
 
@@ -195,6 +208,23 @@ export default function VendorStorePage() {
             </button>
           )}
         </div>
+        {q && productsData?.sugerencia && (
+          <p className="-mt-5 font-sans text-sm text-[var(--color-text-secondary)]">
+            ¿Quisiste decir{' '}
+            <button
+              onClick={() => setSearchInput(productsData.sugerencia)}
+              className="font-semibold text-[var(--color-action)] hover:underline"
+            >
+              {productsData.sugerencia}
+            </button>
+            ?
+          </p>
+        )}
+        {q && productsData?.degradado && (
+          <p role="status" className="-mt-5 font-sans text-xs text-amber-700">
+            Búsqueda simplificada temporalmente: se muestran coincidencias exactas del nombre.
+          </p>
+        )}
 
         {/* ── Filtro de categorías ── */}
         {categories.length > 0 && (

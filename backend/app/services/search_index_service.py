@@ -256,6 +256,8 @@ def _documento(doc: dict, ofertas: list[dict], variantes: list[dict], flash: dic
         'atributos': _atributos(doc, variantes),
         'vendedores': sorted({o['vendedor_nombre'] for o in ofertas}),
         'vendedor_ids': sorted({o['vendedor_id'] for o in ofertas}),
+        # Para buscar dentro de una tienda: "con stock" significa con stock de ese vendedor.
+        'vendedores_con_stock': sorted({o['vendedor_id'] for o in disponibles}),
         'precio': precio_visible,
         'precio_min': precio_min,
         'precio_max': precio_max,
