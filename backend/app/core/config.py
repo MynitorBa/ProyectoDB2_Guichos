@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     # Tiempo máximo que un pedido puede retener inventario esperando su pago.
     CHECKOUT_RESERVA_MINUTOS: int = 10
 
+    # Recuperación del checkout (reconciliador de pagos y recolector de reservas vencidas)
+    RECONCILIADOR_INTERVALO_S: float = 5.0
+    # Un cobro "no encontrado" puede seguir en tránsito; se espera antes de compensar.
+    RECONCILIADOR_GRACIA_S: int = 120
+
+    # Inyección de fallas para demostrar la estrategia de consistencia. Nunca
+    # habilitarla fuera de desarrollo: permite provocar errores a voluntad.
+    FAULT_INJECTION_ENABLED: bool = False
+
     # Email (SMTP) — dejar vacío para deshabilitar envío de correos
     SMTP_HOST: str = 'smtp.gmail.com'
     SMTP_PORT: int = 587

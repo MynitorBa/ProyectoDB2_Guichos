@@ -40,6 +40,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.fault_injection import FallaSimulada, punto_de_falla
 from app.core.time import utc_now
 from app.models.checkout_saga import CheckoutSagaPaso
 from app.models.direccion import Direccion
@@ -599,6 +600,13 @@ def confirmar_pedido(db: Session, pedido_id: int, *, referencia: str | None = No
     registrar_paso(db, pedido.id, 'confirmacion', 'ok', {
         'origen': origen, 'referencia': referencia, 'contra_entrega': contra_entrega,
     })
+    try:
+        # La transacción de confirmación falla antes del commit: nada de lo
+        # anterior queda escrito y el pedido sigue pendiente con su reserva.
+        punto_de_falla('checkout.confirmacion')
+    except FallaSimulada:
+        db.rollback()
+        raise
     db.commit()
     return pedido
 
@@ -752,6 +760,8 @@ def procesar_checkout(
         huella=huella,
     )
     pedido_id = pedido.id
+    # Caída entre la reserva y el cobro: el recolector libera la reserva al vencer.
+    punto_de_falla('checkout.despues_reserva')
 
     if es_contra_entrega(db, metodo_pago_id):
         pedido = confirmar_pedido(db, pedido_id, origen='contra_entrega')
@@ -760,6 +770,9 @@ def procesar_checkout(
 
     pasarela = pasarela or pg.get_pasarela()
     resultado = cobrar_pedido(db, pedido_id, pasarela)
+    # Caída con el cargo hecho y sin confirmar: el recolector consulta la
+    # pasarela con la misma clave y confirma sin volver a cobrar.
+    punto_de_falla('checkout.despues_cobro')
     desenlace = aplicar_resultado_cobro(db, pedido_id, resultado, pasarela)
     if desenlace == CONFIRMADO:
         pedido = db.get(Pedido, pedido_id)

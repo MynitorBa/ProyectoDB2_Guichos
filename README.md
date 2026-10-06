@@ -86,6 +86,9 @@ cd backend
 # Correr pruebas
 .\venv\Scripts\python.exe -m pytest tests -q
 
+# Verificar los invariantes de consistencia (sin sobreventa, cobros ↔ pedidos, proyecciones...)
+.\venv\Scripts\python.exe scripts\verificar_consistencia.py
+
 # Comparar la búsqueda anterior (MongoDB) con Elasticsearch
 .\venv\Scripts\python.exe scripts\comparar_busqueda.py
 

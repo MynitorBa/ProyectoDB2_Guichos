@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import SessionLocal
+from app.core.fault_injection import punto_de_falla
 from app.models.outbox import DESTINOS_OUTBOX, OutboxEvento
 
 
@@ -272,6 +273,7 @@ def project_event(event: OutboxEvento, db: Session | None = None) -> None:
     """Aplica un evento en su destino. Repetirlo produce el mismo resultado."""
     # Eventos sin destino explícito (anteriores a la migración 19) usan su ruta principal.
     destino = getattr(event, 'destino', None) or destinos_de(event.tipo_evento)[0]
+    punto_de_falla(f'outbox.{destino}')
     manejador = MANEJADORES[destino]
     if db is not None:
         manejador(event, db)

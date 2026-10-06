@@ -12,10 +12,13 @@ from app.core.db_neo4j import close_driver as close_neo4j
 from app.core.db_elastic import close_es
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
+from app.services.checkout_recovery_worker import (
+    start_checkout_recovery_worker, stop_checkout_recovery_worker,
+)
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
 from app.api.v1 import backoffice, stores, flash_sales, analytics
 from app.api.v1 import store_editor
-from app.api.v1 import search, sync
+from app.api.v1 import consistency, search, sync
 from app.api.v1.reviews import router as reviews_router
 
 
@@ -80,6 +83,7 @@ app.include_router(store_editor.router, prefix='/api/v1')
 app.include_router(reviews_router, prefix='/api/v1')
 app.include_router(sync.router, prefix='/api/v1')
 app.include_router(search.router, prefix='/api/v1')
+app.include_router(consistency.router, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
@@ -88,10 +92,12 @@ def startup():
     ensure_indexes(get_mongo_db())
     start_outbox_worker()
     start_flash_worker()
+    start_checkout_recovery_worker()
 
 
 @app.on_event('shutdown')
 def shutdown():
+    stop_checkout_recovery_worker()
     stop_flash_worker()
     stop_outbox_worker()
     close_mongo()

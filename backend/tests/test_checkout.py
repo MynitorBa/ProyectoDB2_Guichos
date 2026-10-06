@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import pytest
 from bson import ObjectId
-from pymongo import MongoClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -46,6 +45,30 @@ USUARIO_COMPRADOR_ID = 7
 DIRECCION_ID         = 2
 METODO_PAGO_ID       = 1
 OFERTA_TEST_ID       = 65  # Oferta del Mouse Logitech MX Master 3
+
+
+def reproyectar_producto(producto_ref: str) -> None:
+    """Recalcula MongoDB y Elasticsearch desde el inventario actual de MySQL.
+
+    El fixture cambia el inventario directamente en MySQL (sin outbox), así que
+    vuelve a proyectar para que el resto del sistema no quede desfasado.
+    """
+    from app.core.db_mongo import get_mongo_db
+    from app.core.db_mysql import SessionLocal
+    from app.services.offer_service import proyeccion_oferta_principal
+
+    with SessionLocal() as session:
+        get_mongo_db().productos.update_one(
+            {'_id': ObjectId(producto_ref)},
+            {'$set': proyeccion_oferta_principal(session, producto_ref)},
+        )
+        try:
+            from app.core.db_elastic import get_es
+            from app.services.search_index_service import indexar_productos
+
+            indexar_productos(get_es(), session, get_mongo_db(), [producto_ref], refrescar=True)
+        except Exception:
+            pass  # Elasticsearch caído: reindex_search.py --diff lo corrige después.
 
 
 @pytest.fixture(autouse=True)
@@ -92,12 +115,7 @@ def reset_stock():
             {'oid': OFERTA_TEST_ID}
         )
         conn.commit()
-
-    mongo_client = MongoClient(os.getenv('MONGO_URI'))
-    mongo_products = mongo_client[os.getenv('MONGO_DB', 'tiendaya')].productos
-    original_projection = mongo_products.find_one(
-        {'_id': ObjectId(producto_ref)}, {'stock': 1, 'disponible': 1}
-    ) or {}
+    reproyectar_producto(producto_ref)
 
     yield created_order_ids
 
@@ -197,14 +215,9 @@ def reset_stock():
             },
         )
         conn.commit()
-    mongo_products.update_one(
-        {'_id': ObjectId(producto_ref)},
-        {'$set': {
-            'stock': original_projection.get('stock', original_stock),
-            'disponible': original_projection.get('disponible', original_stock > 0),
-        }},
-    )
-    mongo_client.close()
+    # Los eventos de los pedidos de prueba se borraron, pero alguno pudo
+    # haberse procesado antes: se proyecta el inventario ya restaurado.
+    reproyectar_producto(producto_ref)
 
 
 def test_checkout_exitoso(reset_stock):
