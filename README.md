@@ -36,6 +36,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 | Neo4j Browser | http://localhost:7474 (usuario `neo4j`, contraseña `tiendaya123`) |
 | Elasticsearch | http://localhost:9200 |
 | Elasticvue (interfaz de Elasticsearch) | http://localhost:8083 |
+| Pasarela de pagos simulada | http://127.0.0.1:8001/docs (la levanta `start-dev.ps1`) |
 
 ## Credenciales de prueba
 
@@ -187,6 +188,16 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Analítica temporal con Cassandra](docs/27-analitica-cassandra.md)
 - [Línea base de la Entrega 3](docs/evidencia/linea-base-entrega3.md)
 - [Comparación de búsqueda MongoDB vs Elasticsearch](docs/evidencia/busqueda-comparacion.md)
+
+El checkout es una saga con una pasarela de pagos externa simulada
+(`payment_simulator/`): reserva el inventario, cobra fuera de la transacción y
+después confirma o compensa. Cambiar el comportamiento de la pasarela para
+probar fallas:
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8001/control -ContentType 'application/json' -Body '{"modo":"rechazar"}'
+# modos: aprobar, rechazar, timeout, cobrar_y_fallar, error_antes
+```
 
 La búsqueda de productos está en `GET /api/v1/search` (texto libre con
 tolerancia a errores, sinónimos, relevancia y facetas) y

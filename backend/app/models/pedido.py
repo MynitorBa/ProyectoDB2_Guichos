@@ -22,6 +22,13 @@ class Pedido(Base):
     impuestos: Mapped[Decimal] = mapped_column(DECIMAL(10, 2), default=Decimal('0'))
     total: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))
     notas: Mapped[str | None] = mapped_column(Text)
+    # Saga del checkout (migración 20): un reintento con la misma clave no crea
+    # otro pedido; la huella detecta una clave reutilizada con otro contenido.
+    clave_idempotencia: Mapped[str | None] = mapped_column(String(36), unique=True)
+    huella_solicitud: Mapped[str | None] = mapped_column(String(64))
+    # Mientras el pedido espera su pago retiene inventario hasta esta hora.
+    reserva_expira_en: Mapped[datetime | None] = mapped_column(DateTime)
+    motivo_cancelacion: Mapped[str | None] = mapped_column(String(160))
     fecha_creacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     fecha_actualizacion: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 

@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     ES_INDEX_ALIAS: str = 'productos'  # alias estable; apunta a productos_vN
     ES_TIMEOUT: float = 1.5  # segundos; si se excede, la búsqueda usa MongoDB
 
+    # Pasarela de pagos (simulada en payment_simulator/, proceso aparte)
+    PAYMENT_GATEWAY_URL: str = 'http://127.0.0.1:8001'
+    PAYMENT_TIMEOUT: float = 3.0  # segundos por intento; después el resultado es "desconocido"
+    PAYMENT_RETRIES: int = 2  # reintentos seguros con la misma clave idempotente
+    # Tiempo máximo que un pedido puede retener inventario esperando su pago.
+    CHECKOUT_RESERVA_MINUTOS: int = 10
+
     # Email (SMTP) — dejar vacío para deshabilitar envío de correos
     SMTP_HOST: str = 'smtp.gmail.com'
     SMTP_PORT: int = 587

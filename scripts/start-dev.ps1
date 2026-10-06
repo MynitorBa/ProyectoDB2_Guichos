@@ -72,6 +72,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
     & $python scripts\apply_outbox_v2.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del outbox por destino.' }
+    & $python scripts\apply_checkout_saga.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del checkout como saga.' }
     & $python -c "from app.core.db_cassandra import cassandra_health, close_cassandra; print(cassandra_health()); close_cassandra()"
     if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de Cassandra.' }
     & $python scripts\repair_catalog_data.py --apply
@@ -98,11 +100,15 @@ try {
     Pop-Location
 }
 
-# 2. Backend (en proceso separado)
+# 2. Pasarela de pagos simulada (sistema externo al que el checkout le cobra)
+Write-Host "Iniciando pasarela de pagos simulada en :8001..." -ForegroundColor Yellow
+$gatewayJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root`" && `"$Root\backend\venv\Scripts\python.exe`" -m uvicorn payment_simulator.app:app --host 127.0.0.1 --port 8001" -PassThru -WindowStyle Normal
+
+# 3. Backend (en proceso separado)
 Write-Host "Iniciando backend FastAPI en :8000..." -ForegroundColor Yellow
 $backendJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\backend`" && `"$Root\backend\venv\Scripts\uvicorn.exe`" app.main:app --reload --host 0.0.0.0 --port 8000" -PassThru -WindowStyle Normal
 
-# 3. Frontend (en proceso separado)
+# 4. Frontend (en proceso separado)
 Write-Host "Iniciando frontend React en :5173..." -ForegroundColor Yellow
 $frontendJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\frontend`" && npm run dev" -PassThru -WindowStyle Normal
 
@@ -120,6 +126,7 @@ Write-Host "  Redis Commander: http://localhost:8082" -ForegroundColor Cyan
 Write-Host "  Cassandra CQL: localhost:9042 (cqlsh dentro de tiendaya_cassandra)" -ForegroundColor Cyan
 Write-Host "  Neo4j Browser: http://localhost:7474  (neo4j / tiendaya123)" -ForegroundColor Cyan
 Write-Host "  Elasticsearch: http://localhost:9200  ·  Elasticvue: http://localhost:8083" -ForegroundColor Cyan
+Write-Host "  Pasarela de pagos simulada: http://127.0.0.1:8001/docs" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Admin: admin@tiendaya.gt / password123" -ForegroundColor Yellow
 Write-Host ""

@@ -281,6 +281,25 @@ def main():
             else:
                 print(f'MySQL outbox por destino: saludable {outbox_counts}')
 
+            cur.execute("""
+                SELECT
+                  (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE table_schema = DATABASE() AND table_name = 'pedidos'
+                      AND column_name IN ('clave_idempotencia', 'huella_solicitud',
+                                          'reserva_expira_en', 'motivo_cancelacion')) AS pedidos,
+                  (SELECT COUNT(*) FROM information_schema.COLUMNS
+                    WHERE table_schema = DATABASE() AND table_name = 'pagos'
+                      AND column_name IN ('clave_idempotencia', 'referencia_pasarela')) AS pagos,
+                  (SELECT COUNT(*) FROM information_schema.TABLES
+                    WHERE table_schema = DATABASE() AND table_name = 'checkout_saga_pasos') AS bitacora
+            """)
+            saga = cur.fetchone()
+            if (saga['pedidos'], saga['pagos'], saga['bitacora']) != (4, 2, 1):
+                print(f'MySQL checkout saga: estructura incompleta {saga}')
+                ok = False
+            else:
+                print('MySQL checkout saga: idempotencia, estados de pago y bitácora listos')
+
             phase6b_fks = {
                 'fk_res_producto_referencia', 'fk_mi_inventario',
             }

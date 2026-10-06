@@ -24,3 +24,7 @@ class CheckoutResponse(BaseModel):
     total: Decimal
     estado: str
     mensaje: str
+    # CONFIRMED, PAYMENT_PENDING (202, se resolverá después) o IDEMPOTENT_REPLAY
+    # (la misma clave ya había creado este pedido).
+    codigo: str = 'CONFIRMED'
+    requiere_seguimiento: bool = False

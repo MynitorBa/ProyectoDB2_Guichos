@@ -39,3 +39,6 @@ data/
 *.log
 logs/
 backups/
+
+# Registro local de la pasarela de pagos simulada
+payment_simulator/ledger*.db

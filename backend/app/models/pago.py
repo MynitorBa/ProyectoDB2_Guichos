@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Enum, ForeignKey, DateTime, DECIMAL
+from sqlalchemy import String, Enum, ForeignKey, DateTime, DECIMAL, SmallInteger, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_mysql import Base
@@ -24,10 +24,17 @@ class Pago(Base):
     pedido_id: Mapped[int] = mapped_column(ForeignKey('pedidos.id'))
     metodo_pago_id: Mapped[int] = mapped_column(ForeignKey('metodos_pago.id'))
     monto: Mapped[Decimal] = mapped_column(DECIMAL(10, 2))
+    # en_verificacion: el cobro salió hacia la pasarela pero no hubo respuesta
+    # definitiva; el reconciliador lo resuelve consultando con la misma clave.
     estado: Mapped[str] = mapped_column(
-        Enum('pendiente', 'aprobado', 'rechazado', 'reembolsado'), default='pendiente'
+        Enum('pendiente', 'en_verificacion', 'aprobado', 'rechazado', 'reembolsado'), default='pendiente'
     )
     referencia_transaccion: Mapped[str | None] = mapped_column(String(100))
+    clave_idempotencia: Mapped[str | None] = mapped_column(String(36), unique=True)
+    referencia_pasarela: Mapped[str | None] = mapped_column(String(64))
+    intentos: Mapped[int] = mapped_column(SmallInteger, default=0)
+    ultimo_error: Mapped[str | None] = mapped_column(Text)
+    actualizado_en: Mapped[datetime | None] = mapped_column(DateTime, onupdate=utc_now)
     fecha: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     pedido: Mapped['Pedido'] = relationship(back_populates='pagos')

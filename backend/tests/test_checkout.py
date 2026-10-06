@@ -105,6 +105,14 @@ def reset_stock():
         # Los IDs provienen de objetos Pedido creados dentro de esta prueba.
         order_ids = ','.join(str(int(order_id)) for order_id in created_order_ids)
         with engine.connect() as conn:
+            # Un backend de desarrollo en ejecución pudo proyectar ya estas
+            # ventas en Cassandra con su worker del outbox.
+            proyectados_en_cassandra = conn.execute(text(f"""
+                SELECT COUNT(*) FROM outbox_eventos
+                WHERE agregado_tipo = 'pedido'
+                  AND CAST(agregado_id AS UNSIGNED) IN ({order_ids})
+                  AND destino = 'cassandra' AND estado IN ('procesando', 'procesado')
+            """)).scalar_one()
             conn.execute(text(f"""
                 DELETE FROM outbox_eventos
                 WHERE agregado_tipo = 'pedido'
@@ -131,10 +139,24 @@ def reset_stock():
                   AND CAST(agregado_id AS UNSIGNED) IN ({order_ids})
             """))
             conn.execute(text(f"DELETE FROM movimientos_inventario WHERE pedido_id IN ({order_ids})"))
+            conn.execute(text(f"DELETE FROM notificaciones WHERE pedido_id IN ({order_ids})"))
+            conn.execute(text(f"UPDATE reservas_flash SET pedido_id = NULL WHERE pedido_id IN ({order_ids})"))
             conn.execute(text(f"DELETE FROM pagos WHERE pedido_id IN ({order_ids})"))
             conn.execute(text(f"DELETE FROM pedido_lineas WHERE pedido_id IN ({order_ids})"))
             conn.execute(text(f"DELETE FROM pedidos WHERE id IN ({order_ids})"))
             conn.commit()
+        # Los pedidos de prueba se borran físicamente (en producción nunca: se
+        # cancelan), así que la reconstrucción por semana no encuentra a su
+        # vendedor. Se reconstruye todo desde MySQL solo si hubo proyección.
+        if proyectados_en_cassandra:
+            try:
+                from app.core.db_mysql import SessionLocal
+                from app.services.analytics_service import rebuild_all
+
+                with SessionLocal() as session:
+                    rebuild_all(session)
+            except Exception:
+                pass  # Cassandra caído: backfill_cassandra_analytics lo resuelve después.
 
     with engine.connect() as conn:
         conn.execute(
@@ -264,15 +286,18 @@ def test_checkout_por_oferta_crea_subpedido_y_snapshots(reset_stock):
         )
         assert by_type['inventario.actualizado']['producto_ref']
         assert by_type['analytics.pedido_actualizado']['producto_ref'] is None
-        movimiento_inventario = db.execute(text("""
-            SELECT inventario_id FROM movimientos_inventario
-            WHERE pedido_id = :pedido_id
-        """), {'pedido_id': pedido.id}).scalar_one()
+        # La saga reserva primero y descuenta al confirmar el pago.
+        movimientos = db.execute(text("""
+            SELECT inventario_id, tipo FROM movimientos_inventario
+            WHERE pedido_id = :pedido_id ORDER BY id
+        """), {'pedido_id': pedido.id}).all()
         inventario_id = db.execute(text("""
             SELECT id FROM inventario
             WHERE oferta_id = :oferta_id AND bodega = 'principal'
         """), {'oferta_id': oferta_id}).scalar_one()
-        assert movimiento_inventario == inventario_id
+        assert [(m.inventario_id, m.tipo) for m in movimientos] == [
+            (inventario_id, 'reserva'), (inventario_id, 'salida'),
+        ]
     finally:
         db.close()
 
