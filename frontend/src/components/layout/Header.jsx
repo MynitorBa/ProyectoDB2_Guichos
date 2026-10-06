@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Search, ShoppingCart, ChevronDown, Menu, X,
+  ShoppingCart, ChevronDown, Menu, X,
   LogOut, Package, Settings, Sun, Moon, UserCircle,
   Monitor, Smartphone, Headphones, Shirt, Layers, ShoppingBag,
   BookOpen, Apple, Home, Dumbbell, Wrench, Gamepad2,
@@ -17,6 +17,7 @@ import { useCart } from '../../context/CartContext'
 import { getCategories, getActiveFlashSales } from '../../api/products'
 import { getUnreadCount, getNotifications, markAllAsRead } from '../../api/notifications'
 import { cn } from '../../lib/utils'
+import { SearchBar } from './SearchBar'
 
 const ICON_BY_SLUG = {
   computadoras: Monitor,
@@ -41,35 +42,6 @@ function Logo() {
       alt="TiendaYa"
       className="h-11 w-auto shrink-0 object-contain logo-hover"
     />
-  )
-}
-
-function SearchBar({ className, onSearch }) {
-  const [q, setQ] = useState('')
-  const [focused, setFocused] = useState(false)
-  const navigate = useNavigate()
-  function submit(e) {
-    e.preventDefault()
-    if (q.trim()) { navigate(`/catalog?q=${encodeURIComponent(q.trim())}`); onSearch?.() }
-  }
-  return (
-    <form onSubmit={submit} className={cn('relative flex items-center', className)}>
-      <Search
-        size={15}
-        className={cn(
-          'absolute left-3.5 pointer-events-none transition-colors duration-150',
-          focused ? 'text-[#29B6F6]' : 'text-[var(--color-text-muted)]'
-        )}
-      />
-      <input
-        value={q}
-        onChange={e => setQ(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        placeholder="Buscar productos..."
-        className="w-full h-10 pl-9 pr-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-full font-sans text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[#29B6F6] focus:ring-2 focus:ring-[#29B6F6]/20 transition-all duration-200"
-      />
-    </form>
   )
 }
 

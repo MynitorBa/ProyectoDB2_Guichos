@@ -5,20 +5,21 @@ import {
   SlidersHorizontal, X, ChevronLeft, ChevronRight, Search,
   Monitor, Smartphone, Headphones, Shirt, Layers, ShoppingBag,
   BookOpen, Apple, Home, Dumbbell, Wrench, Gamepad2,
-  Zap,
+  Zap, PackageCheck, BadgeCheck, Check, AlertTriangle, Sparkles,
 } from 'lucide-react'
-import { motion, AnimatePresence } from 'motion/react'
-import { getProducts, getCategories } from '../api/products'
+import { motion } from 'motion/react'
+import { searchProducts } from '../api/search'
 import { ProductCard } from '../components/product/ProductCard'
 import { ProductCardSkeleton } from '../components/ui/skeleton'
-import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
 import { Sheet, SheetTrigger, SheetContent } from '../components/ui/sheet'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
 
 const ease = [0.23, 1, 0.32, 1]
+const PAGE_SIZE = 12
+const PREFIJO_ATRIBUTO = 'attr.'
+const VISIBLES_POR_FACETA = 6
 
 const ICON_BY_SLUG = {
   computadoras: Monitor,
@@ -37,51 +38,202 @@ const ICON_BY_SLUG = {
 const DEFAULT_ICON = Layers
 
 const SORT_OPTIONS = [
-  { value: 'reciente',    label: 'Más recientes' },
-  { value: 'precio_asc',  label: 'Precio: menor a mayor' },
-  { value: 'precio_desc', label: 'Precio: mayor a menor' },
-  { value: 'mas_vendidos', label: 'Más vendidos' },
+  { value: 'relevancia',     label: 'Más relevantes', soloConTexto: true },
+  { value: 'mas_vendidos',   label: 'Más vendidos' },
+  { value: 'reciente',       label: 'Más recientes' },
+  { value: 'precio_asc',     label: 'Precio: menor a mayor' },
+  { value: 'precio_desc',    label: 'Precio: mayor a menor' },
   { value: 'descuento_desc', label: 'Mayor descuento flash' },
 ]
 
-function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
+const GRADIENT = { background: 'linear-gradient(135deg, #29B6F6, #0288D1)' }
+
+// Los filtros viven en la URL: un enlace compartido reproduce la misma búsqueda.
+function leerFiltros(searchParams) {
+  const atributos = {}
+  searchParams.forEach((valor, clave) => {
+    if (clave.startsWith(PREFIJO_ATRIBUTO) && valor) {
+      const nombre = clave.slice(PREFIJO_ATRIBUTO.length)
+      atributos[nombre] = [...(atributos[nombre] || []), valor]
+    }
+  })
+  return {
+    q: searchParams.get('q') || '',
+    categoria: searchParams.get('categoria') || '',
+    orden: searchParams.get('orden') || '',
+    flash: searchParams.get('flash') === '1',
+    stock: searchParams.get('stock') === '1',
+    tiendaya: searchParams.get('tiendaya') === '1',
+    pmin: searchParams.get('pmin') || '',
+    pmax: searchParams.get('pmax') || '',
+    vendedores: searchParams.getAll('vendedor'),
+    atributos,
+    page: Math.max(1, Number(searchParams.get('page')) || 1),
+  }
+}
+
+function SectionTitle({ children }) {
+  return (
+    <p className="font-sans text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--color-text-muted)] mb-2.5">
+      {children}
+    </p>
+  )
+}
+
+function Conteo({ valor }) {
+  if (valor === undefined || valor === null) return null
+  return <span className="font-mono text-[11px] tabular-nums text-[var(--color-text-muted)]">{valor}</span>
+}
+
+function Interruptor({ activo, onClick, icono: Icono, etiqueta, conteo, tono = 'azul' }) {
+  const colores = tono === 'ambar'
+    ? { on: 'border-amber-400 bg-amber-50 text-amber-800 font-semibold', track: 'bg-amber-500', hover: 'hover:border-amber-300' }
+    : { on: 'border-[#29B6F6] bg-[#29B6F6]/8 text-[#0277BD] font-semibold', track: 'bg-[#29B6F6]', hover: 'hover:border-[#29B6F6]/40' }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activo}
+      className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border font-sans text-sm transition-all ${
+        activo ? colores.on : `border-[var(--color-border)] text-[var(--color-text-secondary)] ${colores.hover}`
+      }`}
+    >
+      <span className="flex items-center gap-2"><Icono size={14} /> {etiqueta}</span>
+      <span className="flex items-center gap-2">
+        <Conteo valor={conteo} />
+        <span className={`w-8 h-4 rounded-full p-0.5 transition-colors ${activo ? colores.track : 'bg-[var(--color-border)]'}`}>
+          <span className={`block w-3 h-3 bg-white rounded-full transition-transform ${activo ? 'translate-x-4' : ''}`} />
+        </span>
+      </span>
+    </button>
+  )
+}
+
+function ListaSeleccion({ opciones, seleccionadas, onToggle }) {
+  const [expandida, setExpandida] = useState(false)
+  const visibles = expandida ? opciones : opciones.slice(0, VISIBLES_POR_FACETA)
+  return (
+    <div className="flex flex-col gap-0.5">
+      {visibles.map((opcion) => {
+        const activa = seleccionadas.includes(opcion.valor)
+        return (
+          <button
+            key={opcion.valor}
+            type="button"
+            onClick={() => onToggle(opcion.valor)}
+            aria-pressed={activa}
+            className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left font-sans text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]/60 transition-colors"
+          >
+            <span className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center transition-colors ${
+              activa ? 'border-[#0288D1] bg-[#0288D1] text-white' : 'border-[var(--color-border)]'
+            }`}>
+              {activa && <Check size={11} strokeWidth={3} />}
+            </span>
+            <span className={`flex-1 truncate ${activa ? 'text-[var(--color-text-primary)] font-medium' : ''}`}>{opcion.etiqueta || opcion.valor}</span>
+            <Conteo valor={opcion.conteo} />
+          </button>
+        )
+      })}
+      {opciones.length > VISIBLES_POR_FACETA && (
+        <button
+          type="button"
+          onClick={() => setExpandida((v) => !v)}
+          className="self-start px-2 py-1 font-sans text-xs text-[#0288D1] hover:underline"
+        >
+          {expandida ? 'Ver menos' : `Ver ${opciones.length - VISIBLES_POR_FACETA} más`}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function FiltrosPrecio({ filtros, rangos, onAplicar }) {
+  const [min, setMin] = useState(filtros.pmin)
+  const [max, setMax] = useState(filtros.pmax)
+  useEffect(() => { setMin(filtros.pmin); setMax(filtros.pmax) }, [filtros.pmin, filtros.pmax])
+
+  return (
+    <div>
+      <SectionTitle>Precio (GTQ)</SectionTitle>
+      {rangos?.length > 0 && (
+        <div className="flex flex-col gap-0.5 mb-2.5">
+          {rangos.map((rango) => {
+            const desde = rango.desde ?? ''
+            const hasta = rango.hasta ?? ''
+            const activo = String(desde) === filtros.pmin && String(hasta) === filtros.pmax
+            return (
+              <button
+                key={rango.etiqueta}
+                type="button"
+                onClick={() => (activo ? onAplicar('', '') : onAplicar(String(desde), String(hasta)))}
+                aria-pressed={activo}
+                className={`flex items-center justify-between px-2 py-1.5 rounded-lg font-sans text-sm transition-colors ${
+                  activo ? 'bg-[#29B6F6]/10 text-[#0277BD] font-semibold' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-border)]/60'
+                }`}
+              >
+                <span>{rango.etiqueta}</span>
+                <Conteo valor={rango.conteo} />
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <form
+        className="flex gap-2 items-center"
+        onSubmit={(e) => { e.preventDefault(); onAplicar(min, max) }}
+      >
+        <Input type="number" min="0" placeholder="Mín" value={min} onChange={(e) => setMin(e.target.value)} className="text-center" aria-label="Precio mínimo" />
+        <span className="text-[var(--color-text-muted)] text-sm font-sans shrink-0">–</span>
+        <Input type="number" min="0" placeholder="Máx" value={max} onChange={(e) => setMax(e.target.value)} className="text-center" aria-label="Precio máximo" />
+        <button type="submit" className="h-9 px-2.5 shrink-0 rounded-lg font-sans text-xs font-semibold text-white" style={GRADIENT}>
+          Ir
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function FiltersPanel({ filtros, facetas, acciones }) {
+  const categorias = facetas?.categorias || []
+  const disponibilidad = facetas?.disponibilidad
+  const vendedores = facetas?.vendedores || []
+  const atributos = facetas?.atributos || []
+
   return (
     <div className="space-y-5">
-
-      {/* Categorías */}
+      {/* Categorías con conteo de resultados */}
       <div>
-        <p className="font-sans text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--color-text-muted)] mb-2.5">
-          Categoría
-        </p>
+        <SectionTitle>Categoría</SectionTitle>
         <div className="flex flex-col gap-0.5">
           <button
-            onClick={() => onFilterChange('categoria', '')}
+            onClick={() => acciones.setCategoria('')}
             className={`flex items-center gap-2.5 text-left px-3 py-2 rounded-xl text-sm font-sans transition-all duration-150 ${
-              !filters.categoria
+              !filtros.categoria
                 ? 'text-white font-semibold shadow-sm'
                 : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
             }`}
-            style={!filters.categoria ? { background: 'linear-gradient(135deg, #29B6F6, #0288D1)' } : undefined}
+            style={!filtros.categoria ? GRADIENT : undefined}
           >
             <Layers size={14} className="shrink-0" />
             Todas las categorías
           </button>
-          {categories.map((cat) => {
-            const Icon = ICON_BY_SLUG[cat.slug] || DEFAULT_ICON
-            const active = filters.categoria === cat.slug
+          {categorias.map((cat) => {
+            const Icon = ICON_BY_SLUG[cat.valor] || DEFAULT_ICON
+            const active = filtros.categoria === cat.valor
             return (
               <button
-                key={cat.slug}
-                onClick={() => onFilterChange('categoria', cat.slug)}
+                key={cat.valor}
+                onClick={() => acciones.setCategoria(active ? '' : cat.valor)}
                 className={`flex items-center gap-2.5 text-left px-3 py-2 rounded-xl text-sm font-sans transition-all duration-150 ${
                   active
                     ? 'text-white font-semibold shadow-sm'
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text-primary)]'
                 }`}
-                style={active ? { background: 'linear-gradient(135deg, #29B6F6, #0288D1)' } : undefined}
+                style={active ? GRADIENT : undefined}
               >
                 <Icon size={14} className="shrink-0" strokeWidth={1.5} />
-                {cat.nombre}
+                <span className="flex-1 truncate">{cat.etiqueta}</span>
+                <span className={`font-mono text-[11px] tabular-nums ${active ? 'text-white/80' : 'text-[var(--color-text-muted)]'}`}>{cat.conteo}</span>
               </button>
             )
           })}
@@ -90,69 +242,48 @@ function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
 
       <Separator />
 
-      {/* Promociones flash */}
-      <button
-        type="button"
-        onClick={() => onFilterChange('solo_flash', !filters.solo_flash)}
-        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border font-sans text-sm transition-all ${
-          filters.solo_flash
-            ? 'border-amber-400 bg-amber-50 text-amber-800 font-semibold'
-            : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-amber-300'
-        }`}
-      >
-        <span className="flex items-center gap-2"><Zap size={14} fill="currentColor" /> Solo ofertas flash</span>
-        <span className={`w-8 h-4 rounded-full p-0.5 transition-colors ${filters.solo_flash ? 'bg-amber-500' : 'bg-[var(--color-border)]'}`}>
-          <span className={`block w-3 h-3 bg-white rounded-full transition-transform ${filters.solo_flash ? 'translate-x-4' : ''}`} />
-        </span>
-      </button>
+      <div className="space-y-1.5">
+        <Interruptor activo={filtros.flash} onClick={() => acciones.toggle('flash')} icono={Zap}
+          etiqueta="Ofertas flash" conteo={disponibilidad?.flash} tono="ambar" />
+        <Interruptor activo={filtros.stock} onClick={() => acciones.toggle('stock')} icono={PackageCheck}
+          etiqueta="Con stock" conteo={disponibilidad?.con_stock} />
+        {disponibilidad && (
+          <Interruptor activo={filtros.tiendaya} onClick={() => acciones.toggle('tiendaya')} icono={BadgeCheck}
+            etiqueta="Vendido por TiendaYa" conteo={disponibilidad.tiendaya} />
+        )}
+      </div>
 
       <Separator />
 
-      {/* Precio */}
-      <div>
-        <p className="font-sans text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--color-text-muted)] mb-2.5">
-          Precio (GTQ)
-        </p>
-        <div className="flex gap-2 items-center">
-          <Input
-            type="number"
-            placeholder="Mín"
-            value={filters.precio_min}
-            onChange={(e) => onFilterChange('precio_min', e.target.value)}
-            className="text-center"
-          />
-          <span className="text-[var(--color-text-muted)] text-sm font-sans shrink-0">–</span>
-          <Input
-            type="number"
-            placeholder="Máx"
-            value={filters.precio_max}
-            onChange={(e) => onFilterChange('precio_max', e.target.value)}
-            className="text-center"
+      <FiltrosPrecio filtros={filtros} rangos={facetas?.precio?.rangos} onAplicar={acciones.setPrecio} />
+
+      {vendedores.length > 0 && (
+        <>
+          <Separator />
+          <div>
+            <SectionTitle>Vendedor</SectionTitle>
+            <ListaSeleccion opciones={vendedores} seleccionadas={filtros.vendedores} onToggle={acciones.toggleVendedor} />
+          </div>
+        </>
+      )}
+
+      {/* Atributos propios de cada categoría (RAM, talla, color...), calculados por el motor */}
+      {atributos.map((atributo) => (
+        <div key={atributo.nombre}>
+          <Separator className="mb-5" />
+          <SectionTitle>{atributo.etiqueta}</SectionTitle>
+          <ListaSeleccion
+            opciones={atributo.valores}
+            seleccionadas={filtros.atributos[atributo.nombre] || []}
+            onToggle={(valor) => acciones.toggleAtributo(atributo.nombre, valor)}
           />
         </div>
-      </div>
+      ))}
 
       <Separator />
 
-      {/* Ordenar */}
-      <div>
-        <p className="font-sans text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--color-text-muted)] mb-2.5">
-          Ordenar por
-        </p>
-        <Select value={filters.sort} onValueChange={(v) => onFilterChange('sort', v)}>
-          <SelectTrigger>
-            <SelectValue placeholder="Seleccionar orden" />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       <button
-        onClick={onClear}
+        onClick={acciones.limpiar}
         className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl font-sans text-sm text-[var(--color-text-muted)] hover:text-[var(--color-error)] hover:bg-[var(--color-error)]/8 border border-[var(--color-border)] transition-all duration-150"
       >
         <X size={13} /> Limpiar filtros
@@ -161,101 +292,106 @@ function FiltersPanel({ categories, filters, onFilterChange, onClear }) {
   )
 }
 
+function Chip({ children, onRemove, tono }) {
+  const estilos = tono === 'primario'
+    ? { className: 'text-white', style: GRADIENT }
+    : tono === 'ambar'
+      ? { className: 'bg-amber-100 text-amber-800' }
+      : { className: 'bg-[var(--color-border)] text-[var(--color-text-secondary)]' }
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold ${estilos.className}`} style={estilos.style}>
+      {children}
+      <button onClick={onRemove} className="hover:opacity-70" aria-label="Quitar filtro"><X size={11} /></button>
+    </span>
+  )
+}
+
 export default function CatalogPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [page, setPage] = useState(1)
+  const filtros = leerFiltros(searchParams)
+  const [localSearch, setLocalSearch] = useState(filtros.q)
 
-  const categoria = searchParams.get('categoria') || ''
-  const q = searchParams.get('q') || ''
-  const orderFromUrl = searchParams.get('orden') || 'reciente'
-  const flashFromUrl = searchParams.get('flash') === '1'
+  useEffect(() => { setLocalSearch(filtros.q) }, [filtros.q])
 
-  const [localSearch, setLocalSearch] = useState(q)
-  const [filters, setFilters] = useState({
-    categoria,
-    precio_min: '',
-    precio_max: '',
-    sort: orderFromUrl,
-    solo_flash: flashFromUrl,
-  })
-
-  useEffect(() => {
-    setFilters((prev) => ({
-      ...prev,
-      categoria,
-      sort: orderFromUrl,
-      solo_flash: flashFromUrl,
-    }))
-    setPage(1)
-  }, [categoria, orderFromUrl, flashFromUrl])
-
-  useEffect(() => { setLocalSearch(q) }, [q])
-
-  function updateFilter(key, value) {
-    setFilters((prev) => ({ ...prev, [key]: value }))
-    setPage(1)
-    if (['categoria', 'sort', 'solo_flash'].includes(key)) {
-      const next = new URLSearchParams(searchParams)
-      if (key === 'categoria') {
-        if (value) next.set('categoria', value)
-        else next.delete('categoria')
-      } else if (key === 'sort') {
-        if (value && value !== 'reciente') next.set('orden', value)
-        else next.delete('orden')
-      } else if (value) next.set('flash', '1')
-      else next.delete('flash')
-      setSearchParams(next)
-    }
+  // Cualquier cambio de filtro vuelve a la primera página.
+  function actualizar(mutar, { conservarPagina = false } = {}) {
+    const next = new URLSearchParams(searchParams)
+    mutar(next)
+    if (!conservarPagina) next.delete('page')
+    setSearchParams(next)
   }
 
-  function clearFilters() {
-    setFilters({ categoria: '', precio_min: '', precio_max: '', sort: 'reciente', solo_flash: false })
-    setLocalSearch('')
-    setSearchParams({})
-    setPage(1)
+  function alternarValor(next, clave, valor) {
+    const actuales = next.getAll(clave)
+    next.delete(clave)
+    const nuevos = actuales.includes(valor) ? actuales.filter((v) => v !== valor) : [...actuales, valor]
+    nuevos.forEach((v) => next.append(clave, v))
+  }
+
+  const acciones = {
+    setCategoria: (slug) => actualizar((n) => {
+      if (slug) n.set('categoria', slug)
+      else n.delete('categoria')
+      // Los atributos dependen de la categoría; al cambiarla se reinician.
+      ;[...n.keys()].filter((k) => k.startsWith(PREFIJO_ATRIBUTO)).forEach((k) => n.delete(k))
+    }),
+    toggle: (clave) => actualizar((n) => (n.get(clave) === '1' ? n.delete(clave) : n.set(clave, '1'))),
+    setPrecio: (min, max) => actualizar((n) => {
+      if (min) n.set('pmin', min); else n.delete('pmin')
+      if (max) n.set('pmax', max); else n.delete('pmax')
+    }),
+    toggleVendedor: (vendedor) => actualizar((n) => alternarValor(n, 'vendedor', vendedor)),
+    toggleAtributo: (nombre, valor) => actualizar((n) => alternarValor(n, `${PREFIJO_ATRIBUTO}${nombre}`, valor)),
+    setOrden: (orden) => actualizar((n) => n.set('orden', orden)),
+    setQ: (q) => actualizar((n) => (q ? n.set('q', q) : n.delete('q'))),
+    setPage: (page) => actualizar((n) => n.set('page', String(page)), { conservarPagina: true }),
+    limpiar: () => { setLocalSearch(''); setSearchParams({}) },
   }
 
   function handleSearch(e) {
     e.preventDefault()
-    const next = new URLSearchParams(searchParams)
-    if (localSearch) next.set('q', localSearch)
-    else next.delete('q')
-    setSearchParams(next)
-    setPage(1)
-  }
-
-  const queryParams = {
-    page,
-    page_size: 12,
-    ...(filters.categoria && { categoria: filters.categoria }),
-    ...(q && { q }),
-    ...(filters.precio_min && { precio_min: filters.precio_min }),
-    ...(filters.precio_max && { precio_max: filters.precio_max }),
-    ...(filters.sort && { orden: filters.sort }),
-    ...(filters.solo_flash && { solo_flash: true }),
+    acciones.setQ(localSearch.trim())
   }
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['products', 'catalog', queryParams],
-    queryFn: () => getProducts(queryParams).then((r) => r.data),
+    queryKey: ['search', searchParams.toString()],
+    queryFn: () => searchProducts({
+      q: filtros.q,
+      categoria: filtros.categoria,
+      orden: filtros.orden,
+      solo_flash: filtros.flash,
+      solo_stock: filtros.stock,
+      solo_tiendaya: filtros.tiendaya,
+      precio_min: filtros.pmin,
+      precio_max: filtros.pmax,
+      vendedores: filtros.vendedores,
+      atributos: filtros.atributos,
+      page: filtros.page,
+      page_size: PAGE_SIZE,
+    }).then((r) => r.data),
     placeholderData: keepPreviousData,
-  })
-
-  const { data: categoriesData } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => getCategories().then((r) => r.data),
   })
 
   const products = data?.items || []
   const totalPages = data?.total_pages || 1
-  const categories = categoriesData || []
+  const page = filtros.page
+  const facetas = data?.facetas
+  const ordenActual = data?.orden || filtros.orden || (filtros.q ? 'relevancia' : 'mas_vendidos')
+  const opcionesOrden = SORT_OPTIONS.filter((o) => !o.soloConTexto || filtros.q)
 
-  const activeCategory = categories.find((c) => c.slug === filters.categoria)
-  const hasActiveFilters = filters.categoria || filters.precio_min || filters.precio_max || filters.solo_flash || q
+  const activeCategory = facetas?.categorias?.find((c) => c.valor === filtros.categoria)
+  const atributosActivos = Object.entries(filtros.atributos).flatMap(([nombre, valores]) =>
+    valores.map((valor) => ({
+      nombre,
+      valor,
+      etiqueta: facetas?.atributos?.find((a) => a.nombre === nombre)?.etiqueta || nombre,
+    }))
+  )
+  const hasActiveFilters = Boolean(
+    filtros.categoria || filtros.pmin || filtros.pmax || filtros.flash || filtros.stock
+    || filtros.tiendaya || filtros.q || filtros.vendedores.length || atributosActivos.length
+  )
 
-  const gridKey = `${filters.categoria}-${q}-${filters.sort}-${filters.solo_flash}-${page}`
-
-  // Páginas a mostrar (máx 5)
   function getPageRange() {
     const range = []
     const delta = 2
@@ -264,6 +400,10 @@ export default function CatalogPage() {
     }
     return range
   }
+
+  const titulo = filtros.flash && !filtros.q
+    ? 'Ofertas flash'
+    : filtros.q ? `"${filtros.q}"` : activeCategory ? activeCategory.etiqueta : 'Catálogo de productos'
 
   return (
     <div className="min-h-screen bg-[var(--color-background)]">
@@ -285,16 +425,16 @@ export default function CatalogPage() {
               TiendaYa
             </p>
             <h1 className="font-display font-bold text-white leading-tight" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', letterSpacing: '-0.02em' }}>
-              {filters.solo_flash ? 'Ofertas flash' : activeCategory ? activeCategory.nombre : q ? `"${q}"` : 'Catálogo de productos'}
+              {titulo}
             </h1>
             {data?.total !== undefined && (
               <p className="font-sans text-sm text-white/65 mt-1">
                 <span className="font-mono tabular-nums font-semibold text-white">{data.total}</span> producto{data.total !== 1 ? 's' : ''} encontrado{data.total !== 1 ? 's' : ''}
+                {filtros.q && activeCategory && <> en <span className="font-semibold text-white">{activeCategory.etiqueta}</span></>}
               </p>
             )}
           </motion.div>
 
-          {/* Logo derecha */}
           <motion.img
             src="/TiendaYAlogo.png"
             alt="TiendaYa"
@@ -311,47 +451,41 @@ export default function CatalogPage() {
 
         {/* ── Toolbar ── */}
         <motion.div
-          className="flex items-center justify-between mb-6 gap-4 flex-wrap"
+          className="flex items-center justify-between mb-5 gap-4 flex-wrap"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease, delay: 0.1 }}
         >
           {/* Filtros activos como chips */}
           <div className="flex items-center gap-2 flex-wrap">
-            {hasActiveFilters && (
+            {hasActiveFilters ? (
               <>
-                {filters.categoria && activeCategory && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold text-white" style={{ background: 'linear-gradient(135deg, #29B6F6, #0288D1)' }}>
-                    {activeCategory.nombre}
-                    <button onClick={() => updateFilter('categoria', '')} className="hover:opacity-70"><X size={11} /></button>
-                  </span>
+                {filtros.categoria && (
+                  <Chip tono="primario" onRemove={() => acciones.setCategoria('')}>
+                    {activeCategory?.etiqueta || filtros.categoria}
+                  </Chip>
                 )}
-                {q && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold bg-[var(--color-border)] text-[var(--color-text-secondary)]">
-                    "{q}"
-                    <button onClick={() => { const n = new URLSearchParams(searchParams); n.delete('q'); setSearchParams(n); setLocalSearch('') }} className="hover:opacity-70"><X size={11} /></button>
-                  </span>
+                {filtros.q && <Chip onRemove={() => acciones.setQ('')}>"{filtros.q}"</Chip>}
+                {(filtros.pmin || filtros.pmax) && (
+                  <Chip onRemove={() => acciones.setPrecio('', '')}>Q{filtros.pmin || '0'} – Q{filtros.pmax || '∞'}</Chip>
                 )}
-                {(filters.precio_min || filters.precio_max) && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold bg-[var(--color-border)] text-[var(--color-text-secondary)]">
-                    Q{filters.precio_min || '0'} – Q{filters.precio_max || '∞'}
-                    <button onClick={() => { updateFilter('precio_min', ''); updateFilter('precio_max', '') }} className="hover:opacity-70"><X size={11} /></button>
-                  </span>
-                )}
-                {filters.solo_flash && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-sans text-xs font-semibold bg-amber-100 text-amber-800">
-                    <Zap size={11} fill="currentColor" /> Ofertas flash
-                    <button onClick={() => updateFilter('solo_flash', false)} className="hover:opacity-70"><X size={11} /></button>
-                  </span>
-                )}
+                {filtros.flash && <Chip tono="ambar" onRemove={() => acciones.toggle('flash')}><Zap size={11} fill="currentColor" /> Ofertas flash</Chip>}
+                {filtros.stock && <Chip onRemove={() => acciones.toggle('stock')}>Con stock</Chip>}
+                {filtros.tiendaya && <Chip onRemove={() => acciones.toggle('tiendaya')}>TiendaYa</Chip>}
+                {filtros.vendedores.map((v) => (
+                  <Chip key={`v-${v}`} onRemove={() => acciones.toggleVendedor(v)}>{v}</Chip>
+                ))}
+                {atributosActivos.map((a) => (
+                  <Chip key={`a-${a.nombre}-${a.valor}`} onRemove={() => acciones.toggleAtributo(a.nombre, a.valor)}>
+                    {a.etiqueta}: {a.valor}
+                  </Chip>
+                ))}
               </>
-            )}
-            {!hasActiveFilters && (
+            ) : (
               <p className="font-sans text-sm text-[var(--color-text-muted)]">Todos los productos</p>
             )}
           </div>
 
-          {/* Search + filtros móvil */}
           <div className="flex items-center gap-2">
             <form onSubmit={handleSearch} className="flex gap-2">
               <div className="relative hidden sm:block">
@@ -368,6 +502,19 @@ export default function CatalogPage() {
               </button>
             </form>
 
+            <div className="w-48 hidden sm:block">
+              <Select value={ordenActual} onValueChange={acciones.setOrden}>
+                <SelectTrigger aria-label="Ordenar por">
+                  <SelectValue placeholder="Ordenar por" />
+                </SelectTrigger>
+                <SelectContent>
+                  {opcionesOrden.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <Sheet>
               <SheetTrigger asChild>
                 <button className="lg:hidden h-9 px-3.5 flex items-center gap-1.5 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] font-sans text-sm text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 transition-colors">
@@ -379,31 +526,66 @@ export default function CatalogPage() {
                 </button>
               </SheetTrigger>
               <SheetContent side="left" title="Filtros">
-                <div className="p-5">
-                  <FiltersPanel categories={categories} filters={filters} onFilterChange={updateFilter} onClear={clearFilters} />
+                <div className="p-5 space-y-5">
+                  <div className="sm:hidden">
+                    <SectionTitle>Ordenar por</SectionTitle>
+                    <Select value={ordenActual} onValueChange={acciones.setOrden}>
+                      <SelectTrigger><SelectValue placeholder="Ordenar por" /></SelectTrigger>
+                      <SelectContent>
+                        {opcionesOrden.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <FiltersPanel filtros={filtros} facetas={facetas} acciones={acciones} />
                 </div>
               </SheetContent>
             </Sheet>
           </div>
         </motion.div>
 
+        {/* ── Avisos del buscador ── */}
+        {data?.sugerencia && (
+          <div className="mb-4 flex items-center gap-2 font-sans text-sm text-[var(--color-text-secondary)]">
+            <Sparkles size={15} className="text-[#29B6F6] shrink-0" />
+            ¿Quisiste decir{' '}
+            <button
+              onClick={() => acciones.setQ(data.sugerencia)}
+              className="font-semibold text-[#0288D1] hover:underline"
+            >
+              {data.sugerencia}
+            </button>
+            ?
+          </div>
+        )}
+        {data?.degradado && (
+          <div role="status" className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 font-sans text-sm text-amber-900">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>
+              La búsqueda avanzada no está disponible en este momento. Mostramos resultados por coincidencia exacta
+              del nombre; algunos filtros no están disponibles.
+            </span>
+          </div>
+        )}
+
         <div className="flex gap-6">
 
           {/* ── Sidebar desktop ── */}
           <motion.aside
-            className="hidden lg:block w-56 shrink-0"
+            className="hidden lg:block w-60 shrink-0"
             initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, ease, delay: 0.12 }}
           >
-            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 sticky top-24">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl p-4 sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <span className="font-sans text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--color-text-muted)]">Filtros</span>
                 {hasActiveFilters && (
-                  <button onClick={clearFilters} className="font-sans text-[11px] text-[#29B6F6] hover:underline">Limpiar</button>
+                  <button onClick={acciones.limpiar} className="font-sans text-[11px] text-[#29B6F6] hover:underline">Limpiar</button>
                 )}
               </div>
-              <FiltersPanel categories={categories} filters={filters} onFilterChange={updateFilter} onClear={clearFilters} />
+              <FiltersPanel filtros={filtros} facetas={facetas} acciones={acciones} />
             </div>
           </motion.aside>
 
@@ -417,7 +599,7 @@ export default function CatalogPage() {
 
             {isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-5">
-                {Array.from({ length: 12 }).map((_, i) => <ProductCardSkeleton key={i} />)}
+                {Array.from({ length: PAGE_SIZE }).map((_, i) => <ProductCardSkeleton key={i} />)}
               </div>
             ) : products.length === 0 ? (
               <motion.div
@@ -426,23 +608,25 @@ export default function CatalogPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.45, ease }}
               >
-                <div className="h-20 w-20 rounded-full flex items-center justify-center mb-5" style={{ background: 'linear-gradient(135deg, #29B6F6/10, #0288D1/10)', backgroundColor: 'rgba(41,182,246,0.08)' }}>
+                <div className="h-20 w-20 rounded-full flex items-center justify-center mb-5" style={{ backgroundColor: 'rgba(41,182,246,0.08)' }}>
                   <Search size={32} className="text-[#29B6F6]" strokeWidth={1.5} />
                 </div>
                 <h3 className="font-display font-bold text-xl text-[var(--color-text-primary)] mb-2">Sin resultados</h3>
                 <p className="font-sans text-sm text-[var(--color-text-secondary)] mb-6 max-w-xs">
-                  No encontramos productos con esos criterios. Prueba con otros filtros.
+                  {data?.sugerencia
+                    ? <>Prueba con <button onClick={() => acciones.setQ(data.sugerencia)} className="font-semibold text-[#0288D1] hover:underline">{data.sugerencia}</button> o con otros filtros.</>
+                    : 'No encontramos productos con esos criterios. Prueba con otros filtros.'}
                 </p>
                 <button
-                  onClick={clearFilters}
+                  onClick={acciones.limpiar}
                   className="flex items-center gap-1.5 px-5 py-2.5 rounded-full font-sans font-semibold text-sm text-white transition-opacity hover:opacity-88"
-                  style={{ background: 'linear-gradient(135deg, #29B6F6, #0288D1)' }}
+                  style={GRADIENT}
                 >
                   <X size={13} /> Limpiar filtros
                 </button>
               </motion.div>
             ) : (
-              <div key={gridKey} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-5">
+              <div key={`${searchParams.toString()}`} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-5">
                 {products.map((product, i) => (
                   <motion.div
                     key={product._id}
@@ -466,7 +650,8 @@ export default function CatalogPage() {
               >
                 <button
                   disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
+                  onClick={() => acciones.setPage(page - 1)}
+                  aria-label="Página anterior"
                   className="h-9 w-9 flex items-center justify-center rounded-full border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] disabled:opacity-40 disabled:pointer-events-none transition-all"
                 >
                   <ChevronLeft size={15} />
@@ -474,7 +659,7 @@ export default function CatalogPage() {
 
                 {page > 3 && (
                   <>
-                    <button onClick={() => setPage(1)} className="h-9 w-9 flex items-center justify-center rounded-full border border-[var(--color-border)] font-mono text-sm text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] transition-all">1</button>
+                    <button onClick={() => acciones.setPage(1)} className="h-9 w-9 flex items-center justify-center rounded-full border border-[var(--color-border)] font-mono text-sm text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] transition-all">1</button>
                     {page > 4 && <span className="text-[var(--color-text-muted)] text-sm px-1">…</span>}
                   </>
                 )}
@@ -482,15 +667,12 @@ export default function CatalogPage() {
                 {getPageRange().map((p) => (
                   <button
                     key={p}
-                    onClick={() => setPage(p)}
-                    className="h-9 w-9 flex items-center justify-center rounded-full font-mono text-sm font-semibold transition-all"
-                    style={p === page
-                      ? { background: 'linear-gradient(135deg, #29B6F6, #0288D1)', color: 'white' }
-                      : undefined
-                    }
-                    {...(p !== page && {
-                      className: 'h-9 w-9 flex items-center justify-center rounded-full font-mono text-sm border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] transition-all'
-                    })}
+                    onClick={() => acciones.setPage(p)}
+                    aria-current={p === page ? 'page' : undefined}
+                    className={p === page
+                      ? 'h-9 w-9 flex items-center justify-center rounded-full font-mono text-sm font-semibold text-white transition-all'
+                      : 'h-9 w-9 flex items-center justify-center rounded-full font-mono text-sm border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] transition-all'}
+                    style={p === page ? GRADIENT : undefined}
                   >
                     {p}
                   </button>
@@ -499,13 +681,14 @@ export default function CatalogPage() {
                 {page < totalPages - 2 && (
                   <>
                     {page < totalPages - 3 && <span className="text-[var(--color-text-muted)] text-sm px-1">…</span>}
-                    <button onClick={() => setPage(totalPages)} className="h-9 w-9 flex items-center justify-center rounded-full border border-[var(--color-border)] font-mono text-sm text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] transition-all">{totalPages}</button>
+                    <button onClick={() => acciones.setPage(totalPages)} className="h-9 w-9 flex items-center justify-center rounded-full border border-[var(--color-border)] font-mono text-sm text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] transition-all">{totalPages}</button>
                   </>
                 )}
 
                 <button
                   disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
+                  onClick={() => acciones.setPage(page + 1)}
+                  aria-label="Página siguiente"
                   className="h-9 w-9 flex items-center justify-center rounded-full border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[#29B6F6]/40 hover:text-[#29B6F6] disabled:opacity-40 disabled:pointer-events-none transition-all"
                 >
                   <ChevronRight size={15} />

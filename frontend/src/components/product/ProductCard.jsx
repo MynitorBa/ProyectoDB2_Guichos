@@ -127,9 +127,18 @@ export function ProductCard({ product, vendedorId }) {
 
       {/* Info */}
       <div className="flex flex-col flex-1 px-3.5 pt-3 pb-4 gap-1">
-        <h3 className="font-display font-semibold text-[13px] text-[var(--color-text-primary)] line-clamp-2 leading-snug min-h-[2.5rem]">
-          {product.nombre}
-        </h3>
+        {product.resaltado?.nombre ? (
+          // El servidor escapa el HTML del texto (encoder: html) y solo agrega
+          // <mark> alrededor de lo que coincidió con la búsqueda.
+          <h3
+            className="font-display font-semibold text-[13px] text-[var(--color-text-primary)] line-clamp-2 leading-snug min-h-[2.5rem] [&_mark]:bg-[#29B6F6]/20 [&_mark]:text-inherit [&_mark]:rounded-sm [&_mark]:px-0.5"
+            dangerouslySetInnerHTML={{ __html: product.resaltado.nombre }}
+          />
+        ) : (
+          <h3 className="font-display font-semibold text-[13px] text-[var(--color-text-primary)] line-clamp-2 leading-snug min-h-[2.5rem]">
+            {product.nombre}
+          </h3>
+        )}
 
         {resenas.total > 0 && (
           <StarRating value={resenas.promedio} size={11} count={resenas.total} />
