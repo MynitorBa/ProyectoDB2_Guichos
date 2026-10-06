@@ -14,11 +14,26 @@ from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.services import flash_sale_service as flash
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.offer_service import enqueue_primary_offer_projection
+from app.services.outbox_service import enqueue_outbox
 from app.models.oferta import Oferta
 
 logger = logging.getLogger(__name__)
 _stop = threading.Event()
 _thread: threading.Thread | None = None
+
+
+def encolar_cambio_flash(db, promotion: PromocionFlash) -> None:
+    """El buscador muestra el precio flash y permite filtrar por ofertas flash."""
+    offer = db.get(Oferta, promotion.oferta_id)
+    if offer and offer.producto_ref:
+        enqueue_outbox(
+            db,
+            tipo_evento='flash.estado_cambiado',
+            agregado_tipo='promocion_flash',
+            agregado_id=promotion.id,
+            producto_ref=offer.producto_ref,
+            payload={'estado': promotion.estado},
+        )
 
 
 def reconcile_once() -> int:
@@ -34,6 +49,7 @@ def reconcile_once() -> int:
             if row.estado == 'programada' and row.inicia_en <= now < row.finaliza_en:
                 row.estado = 'activa'
                 row.version += 1
+                encolar_cambio_flash(db, row)
                 processed += 1
 
             active_reservations = db.query(ReservaFlash).filter(

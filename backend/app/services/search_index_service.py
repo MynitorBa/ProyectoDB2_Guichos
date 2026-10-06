@@ -350,6 +350,49 @@ def escribir_documentos(
     return resumen
 
 
+def _como_fecha(valor) -> datetime | None:
+    if isinstance(valor, datetime):
+        return valor
+    if isinstance(valor, str):
+        return datetime.fromisoformat(valor)
+    return None
+
+
+def ids_indexados(es: Elasticsearch) -> dict[str, str | None]:
+    """{producto_id: indexado_en} de todo el índice vigente."""
+    return {
+        hit['_id']: hit['_source'].get('indexado_en')
+        for hit in helpers.scan(
+            es, index=settings.ES_INDEX_ALIAS, _source=['indexado_en'],
+            query={'query': {'match_all': {}}},
+        )
+    }
+
+
+def reconciliar_desfasados(es: Elasticsearch, mysql_db: Session, mongo: Database, neo4j_driver=None) -> dict:
+    """Reindexa solo lo que el outbox pudo no haber cubierto.
+
+    Las ediciones de catálogo se escriben primero en MongoDB y después se
+    encola su evento en MySQL; si el proceso cae entre ambos pasos, el índice
+    queda atrasado. Aquí se detectan productos editados después de su último
+    indexado, ausentes del índice o que ya no están activos.
+    """
+    asegurar_indice(es)
+    indexados = ids_indexados(es)
+    desfasados = []
+    for doc in mongo.productos.find({'estado': 'activo'}, {'fecha_actualizacion': 1}):
+        ref = str(doc['_id'])
+        indexado_en = _como_fecha(indexados.pop(ref, None))
+        actualizado = _como_fecha(doc.get('fecha_actualizacion'))
+        if indexado_en is None or (actualizado and actualizado > indexado_en):
+            desfasados.append(ref)
+    # Lo que queda en ``indexados`` ya no está activo en MongoDB.
+    refs = desfasados + sorted(indexados)
+    if not refs:
+        return {'indexados': 0, 'eliminados': 0, 'omitidos': 0}
+    return indexar_productos(es, mysql_db, mongo, refs, neo4j_driver, refrescar=True)
+
+
 def indexar_productos(
     es: Elasticsearch,
     mysql_db: Session,

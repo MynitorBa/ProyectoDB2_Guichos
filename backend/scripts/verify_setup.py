@@ -263,14 +263,23 @@ def main():
             cur.execute("""
                 SELECT COUNT(*) AS n
                 FROM outbox_eventos
-                WHERE estado = 'error' AND intentos >= 5
+                WHERE estado = 'fallido'
             """)
             exhausted = cur.fetchone()['n']
-            if exhausted:
-                print(f'MySQL Fase 5: {exhausted} eventos agotaron sus reintentos')
+            cur.execute("""
+                SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                WHERE table_schema = DATABASE() AND table_name = 'outbox_eventos'
+                  AND column_name IN ('destino', 'secuencia', 'siguiente_intento_en')
+            """)
+            outbox_v2 = cur.fetchone()['n'] == 3
+            if not outbox_v2:
+                print('MySQL outbox v2: faltan columnas destino/secuencia/siguiente_intento_en')
+                ok = False
+            elif exhausted:
+                print(f'MySQL outbox: {exhausted} eventos fallidos (agotaron sus reintentos)')
                 ok = False
             else:
-                print(f'MySQL Fase 5: outbox saludable {outbox_counts}')
+                print(f'MySQL outbox por destino: saludable {outbox_counts}')
 
             phase6b_fks = {
                 'fk_res_producto_referencia', 'fk_mi_inventario',

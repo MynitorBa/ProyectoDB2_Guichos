@@ -23,14 +23,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-
-from elasticsearch import helpers  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.db_elastic import get_es  # noqa: E402
@@ -48,29 +45,10 @@ def _neo4j_driver():
         return None
 
 
-def _ids_indexados(es) -> dict[str, str | None]:
-    """{producto_id: indexado_en} de todo lo que hay en el índice vigente."""
-    return {
-        hit['_id']: hit['_source'].get('indexado_en')
-        for hit in helpers.scan(
-            es, index=settings.ES_INDEX_ALIAS, _source=['indexado_en'],
-            query={'query': {'match_all': {}}},
-        )
-    }
-
-
-def _como_fecha(valor) -> datetime | None:
-    if isinstance(valor, datetime):
-        return valor
-    if isinstance(valor, str):
-        return datetime.fromisoformat(valor)
-    return None
-
-
 def sincronizar(es, mysql_db, mongo, neo4j) -> dict:
     indice.asegurar_indice(es)
     activos = [str(doc['_id']) for doc in mongo.productos.find({'estado': 'activo'}, {'_id': 1})]
-    sobrantes = set(_ids_indexados(es)) - set(activos)
+    sobrantes = set(indice.ids_indexados(es)) - set(activos)
     return indice.indexar_productos(es, mysql_db, mongo, activos + sorted(sobrantes), neo4j, refrescar=True)
 
 
@@ -87,23 +65,6 @@ def recrear(es, mysql_db, mongo, neo4j) -> dict:
     return resumen
 
 
-def diferencias(es, mysql_db, mongo, neo4j) -> dict:
-    indice.asegurar_indice(es)
-    indexados = _ids_indexados(es)
-    desfasados = []
-    for doc in mongo.productos.find({'estado': 'activo'}, {'fecha_actualizacion': 1}):
-        ref = str(doc['_id'])
-        indexado_en = _como_fecha(indexados.pop(ref, None))
-        actualizado = _como_fecha(doc.get('fecha_actualizacion'))
-        if indexado_en is None or (actualizado and actualizado > indexado_en):
-            desfasados.append(ref)
-    # Lo que queda en ``indexados`` ya no está activo en MongoDB.
-    refs = desfasados + sorted(indexados)
-    if not refs:
-        return {'indexados': 0, 'eliminados': 0, 'omitidos': 0}
-    return indice.indexar_productos(es, mysql_db, mongo, refs, neo4j, refrescar=True)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description='Índice de búsqueda de productos.')
     modo = parser.add_mutually_exclusive_group()
@@ -118,7 +79,7 @@ def main() -> None:
         if args.recrear:
             resumen = recrear(es, mysql_db, mongo, neo4j)
         elif args.diff:
-            resumen = diferencias(es, mysql_db, mongo, neo4j)
+            resumen = indice.reconciliar_desfasados(es, mysql_db, mongo, neo4j)
         else:
             resumen = sincronizar(es, mysql_db, mongo, neo4j)
 

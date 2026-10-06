@@ -35,10 +35,13 @@ es un *delta parcial* que sobrescribe un valor agregado:
 - gadieles2: al agotarse la oferta TiendaYa #133, el evento solo marcó su stock
   en 0 y no recalculó que la oferta principal pasa a ser la #134.
 
-**Corrección prevista:** Fase 3 (outbox v2). El destino `mongo` recalculará la
-proyección completa desde el estado actual de MySQL al procesar cada evento.
-Esto la vuelve independiente del orden y repetible, y se agregará una prueba
-que reproduzca este caso.
+**Corregido en la Fase 3 (outbox v2).** El destino `mongo` recalcula la
+proyección completa desde el estado actual de MySQL al procesar cada evento
+(`offer_service.proyeccion_oferta_principal`), por lo que es repetible e
+independiente del orden. La prueba
+`test_outbox_v2.py::test_proyeccion_mongo_usa_el_stock_total_y_no_el_delta_del_evento`
+reproduce el caso de la Dell. Tras la corrección: 107/107 pruebas y
+`verify_setup.py` completo.
 
 ## 2. Diagnóstico de la búsqueda
 

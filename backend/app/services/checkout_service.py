@@ -283,21 +283,15 @@ def procesar_checkout(
                 promotion.estado = 'finalizada'
             promotion.version += 1
         offer.version += 1  # Invalida ediciones de stock abiertas antes de la venta.
-        projected_stock = max(0, inventory.cantidad_disponible)
+        # MongoDB y el índice de búsqueda recalculan el stock total del producto
+        # (todas sus ofertas) al procesar el evento; no se envía un delta parcial.
         enqueue_outbox(
             db,
             tipo_evento='inventario.actualizado',
             agregado_tipo='pedido',
             agregado_id=pedido.id,
             producto_ref=offer.producto_ref,
-            payload={
-                'oferta_id': offer.id,
-                'pedido_id': pedido.id,
-                'projection': {
-                    'stock': projected_stock,
-                    'disponible': projected_stock > 0,
-                },
-            },
+            payload={'oferta_id': offer.id, 'pedido_id': pedido.id},
         )
         db.add(MovimientoInventario(
             inventario_id=inventory.id,
@@ -322,8 +316,13 @@ def procesar_checkout(
         estado='aprobado',
         referencia_transaccion=f'TXN-{pedido.id:08d}-{int(total * 100)}',
     ))
-    # Cassandra es una proyección eventual: el evento se confirma en la misma
-    # transacción MySQL, pero el worker lo procesa después del checkout.
+    # Todo lo que ocurre fuera de MySQL se encola en esta misma transacción y
+    # el worker del outbox lo aplica con reintentos idempotentes:
+    # - Cassandra: proyección analítica de la venta (y el índice de búsqueda,
+    #   que refleja las ventas en su ranking).
+    # - Neo4j: aristas COMPRO que habilitan reseñas verificadas.
+    # - Redis: retirar del carrito lo comprado y cerrar reservas flash, como
+    #   respaldo de la limpieza inmediata que intenta el endpoint.
     enqueue_outbox(
         db,
         tipo_evento='analytics.pedido_actualizado',
@@ -332,37 +331,36 @@ def procesar_checkout(
         producto_ref=None,
         payload={'motivo': 'pago_aprobado'},
     )
+    enqueue_outbox(
+        db,
+        tipo_evento='grafo.compra_registrada',
+        agregado_tipo='pedido',
+        agregado_id=pedido.id,
+        producto_ref=None,
+        payload={'usuario_id': usuario_id},
+    )
+    enqueue_outbox(
+        db,
+        tipo_evento='carrito.limpiar',
+        agregado_tipo='pedido',
+        agregado_id=pedido.id,
+        producto_ref=None,
+        payload={'usuario_id': usuario_id, 'oferta_ids': offer_ids},
+    )
+    for promotion, reservation in flash_context.values():
+        enqueue_outbox(
+            db,
+            tipo_evento='flash.consumir',
+            agregado_tipo='pedido',
+            agregado_id=pedido.id,
+            producto_ref=None,
+            payload={
+                'promocion_id': promotion.id,
+                'usuario_id': usuario_id,
+                'token': reservation.token,
+            },
+        )
     db.commit()
-
-    # Registrar compras en Neo4j para habilitar reseñas verificadas.
-    # No crítico: si Neo4j falla el checkout ya fue confirmado en MySQL.
-    try:
-        from app.core.db_neo4j import get_driver
-        from app.services.review_service import ensure_usuario, ensure_producto, ensure_vendedor, registrar_compra
-        fecha_compra = utc_now().isoformat()
-        with get_driver().session() as neo4j_s:
-            ensure_usuario(neo4j_s, usuario_id,
-                           f"{usuario.nombre} {usuario.apellido}".strip(), usuario.email)
-            for offer_id, quantity in quantities.items():
-                offer = offers[offer_id]
-                if not offer.producto_ref:
-                    continue
-                vendor = vendors[offer.vendedor_id]
-                product_name = offer.sku
-                if mongo_db is not None:
-                    try:
-                        mp = mongo_db.productos.find_one(
-                            {'_id': ObjectId(offer.producto_ref)}, {'nombre': 1})
-                        if mp and mp.get('nombre'):
-                            product_name = mp['nombre']
-                    except Exception:
-                        pass
-                ensure_producto(neo4j_s, offer.producto_ref, product_name)
-                ensure_vendedor(neo4j_s, offer.vendedor_id, vendor.nombre_comercial)
-                registrar_compra(neo4j_s, usuario_id, offer.producto_ref,
-                                 pedido.id, offer.id, fecha_compra)
-    except Exception:
-        pass
 
     db.refresh(pedido)
     return pedido

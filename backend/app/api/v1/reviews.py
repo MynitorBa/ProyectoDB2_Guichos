@@ -13,6 +13,7 @@ from app.core.deps import get_current_user, get_optional_user, require_role, get
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
 from app.services import review_service as svc
+from app.services.outbox_service import encolar_reindexado
 from app.services import fraud_detection_service as fraud
 
 router = APIRouter(prefix='/reviews', tags=['Reseñas'])
@@ -69,6 +70,9 @@ def crear_resena(
         calificacion=payload.calificacion,
         texto=payload.texto,
     )
+    # El rating promedio forma parte del ranking del buscador.
+    encolar_reindexado(db, payload.producto_ref, 'Nueva reseña')
+    db.commit()
     return resena
 
 
@@ -137,11 +141,16 @@ def moderar(
     resena_id: str,
     estado: str = Query(enum=['aprobada', 'rechazada', 'pendiente']),
     _: Usuario = Depends(get_admin),
+    db: Session = Depends(get_db),
     neo4j: Neo4jSession = Depends(get_neo4j),
 ):
     ok = svc.moderar_resena(neo4j, resena_id, estado)
     if not ok:
         raise HTTPException(404, 'Reseña no encontrada.')
+    producto_ref = svc.producto_de_resena(neo4j, resena_id)
+    if producto_ref:
+        encolar_reindexado(db, producto_ref, f'Reseña {estado}')
+        db.commit()
     return {"ok": True}
 
 

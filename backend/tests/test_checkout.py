@@ -238,7 +238,7 @@ def test_checkout_por_oferta_crea_subpedido_y_snapshots(reset_stock):
         assert row['vendedor_nombre_snapshot']
         assert row['receptor_nombre']
         events = db.execute(text("""
-            SELECT estado, tipo_evento, producto_ref
+            SELECT estado, tipo_evento, destino, producto_ref
             FROM outbox_eventos
             WHERE agregado_tipo = 'pedido' AND agregado_id = :pedido_id
         """), {'pedido_id': str(pedido.id)}).mappings().all()
@@ -246,6 +246,17 @@ def test_checkout_por_oferta_crea_subpedido_y_snapshots(reset_stock):
         assert set(by_type) == {
             'inventario.actualizado',
             'analytics.pedido_actualizado',
+            'grafo.compra_registrada',
+            'carrito.limpiar',
+        }
+        # Una fila por componente que debe enterarse de la venta.
+        assert {(e['tipo_evento'], e['destino']) for e in events} == {
+            ('inventario.actualizado', 'mongo'),
+            ('inventario.actualizado', 'busqueda'),
+            ('analytics.pedido_actualizado', 'cassandra'),
+            ('analytics.pedido_actualizado', 'busqueda'),
+            ('grafo.compra_registrada', 'neo4j'),
+            ('carrito.limpiar', 'redis'),
         }
         assert all(
             event['estado'] in {'pendiente', 'procesando', 'procesado'}

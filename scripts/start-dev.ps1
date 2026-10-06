@@ -70,6 +70,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la migración idempotente de carritos a Redis.' }
     & $python scripts\apply_flash_sales.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
+    & $python scripts\apply_outbox_v2.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del outbox por destino.' }
     & $python -c "from app.core.db_cassandra import cassandra_health, close_cassandra; print(cassandra_health()); close_cassandra()"
     if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de Cassandra.' }
     & $python scripts\repair_catalog_data.py --apply

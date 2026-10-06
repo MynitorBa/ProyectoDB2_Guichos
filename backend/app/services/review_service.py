@@ -225,6 +225,13 @@ def moderar_resena(s: Session, resena_id: str, nuevo_estado: str) -> bool:
     """, rid=resena_id, estado=nuevo_estado).single()
     return result is not None
 
+def producto_de_resena(s: Session, resena_id: str) -> str | None:
+    row = s.run(
+        "MATCH (:Reseña {id: $rid})-[:SOBRE]->(p:Producto) RETURN p.ref AS ref",
+        rid=resena_id,
+    ).single()
+    return row["ref"] if row else None
+
 def verificar_compra(s: Session, user_id: int, producto_ref: str) -> bool:
     """Retorna True si el usuario tiene al menos una relación :COMPRO con el producto."""
     row = s.run("""

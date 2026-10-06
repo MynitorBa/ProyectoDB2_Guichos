@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.producto_referencia import ProductoReferencia
 from app.models.producto_variante_referencia import ProductoVarianteReferencia
+from app.services.outbox_service import encolar_reindexado
 
 
 def normalize_variant_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
@@ -100,6 +101,8 @@ def create_variant(
     except Exception:
         mongo.producto_variantes.delete_one({'_id': document['_id']})
         raise
+    # Los atributos de variante (talla, color...) alimentan las facetas.
+    encolar_reindexado(db, producto_ref, 'Variante creada')
     return registry, document
 
 
@@ -123,6 +126,9 @@ def delete_variant(mongo: Database, db: Session, variante_id: int) -> None:
     ).count()
     if variants <= 1:
         raise ValueError('El producto debe conservar al menos una variante.')
+    variant_doc = mongo.producto_variantes.find_one(
+        {'_id': ObjectId(registry.variante_ref)}, {'producto_ref': 1}
+    )
     db.delete(registry)
     db.flush()
     result = mongo.producto_variantes.delete_one(
@@ -130,6 +136,8 @@ def delete_variant(mongo: Database, db: Session, variante_id: int) -> None:
     )
     if result.deleted_count != 1:
         raise ValueError('No se pudo eliminar el documento de variante.')
+    if variant_doc:
+        encolar_reindexado(db, variant_doc['producto_ref'], 'Variante eliminada')
 
 
 def update_variant_attributes(
@@ -171,6 +179,7 @@ def update_variant_attributes(
             'fecha_actualizacion': datetime.now(timezone.utc),
         }},
     )
+    encolar_reindexado(db, doc['producto_ref'], 'Atributos de variante actualizados')
     return {
         'variante_id': registry.id,
         'variante_ref': registry.variante_ref,

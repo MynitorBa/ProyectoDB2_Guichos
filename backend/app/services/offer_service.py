@@ -182,10 +182,13 @@ def oferta_principal(offers: list[dict]) -> dict | None:
     return offers[0] if offers else None
 
 
-def enqueue_primary_offer_projection(
-    db: Session, producto_ref: str, agregado_id: int
-) -> None:
-    """Proyecta en Mongo la oferta líder (TiendaYa o más barata) y el stock total."""
+def proyeccion_oferta_principal(db: Session, producto_ref: str) -> dict:
+    """Campos comerciales que MongoDB replica desde MySQL para un producto.
+
+    Se calcula siempre desde el estado actual (oferta líder y stock total de
+    todas las ofertas activas), por eso aplicarla es idempotente y no depende
+    del orden en que lleguen los eventos.
+    """
     offers = listar_ofertas_por_referencias(db, [producto_ref]).get(
         producto_ref, []
     )
@@ -207,13 +210,20 @@ def enqueue_primary_offer_projection(
             'vendedor_nombre': primary['vendedor_nombre'],
             'es_tiendaya': primary['es_tiendaya'],
         })
+    return projection
+
+
+def enqueue_primary_offer_projection(
+    db: Session, producto_ref: str, agregado_id: int
+) -> None:
+    """Encola la proyección de la oferta líder hacia MongoDB y el índice de búsqueda."""
     enqueue_outbox(
         db,
         tipo_evento='producto.oferta_principal_actualizada',
         agregado_tipo='oferta',
         agregado_id=agregado_id,
         producto_ref=producto_ref,
-        payload={'projection': projection},
+        payload={'projection': proyeccion_oferta_principal(db, producto_ref)},
     )
 
 

@@ -22,6 +22,7 @@ from app.services import flash_sale_service as flash
 from app.services import redis_cart_service as carts
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.offer_service import enqueue_primary_offer_projection
+from app.services.flash_sale_worker import encolar_cambio_flash
 
 router = APIRouter(prefix='/flash-sales', tags=['Ventas flash'])
 vendor_router = APIRouter(prefix='/vendor/flash-sales', tags=['Vendedor - ventas flash'])
@@ -67,6 +68,7 @@ def _finish_if_needed(db: Session, r: redis_lib.Redis, promotion: PromocionFlash
     if promotion.estado == 'programada' and promotion.inicia_en <= now < promotion.finaliza_en:
         promotion.estado = 'activa'
         promotion.version += 1
+        encolar_cambio_flash(db, promotion)
         db.commit()
     if promotion.estado not in {'programada', 'activa'} or now < promotion.finaliza_en:
         return

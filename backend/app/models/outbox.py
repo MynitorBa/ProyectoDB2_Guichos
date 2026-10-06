@@ -1,27 +1,36 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, JSON, SmallInteger, String, Text
+from sqlalchemy import BigInteger, DateTime, Enum, FetchedValue, JSON, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
-# Implementa el patrón Transactional Outbox: el worker lee eventos pendientes y los publica en Mongo
+DESTINOS_OUTBOX = ('mongo', 'busqueda', 'cassandra', 'neo4j', 'redis')
+
+
+# Implementa el patrón Transactional Outbox: cada evento de negocio se guarda en la
+# misma transacción que lo origina, con una fila por componente de destino. Un worker
+# las proyecta de forma idempotente hacia MongoDB, Elasticsearch, Cassandra, Neo4j o Redis.
 class OutboxEvento(Base):
     __tablename__ = 'outbox_eventos'
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # AUTO_INCREMENT secundario: MySQL lo asigna al insertar (orden total de encolado).
+    secuencia: Mapped[int] = mapped_column(BigInteger, unique=True, server_default=FetchedValue())
     tipo_evento: Mapped[str] = mapped_column(String(100))
+    destino: Mapped[str] = mapped_column(Enum(*DESTINOS_OUTBOX), default='mongo')
     agregado_tipo: Mapped[str] = mapped_column(String(60))
     agregado_id: Mapped[str] = mapped_column(String(64))
     producto_ref: Mapped[str | None] = mapped_column(String(24), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON)
     estado: Mapped[str] = mapped_column(
-        Enum('pendiente', 'procesando', 'procesado', 'error'),
+        Enum('pendiente', 'procesando', 'procesado', 'error', 'fallido'),
         default='pendiente',
     )
     intentos: Mapped[int] = mapped_column(SmallInteger, default=0)
     ultimo_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     procesado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    siguiente_intento_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

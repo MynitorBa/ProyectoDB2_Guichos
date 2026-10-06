@@ -35,7 +35,7 @@ from app.models.solicitud_catalogo import SolicitudCatalogoImagen
 from app.schemas.producto import ProductoCreate, ProductoUpdate
 from app.services import catalog_service
 from app.services.product_history_service import reconstruir_estado, obtener_historial
-from app.services.outbox_service import enqueue_outbox
+from app.services.outbox_service import encolar_reindexado, enqueue_outbox
 from app.services.offer_service import (
     actualizar_precio_oferta,
     enqueue_primary_offer_projection,
@@ -655,7 +655,10 @@ def actualizar_producto(
     if not producto:
         raise HTTPException(status_code=404, detail='Producto no encontrado.')
 
-    needs_commit = False
+    # El documento ya cambió en MongoDB; el índice de búsqueda se actualiza
+    # mediante el outbox en la misma transacción SQL que el resto de cambios.
+    encolar_reindexado(mysql_db, producto_id, 'Edición de producto en panel administrativo')
+    needs_commit = True
 
     if nuevas_imagenes is not None:
         for image in current_imgs:
@@ -812,6 +815,8 @@ def eliminar_producto(
             producto_ref=oferta.producto_ref,
             payload={'projection': {'disponible': False}},
         )
+    # Un producto descontinuado sale del índice aunque no tuviera ofertas.
+    encolar_reindexado(mysql_db, producto_id, 'Producto descontinuado')
     mysql_db.commit()
 
 
