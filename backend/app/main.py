@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.core.db_cassandra import close_cassandra
 from app.core.db_neo4j import close_driver as close_neo4j
+from app.core.db_elastic import close_es
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
@@ -93,6 +94,7 @@ def shutdown():
     close_mongo()
     close_cassandra()
     close_neo4j()
+    close_es()
 
 
 @app.get('/health')

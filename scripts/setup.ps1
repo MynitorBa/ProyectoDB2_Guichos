@@ -98,6 +98,32 @@ if (-not $SkipDocker) {
         throw 'Cassandra no estuvo disponible después de 180 segundos.'
     }
     Write-Host "  Cassandra lista." -ForegroundColor Green
+
+    Write-Host "  Esperando Neo4j..." -ForegroundColor Yellow
+    $neo4jHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_neo4j 2>$null
+    $neo4jWaited = 0
+    while ($neo4jHealth -ne 'healthy' -and $neo4jWaited -lt 120) {
+        Start-Sleep 5
+        $neo4jWaited += 5
+        $neo4jHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_neo4j 2>$null
+    }
+    if ($neo4jHealth -ne 'healthy') {
+        throw 'Neo4j no estuvo disponible después de 120 segundos.'
+    }
+    Write-Host "  Neo4j listo." -ForegroundColor Green
+
+    Write-Host "  Esperando Elasticsearch..." -ForegroundColor Yellow
+    $esHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_elasticsearch 2>$null
+    $esWaited = 0
+    while ($esHealth -ne 'healthy' -and $esWaited -lt 180) {
+        Start-Sleep 5
+        $esWaited += 5
+        $esHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_elasticsearch 2>$null
+    }
+    if ($esHealth -ne 'healthy') {
+        throw 'Elasticsearch no estuvo disponible después de 180 segundos.'
+    }
+    Write-Host "  Elasticsearch listo." -ForegroundColor Green
 } else {
     Write-Host "[2/8] Docker: OMITIDO" -ForegroundColor Gray
 }
@@ -218,6 +244,13 @@ if ($LASTEXITCODE -ne 0) {
     throw 'No se pudieron reconciliar los atributos históricos del catálogo.'
 }
 
+# Corrige nombres guardados con doble codificación UTF-8 antes de indexarlos.
+# No modifica SKU ni el historial de eventos; respalda antes de escribir.
+& $python scripts\repair_text_encoding.py --apply
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo reparar el texto mal codificado del catálogo.'
+}
+
 Write-Host "`n[6/8] Completando historial faltante en MongoDB..." -ForegroundColor Cyan
 & $python scripts\repair_mongo_product_history.py --apply
 if ($LASTEXITCODE -ne 0) {
@@ -228,6 +261,15 @@ if ($LASTEXITCODE -ne 0) {
     throw 'No se pudo completar el historial de productos.'
 }
 Write-Host "  Historial verificado." -ForegroundColor Green
+
+# El índice de búsqueda es una proyección: se crea si falta y se sincroniza
+# con el estado actual de MongoDB, MySQL y Neo4j. Es idempotente.
+Write-Host "  Construyendo índice de búsqueda en Elasticsearch..." -ForegroundColor Yellow
+& $python scripts\reindex_search.py
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo construir el índice de búsqueda en Elasticsearch.'
+}
+Write-Host "  Índice de búsqueda listo." -ForegroundColor Green
 
 Set-Location $Root
 

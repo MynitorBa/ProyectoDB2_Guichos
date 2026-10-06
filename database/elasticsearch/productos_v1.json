@@ -1,0 +1,157 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "analysis": {
+      "filter": {
+        "es_stop": {
+          "type": "stop",
+          "stopwords": "_spanish_"
+        },
+        "es_stemmer": {
+          "type": "stemmer",
+          "language": "light_spanish"
+        },
+        "es_sinonimos": {
+          "type": "synonym_graph",
+          "lenient": true,
+          "synonyms": [
+            "celular, movil, telefono, smartphone",
+            "laptop, portatil, notebook, computadora portatil",
+            "audifonos, auriculares, headphones, cascos",
+            "tenis, zapatillas, sneakers",
+            "bocina, parlante, altavoz",
+            "jean, jeans, pantalon de mezclilla",
+            "polo, playera",
+            "licra, leggins, mallas",
+            "cafetera, maquina de cafe",
+            "mouse, raton",
+            "monitor, pantalla",
+            "taladro, rotomartillo",
+            "balon, pelota",
+            "dron, drone"
+          ]
+        },
+        "autocompletar_ngram": {
+          "type": "edge_ngram",
+          "min_gram": 2,
+          "max_gram": 20
+        },
+        "sugeridor_shingle": {
+          "type": "shingle",
+          "min_shingle_size": 2,
+          "max_shingle_size": 3
+        }
+      },
+      "normalizer": {
+        "minusculas": {
+          "type": "custom",
+          "filter": ["lowercase", "asciifolding"]
+        }
+      },
+      "analyzer": {
+        "es_texto": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "es_stop", "es_stemmer"]
+        },
+        "es_texto_busqueda": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "es_sinonimos", "es_stop", "es_stemmer"]
+        },
+        "autocompletar": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "autocompletar_ngram"]
+        },
+        "autocompletar_busqueda": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding"]
+        },
+        "sugeridor": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "sugeridor_shingle"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "producto_id": { "type": "keyword" },
+      "sku": { "type": "keyword", "normalizer": "minusculas" },
+      "nombre": {
+        "type": "text",
+        "analyzer": "es_texto",
+        "search_analyzer": "es_texto_busqueda",
+        "fields": {
+          "autocompletar": {
+            "type": "text",
+            "analyzer": "autocompletar",
+            "search_analyzer": "autocompletar_busqueda"
+          },
+          "sugeridor": { "type": "text", "analyzer": "sugeridor" },
+          "orden": { "type": "keyword", "normalizer": "minusculas", "ignore_above": 256 }
+        }
+      },
+      "descripcion": {
+        "type": "text",
+        "analyzer": "es_texto",
+        "search_analyzer": "es_texto_busqueda"
+      },
+      "texto_atributos": {
+        "type": "text",
+        "analyzer": "es_texto",
+        "search_analyzer": "es_texto_busqueda"
+      },
+      "categorias": {
+        "properties": {
+          "slug": { "type": "keyword" },
+          "nombre": {
+            "type": "text",
+            "analyzer": "es_texto",
+            "search_analyzer": "es_texto_busqueda",
+            "fields": { "keyword": { "type": "keyword" } }
+          }
+        }
+      },
+      "atributos": {
+        "type": "nested",
+        "properties": {
+          "nombre": { "type": "keyword" },
+          "valor": { "type": "keyword" },
+          "valor_num": { "type": "double" },
+          "facetable": { "type": "boolean" },
+          "origen": { "type": "keyword" }
+        }
+      },
+      "vendedores": { "type": "keyword" },
+      "vendedor_ids": { "type": "integer" },
+      "precio_min": { "type": "scaled_float", "scaling_factor": 100 },
+      "precio_max": { "type": "scaled_float", "scaling_factor": 100 },
+      "moneda": { "type": "keyword" },
+      "stock_total": { "type": "integer" },
+      "tiene_stock": { "type": "boolean" },
+      "es_tiendaya": { "type": "boolean" },
+      "tiene_flash": { "type": "boolean" },
+      "descuento_flash_pct": { "type": "integer" },
+      "ventas_totales": { "type": "integer" },
+      "rating_promedio": { "type": "float" },
+      "num_resenas": { "type": "integer" },
+      "imagen": { "type": "keyword", "index": false, "doc_values": false },
+      "estado": { "type": "keyword" },
+      "fecha_creacion": { "type": "date" },
+      "fecha_actualizacion": { "type": "date" },
+      "indexado_en": { "type": "date" },
+      "sugerencia": {
+        "type": "completion",
+        "analyzer": "autocompletar_busqueda",
+        "preserve_separators": false
+      }
+    }
+  }
+}

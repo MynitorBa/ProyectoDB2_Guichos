@@ -105,8 +105,11 @@ Riesgos que la Entrega 3 debe abordar:
 - **Texto mal codificado en MongoDB (6 documentos).** Algunos nombres se
   guardaron con doble codificación UTF-8: por ejemplo
   `Cien aÃ±os de soledad â€” GarcÃ­a MÃ¡rquez` y el SKU `JUG-MUÃ‘-001`. Afecta
-  directamente la búsqueda. Se corregirá en la Fase 2 antes de construir el
-  índice.
+  directamente la búsqueda.
+  **Corregido en la Fase 2** con `backend/scripts/repair_text_encoding.py`
+  (respaldo en `backups/encoding/`): se repararon los 5 nombres. Se dejaron
+  intactos, de forma deliberada, el SKU `JUG-MUÃ‘-001` (identificador
+  compartido con 2 ofertas de MySQL y 1 variante) y los 43 eventos de
+  `producto_eventos` (historial de solo agregado).
 - **Neo4j fuera del instalador.** `scripts/setup.ps1` no espera a Neo4j y
-  `verify_setup.py` no lo verifica. Se incorporará junto con Elasticsearch en
-  la Fase 2.
+  `verify_setup.py` no lo verifica. **Corregido en la Fase 2.**

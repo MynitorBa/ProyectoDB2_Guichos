@@ -74,6 +74,24 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de Cassandra.' }
     & $python scripts\repair_catalog_data.py --apply
     if ($LASTEXITCODE -ne 0) { throw 'Falló la reconciliación de atributos.' }
+    & $python scripts\repair_text_encoding.py --apply
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la reparación de texto del catálogo.' }
+
+    # Elasticsearch es una proyección: si no está listo, la API arranca igual y
+    # la búsqueda responde en modo degradado con MongoDB.
+    Write-Host "Esperando Elasticsearch..." -ForegroundColor Yellow
+    $esReady = $false
+    for ($attempt = 1; $attempt -le 24; $attempt++) {
+        $esHealth = docker inspect --format='{{.State.Health.Status}}' tiendaya_elasticsearch 2>$null
+        if ($esHealth -eq 'healthy') { $esReady = $true; break }
+        Start-Sleep -Seconds 5
+    }
+    if ($esReady) {
+        & $python scripts\reindex_search.py --diff
+        if ($LASTEXITCODE -ne 0) { Write-Host 'Aviso: no se pudo reconciliar el índice de búsqueda.' -ForegroundColor Yellow }
+    } else {
+        Write-Host 'Aviso: Elasticsearch no está listo; la búsqueda usará el modo degradado.' -ForegroundColor Yellow
+    }
 } finally {
     Pop-Location
 }
@@ -98,6 +116,8 @@ Write-Host "  Adminer:      http://localhost:8080  (server: mysql, user: tienday
 Write-Host "  Mongo Express: http://localhost:8081" -ForegroundColor Cyan
 Write-Host "  Redis Commander: http://localhost:8082" -ForegroundColor Cyan
 Write-Host "  Cassandra CQL: localhost:9042 (cqlsh dentro de tiendaya_cassandra)" -ForegroundColor Cyan
+Write-Host "  Neo4j Browser: http://localhost:7474  (neo4j / tiendaya123)" -ForegroundColor Cyan
+Write-Host "  Elasticsearch: http://localhost:9200  ·  Elasticvue: http://localhost:8083" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Admin: admin@tiendaya.gt / password123" -ForegroundColor Yellow
 Write-Host ""

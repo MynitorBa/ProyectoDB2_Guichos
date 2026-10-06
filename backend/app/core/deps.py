@@ -70,3 +70,11 @@ from neo4j import Session as Neo4jSession
 
 def get_neo4j() -> Neo4jSession:
     yield from _get_neo4j_session()
+
+
+from app.core.db_elastic import get_es as _get_es_client
+from elasticsearch import Elasticsearch
+
+
+def get_es() -> Elasticsearch:
+    return _get_es_client()

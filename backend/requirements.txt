@@ -48,3 +48,5 @@ uvicorn==0.32.1
 watchfiles==1.2.0
 websockets==17.0.1
 neo4j==5.27.0
+elasticsearch==8.15.1
+elastic-transport==8.19.0

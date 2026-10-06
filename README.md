@@ -34,6 +34,8 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 | Redis Commander | http://localhost:8082 |
 | Cassandra CQL | localhost:9042 |
 | Neo4j Browser | http://localhost:7474 (usuario `neo4j`, contraseña `tiendaya123`) |
+| Elasticsearch | http://localhost:9200 |
+| Elasticvue (interfaz de Elasticsearch) | http://localhost:8083 |
 
 ## Credenciales de prueba
 
@@ -53,7 +55,8 @@ proyecto/
 ├─ database/
 │  ├─ mysql/                   # DDL, índices, seed y migraciones versionadas
 │  ├─ mongo/                   # Init collections, índices, ejemplos aggregation
-│  └─ cassandra/               # Esquema orientado a consultas analíticas
+│  ├─ cassandra/               # Esquema orientado a consultas analíticas
+│  └─ elasticsearch/           # Mapping versionado del índice de búsqueda
 ├─ backend/                    # FastAPI + Python
 │  ├─ app/
 │  │  ├─ api/v1/               # Endpoints REST
@@ -81,6 +84,11 @@ cd backend
 
 # Correr pruebas
 .\venv\Scripts\python.exe -m pytest tests -q
+
+# Índice de búsqueda: sincronizar, recrear sin caída o reconciliar lo desfasado
+.\venv\Scripts\python.exe scripts\reindex_search.py
+.\venv\Scripts\python.exe scripts\reindex_search.py --recrear
+.\venv\Scripts\python.exe scripts\reindex_search.py --diff
 
 # Compilar frontend
 cd ..\frontend

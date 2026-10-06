@@ -943,6 +943,80 @@ def main():
         print(f'Cassandra: ERROR - {e}')
         ok = False
 
+    # ── Neo4j ─────────────────────────────────────────────────────────────────
+    try:
+        from app.core.db_neo4j import close_driver, get_driver
+        with get_driver().session() as neo4j_session:
+            constraints = {
+                row['name'] for row in neo4j_session.run('SHOW CONSTRAINTS YIELD name')
+            }
+            counts = neo4j_session.run(
+                'MATCH (p:Producto) WITH count(p) AS productos '
+                'OPTIONAL MATCH (r:Reseña) RETURN productos, count(r) AS resenas'
+            ).single()
+        expected_constraints = {'usuario_id', 'producto_ref', 'vendedor_id', 'resena_id'}
+        missing = expected_constraints - constraints
+        if missing:
+            print(f'Neo4j: ERROR - faltan restricciones de unicidad {sorted(missing)}')
+            ok = False
+        else:
+            print(
+                f"Neo4j: OK ({counts['productos']} productos, "
+                f"{counts['resenas']} reseñas, restricciones de unicidad instaladas)"
+            )
+        close_driver()
+    except Exception as e:
+        print(f'Neo4j: ERROR - {e}')
+        ok = False
+
+    # ── Elasticsearch ─────────────────────────────────────────────────────────
+    try:
+        from app.core.config import settings
+        from app.core.db_elastic import close_es, get_es
+
+        es = get_es().options(request_timeout=10)
+        indices = list(es.indices.get_alias(name=settings.ES_INDEX_ALIAS))
+        if len(indices) != 1:
+            raise RuntimeError(f'el alias {settings.ES_INDEX_ALIAS!r} apunta a {indices}')
+        index_name = indices[0]
+        index_info = es.indices.get(index=index_name)[index_name]
+        mapping = index_info['mappings']
+        analyzers = set(index_info['settings']['index']['analysis']['analyzer'])
+        problems = []
+        if mapping.get('dynamic') != 'strict':
+            problems.append('el mapping no es estricto')
+        missing_analyzers = {'es_texto', 'es_texto_busqueda', 'autocompletar', 'sugeridor'} - analyzers
+        if missing_analyzers:
+            problems.append(f'faltan analizadores {sorted(missing_analyzers)}')
+        if mapping['properties'].get('atributos', {}).get('type') != 'nested':
+            problems.append('atributos no es nested')
+        if mapping['properties'].get('sugerencia', {}).get('type') != 'completion':
+            problems.append('sugerencia no es completion')
+
+        mongo_check = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)[MONGO_DB]
+        active_products = mongo_check.productos.count_documents({'estado': 'activo'})
+        indexed = es.count(index=settings.ES_INDEX_ALIAS)['count']
+        if indexed != active_products:
+            problems.append(f'documentos={indexed}, productos activos en MongoDB={active_products}')
+        mojibake = mongo_check.productos.count_documents(
+            {'nombre': {'$regex': 'Ã|â€'}}
+        )
+        if mojibake:
+            problems.append(f'{mojibake} nombres con texto mal codificado en MongoDB')
+
+        if problems:
+            print(f'Elasticsearch: ERROR - {"; ".join(problems)}')
+            ok = False
+        else:
+            print(
+                f'Elasticsearch: OK ({index_name}, {indexed} productos, '
+                'mapping estricto con analizadores propios)'
+            )
+        close_es()
+    except Exception as e:
+        print(f'Elasticsearch: ERROR - {e}')
+        ok = False
+
     print(f'\n{"[OK] Setup completo." if ok else "[ERROR] Hay problemas que corregir."}')
     sys.exit(0 if ok else 1)
 

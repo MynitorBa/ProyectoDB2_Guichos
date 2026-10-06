@@ -142,9 +142,50 @@ services:
       retries: 10
       start_period: 30s
 
+  # Motor de búsqueda del catálogo (Entrega 3). Es una proyección reconstruible:
+  # nunca decide precio ni stock. La seguridad se deja desactivada en esta
+  # entrega; el control de acceso se configura en la entrega final.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: tiendaya_elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      cluster.name: tiendaya-busqueda
+      # Permite que la interfaz Elasticvue (:8083) consulte el clúster.
+      http.cors.enabled: "true"
+      http.cors.allow-origin: http://localhost:8083
+      http.cors.allow-headers: X-Requested-With,Content-Type,Content-Length,Authorization
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 40s
+
+  elasticvue:
+    image: cars10/elasticvue:1.0.10
+    container_name: tiendaya_elasticvue
+    restart: unless-stopped
+    ports:
+      - "8083:8080"
+    environment:
+      ELASTICVUE_CLUSTERS: '[{"name": "TiendaYa", "uri": "http://localhost:9200"}]'
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
 volumes:
   mysql_data:
   mongo_data:
   redis_data:
   cassandra_data:
   neo4j_data:
+  es_data:
