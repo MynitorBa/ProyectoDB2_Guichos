@@ -15,7 +15,7 @@ from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
 from app.api.v1 import backoffice, stores, flash_sales, analytics
 from app.api.v1 import store_editor
-from app.api.v1 import sync
+from app.api.v1 import search, sync
 from app.api.v1.reviews import router as reviews_router
 
 
@@ -79,6 +79,7 @@ app.include_router(analytics.router, prefix='/api/v1')
 app.include_router(store_editor.router, prefix='/api/v1')
 app.include_router(reviews_router, prefix='/api/v1')
 app.include_router(sync.router, prefix='/api/v1')
+app.include_router(search.router, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox

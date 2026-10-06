@@ -77,9 +77,28 @@ def buscar_texto_mongo(mongo, consulta: str) -> list[dict]:
     ).sort([('score', {'$meta': 'textScore'})]))
 
 
+def buscar_elasticsearch(mongo, consulta: str) -> list[dict]:
+    """La misma consulta que usa GET /api/v1/search (search_service.construir_consulta)."""
+    from app.core.config import settings
+    from app.core.db_elastic import get_es
+    from app.services.search_service import ParametrosBusqueda, como_argumentos, construir_consulta
+
+    cuerpo = construir_consulta(ParametrosBusqueda(q=consulta, page_size=TOP))
+    cuerpo.pop('aggs')
+    cuerpo.pop('suggest', None)
+    cuerpo.pop('highlight', None)
+    cuerpo['_source'] = ['nombre', 'sku']
+    respuesta = get_es().search(index=settings.ES_INDEX_ALIAS, **como_argumentos(cuerpo))
+    total = respuesta['hits']['total']['value']
+    resultados = [hit['_source'] for hit in respuesta['hits']['hits']]
+    # Solo se piden los primeros; se rellena para reportar el total real.
+    return resultados + [{}] * (total - len(resultados))
+
+
 MOTORES = {
-    'mongo_regex': ('MongoDB $regex (actual)', buscar_regex),
+    'mongo_regex': ('MongoDB $regex (anterior)', buscar_regex),
     'mongo_text': ('MongoDB $text', buscar_texto_mongo),
+    'elasticsearch': ('Elasticsearch (nuevo)', buscar_elasticsearch),
 }
 
 
@@ -146,6 +165,7 @@ def ejecutar(motores: list[str]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--motores', nargs='+', choices=sorted(MOTORES), default=list(MOTORES))
+    parser.add_argument('--titulo', default='Comparación de búsqueda de productos')
     parser.add_argument('--salida', type=Path, help='Archivo Markdown donde guardar la tabla.')
     args = parser.parse_args()
 
@@ -154,7 +174,7 @@ def main() -> None:
     if args.salida:
         args.salida.parent.mkdir(parents=True, exist_ok=True)
         encabezado = (
-            '# Comparación de búsqueda de productos\n\n'
+            f'# {args.titulo}\n\n'
             f'Generado por `backend/scripts/comparar_busqueda.py`. '
             f'Un acierto significa que un producto esperado aparece entre los '
             f'{TOP} primeros resultados. La latencia es el promedio de '

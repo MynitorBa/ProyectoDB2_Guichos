@@ -53,7 +53,9 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = "tiendaya123"
 
     # Elasticsearch (índice de búsqueda; proyección reconstruible del catálogo)
-    ES_URL: str = 'http://localhost:9200'
+    # 127.0.0.1 y no localhost: en Windows, localhost intenta IPv6 primero y
+    # agrega ~40 ms a cada consulta.
+    ES_URL: str = 'http://127.0.0.1:9200'
     ES_INDEX_ALIAS: str = 'productos'  # alias estable; apunta a productos_vN
     ES_TIMEOUT: float = 1.5  # segundos; si se excede, la búsqueda usa MongoDB
 

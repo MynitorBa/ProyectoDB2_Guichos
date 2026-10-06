@@ -85,6 +85,9 @@ cd backend
 # Correr pruebas
 .\venv\Scripts\python.exe -m pytest tests -q
 
+# Comparar la búsqueda anterior (MongoDB) con Elasticsearch
+.\venv\Scripts\python.exe scripts\comparar_busqueda.py
+
 # Índice de búsqueda: sincronizar, recrear sin caída o reconciliar lo desfasado
 .\venv\Scripts\python.exe scripts\reindex_search.py
 .\venv\Scripts\python.exe scripts\reindex_search.py --recrear
@@ -183,6 +186,12 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Decisión entre grafos y base columnar](docs/26-decision-grafos-columnar.md)
 - [Analítica temporal con Cassandra](docs/27-analitica-cassandra.md)
 - [Línea base de la Entrega 3](docs/evidencia/linea-base-entrega3.md)
+- [Comparación de búsqueda MongoDB vs Elasticsearch](docs/evidencia/busqueda-comparacion.md)
+
+La búsqueda de productos está en `GET /api/v1/search` (texto libre con
+tolerancia a errores, sinónimos, relevancia y facetas) y
+`GET /api/v1/search/suggest` (autocompletado). Si Elasticsearch no responde,
+ambas continúan sobre MongoDB y lo indican con `degradado: true`.
 
 ## Entregas del proyecto
 

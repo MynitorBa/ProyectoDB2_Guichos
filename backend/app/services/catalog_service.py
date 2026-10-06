@@ -78,6 +78,128 @@ def _serialize(doc: dict) -> dict:
     return doc
 
 
+def enriquecer_productos(
+    docs: list[dict],
+    mysql_db: Session,
+    redis_db=None,
+    *,
+    vendedor_id: int | None = None,
+    solo_flash: bool = False,
+    incluir_ventas: bool = False,
+) -> tuple[list[dict], int]:
+    """Completa documentos del catálogo con la oferta principal autoritativa de MySQL.
+
+    Precio, stock, vendedor y promoción flash se toman de MySQL/Redis, nunca de
+    la proyección de MongoDB ni del índice de búsqueda. Conserva el orden de
+    ``docs``. Devuelve ``(items, divergencias_con_la_proyeccion)``.
+    """
+    offers_by_ref = listar_ofertas_por_referencias(
+        mysql_db, [str(doc['_id']) for doc in docs]
+    )
+    all_offers = [offer for offers in offers_by_ref.values() for offer in offers]
+    flash_by_offer = _active_flash_by_offer(
+        mysql_db, redis_db, [offer['oferta_id'] for offer in all_offers]
+    )
+    sales_by_ref = {}
+    if incluir_ventas:
+        sales_by_ref = dict(mysql_db.query(
+            PedidoLinea.producto_ref,
+            func.coalesce(func.sum(PedidoLinea.cantidad), 0),
+        ).join(Pedido, Pedido.id == PedidoLinea.pedido_id).filter(
+            Pedido.estado.notin_(['cancelado', 'reembolsado'])
+        ).group_by(PedidoLinea.producto_ref).all())
+    mismatches = 0
+    items = []
+    for doc in docs:
+        item = _serialize(doc)
+        if 'categorias' not in item and 'categoria' in item:
+            item['categorias'] = [item['categoria']]
+        legacy = {
+            'precio': item.get('precio'),
+            'stock': item.get('stock'),
+            'vendedor_nombre': item.get('vendedor_nombre'),
+        }
+        offers = offers_by_ref.get(item['_id'], [])
+        if vendedor_id is not None:
+            offers = [o for o in offers if o['vendedor_id'] == vendedor_id]
+            if not offers:
+                continue
+        active_flashes = [
+            (offer, flash_by_offer[offer['oferta_id']])
+            for offer in offers
+            if offer['oferta_id'] in flash_by_offer
+        ]
+        primary = oferta_principal(offers)
+        stock_total = sum(o['stock'] for o in offers)
+        lowest_normal_price = min(
+            (o['precio'] for o in offers if o['disponible']),
+            default=float('inf'),
+        )
+        best_flash = min(
+            active_flashes,
+            key=lambda pair: (pair[1]['precio'], pair[0]['oferta_id']),
+            default=None,
+        )
+        winning_flash = (
+            best_flash if best_flash and best_flash[1]['precio'] < best_flash[0]['precio']
+            else None
+        )
+        if solo_flash and not winning_flash:
+            continue
+        if primary:
+            item.update({
+                'oferta_id': primary['oferta_id'],
+                'precio': primary['precio'],
+                'moneda': primary['moneda'],
+                'stock': stock_total,
+                'disponible': primary['disponible'],
+                'vendedor_id': primary['vendedor_id'],
+                'vendedor_usuario_id': primary['vendedor_usuario_id'],
+                'vendedor_nombre': primary['vendedor_nombre'],
+                'ofertas_count': len(offers),
+                'es_tiendaya': primary.get('es_tiendaya', False),
+                'ventas': int(sales_by_ref.get(item['_id'], 0)),
+                'tiene_flash_activa': bool(active_flashes),
+            })
+            if winning_flash:
+                flash_offer, promotion = winning_flash
+                normal_price = flash_offer['precio']
+                item.update({
+                    'oferta_id': flash_offer['oferta_id'],
+                    'precio': promotion['precio'],
+                    'precio_normal': normal_price,
+                    'stock': promotion['unidades_disponibles'],
+                    'disponible': True,
+                    'vendedor_id': flash_offer['vendedor_id'],
+                    'vendedor_usuario_id': flash_offer['vendedor_usuario_id'],
+                    'vendedor_nombre': flash_offer['vendedor_nombre'],
+                    'es_tiendaya': flash_offer.get('es_tiendaya', False),
+                    'flash': {
+                        **promotion,
+                        'oferta_id': flash_offer['oferta_id'],
+                        'vendedor_nombre': flash_offer['vendedor_nombre'],
+                        'descuento_porcentaje': round(
+                            (1 - promotion['precio'] / normal_price) * 100
+                        ) if normal_price else 0,
+                    },
+                })
+            if (
+                float(legacy['precio'] or 0) != primary['precio']
+                or int(legacy['stock'] or 0) != stock_total
+                or legacy['vendedor_nombre'] != primary['vendedor_nombre']
+            ):
+                mismatches += 1
+        else:
+            item.update({
+                'oferta_id': None,
+                'disponible': False,
+                'stock': 0,
+                'ofertas_count': 0,
+            })
+        items.append(item)
+    return items, mismatches
+
+
 # Con mysql_db: enriquece cada doc con la oferta principal de MySQL y filtra/ordena en Python (dual-read)
 # Sin mysql_db: ejecuta filtros y paginación directamente en MongoDB (modo legado)
 def listar_productos(
@@ -122,110 +244,14 @@ def listar_productos(
 
     if mysql_db is not None:
         docs = list(db.productos.find(filtro))
-        offers_by_ref = listar_ofertas_por_referencias(
-            mysql_db, [str(doc['_id']) for doc in docs]
+        items, mismatches = enriquecer_productos(
+            docs, mysql_db, redis_db,
+            vendedor_id=vendedor_id,
+            solo_flash=solo_flash,
+            incluir_ventas=orden == 'mas_vendidos',
         )
-        all_offers = [offer for offers in offers_by_ref.values() for offer in offers]
-        flash_by_offer = _active_flash_by_offer(
-            mysql_db, redis_db, [offer['oferta_id'] for offer in all_offers]
-        )
-        sales_by_ref = {}
-        if orden == 'mas_vendidos':
-            sales_by_ref = dict(mysql_db.query(
-                PedidoLinea.producto_ref,
-                func.coalesce(func.sum(PedidoLinea.cantidad), 0),
-            ).join(Pedido, Pedido.id == PedidoLinea.pedido_id).filter(
-                Pedido.estado.notin_(['cancelado', 'reembolsado'])
-            ).group_by(PedidoLinea.producto_ref).all())
-        mismatches = 0
         enriched = []
-        for doc in docs:
-            item = _serialize(doc)
-            if 'categorias' not in item and 'categoria' in item:
-                item['categorias'] = [item['categoria']]
-            legacy = {
-                'precio': item.get('precio'),
-                'stock': item.get('stock'),
-                'vendedor_nombre': item.get('vendedor_nombre'),
-            }
-            offers = offers_by_ref.get(item['_id'], [])
-            if vendedor_id is not None:
-                offers = [o for o in offers if o['vendedor_id'] == vendedor_id]
-                if not offers:
-                    continue
-            active_flashes = [
-                (offer, flash_by_offer[offer['oferta_id']])
-                for offer in offers
-                if offer['oferta_id'] in flash_by_offer
-            ]
-            primary = oferta_principal(offers)
-            stock_total = sum(o['stock'] for o in offers)
-            lowest_normal_price = min(
-                (o['precio'] for o in offers if o['disponible']),
-                default=float('inf'),
-            )
-            best_flash = min(
-                active_flashes,
-                key=lambda pair: (pair[1]['precio'], pair[0]['oferta_id']),
-                default=None,
-            )
-            winning_flash = (
-                best_flash if best_flash and best_flash[1]['precio'] < best_flash[0]['precio']
-                else None
-            )
-            if solo_flash and not winning_flash:
-                continue
-            if primary:
-                item.update({
-                    'oferta_id': primary['oferta_id'],
-                    'precio': primary['precio'],
-                    'moneda': primary['moneda'],
-                    'stock': stock_total,
-                    'disponible': primary['disponible'],
-                    'vendedor_id': primary['vendedor_id'],
-                    'vendedor_usuario_id': primary['vendedor_usuario_id'],
-                    'vendedor_nombre': primary['vendedor_nombre'],
-                    'ofertas_count': len(offers),
-                    'es_tiendaya': primary.get('es_tiendaya', False),
-                    'ventas': int(sales_by_ref.get(item['_id'], 0)),
-                    'tiene_flash_activa': bool(active_flashes),
-                })
-                if winning_flash:
-                    flash_offer, promotion = winning_flash
-                    normal_price = flash_offer['precio']
-                    item.update({
-                        'oferta_id': flash_offer['oferta_id'],
-                        'precio': promotion['precio'],
-                        'precio_normal': normal_price,
-                        'stock': promotion['unidades_disponibles'],
-                        'disponible': True,
-                        'vendedor_id': flash_offer['vendedor_id'],
-                        'vendedor_usuario_id': flash_offer['vendedor_usuario_id'],
-                        'vendedor_nombre': flash_offer['vendedor_nombre'],
-                        'es_tiendaya': flash_offer.get('es_tiendaya', False),
-                        'flash': {
-                            **promotion,
-                            'oferta_id': flash_offer['oferta_id'],
-                            'vendedor_nombre': flash_offer['vendedor_nombre'],
-                            'descuento_porcentaje': round(
-                                (1 - promotion['precio'] / normal_price) * 100
-                            ) if normal_price else 0,
-                        },
-                    })
-                if (
-                    float(legacy['precio'] or 0) != primary['precio']
-                    or int(legacy['stock'] or 0) != stock_total
-                    or legacy['vendedor_nombre'] != primary['vendedor_nombre']
-                ):
-                    mismatches += 1
-            else:
-                item.update({
-                    'oferta_id': None,
-                    'disponible': False,
-                    'stock': 0,
-                    'ofertas_count': 0,
-                })
-
+        for item in items:
             if disponible is not None and item['disponible'] != disponible:
                 continue
             if precio_min is not None and item.get('precio', 0) < precio_min:

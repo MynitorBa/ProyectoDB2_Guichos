@@ -229,6 +229,17 @@ def _documento(doc: dict, ofertas: list[dict], variantes: list[dict], flash: dic
         (round((1 - promo / normal) * 100) for promo, normal in precios_flash if normal),
         default=0,
     )
+    # Precio que muestra el catálogo: la oferta principal (TiendaYa disponible,
+    # luego la más barata) o la flash más barata si mejora su precio normal.
+    # Es el que se usa para ordenar y filtrar, para que coincida con la vista.
+    principal = ofertas[0] if ofertas else None
+    mejor_flash = min(precios_flash, default=None)
+    if mejor_flash and mejor_flash[0] < mejor_flash[1]:
+        precio_visible = mejor_flash[0]
+    elif principal:
+        precio_visible = principal['precio']
+    else:
+        precio_visible = precio_min
     categorias = _categorias(doc)
     nombre = doc.get('nombre', '')
     texto_atributos = ' '.join(
@@ -245,6 +256,7 @@ def _documento(doc: dict, ofertas: list[dict], variantes: list[dict], flash: dic
         'atributos': _atributos(doc, variantes),
         'vendedores': sorted({o['vendedor_nombre'] for o in ofertas}),
         'vendedor_ids': sorted({o['vendedor_id'] for o in ofertas}),
+        'precio': precio_visible,
         'precio_min': precio_min,
         'precio_max': precio_max,
         'moneda': (ofertas[0]['moneda'] if ofertas else doc.get('moneda')) or 'GTQ',
