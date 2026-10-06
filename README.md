@@ -2,16 +2,17 @@
 
 Proyecto del curso **Bases de Datos 2** — UNIS, Segundo Semestre 2026.
 Portal de e-commerce con arquitectura políglota: MySQL 8 para operaciones,
-MongoDB 7 para el catálogo, Redis 7 para datos efímeros y Cassandra 4.1 para
-analítica temporal.
+MongoDB 7 para el catálogo, Redis 7 para datos efímeros, Cassandra 4.1 para
+analítica temporal y Neo4j 5 para reseñas y detección de fraude.
 
-## Arquitectura actual (inicio de Entrega 2)
+## Arquitectura actual (inicio de Entrega 3)
 
 ```
 React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inventario, outbox)
                                 → MongoDB 7 (catálogo documental, proyecciones, eventos)
                                 → Redis 7   (carritos activos con expiración)
                                 → Cassandra 4.1 (ventas y tendencias semanales)
+                                → Neo4j 5   (reseñas, compras verificadas y fraude)
 ```
 
 ## Requisitos
@@ -32,6 +33,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 | Mongo Express | http://localhost:8081 |
 | Redis Commander | http://localhost:8082 |
 | Cassandra CQL | localhost:9042 |
+| Neo4j Browser | http://localhost:7474 (usuario `neo4j`, contraseña `tiendaya123`) |
 
 ## Credenciales de prueba
 
@@ -47,7 +49,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 
 ```
 proyecto/
-├─ docker-compose.yml          # MySQL, MongoDB, Redis, Cassandra e interfaces
+├─ docker-compose.yml          # MySQL, MongoDB, Redis, Cassandra, Neo4j e interfaces
 ├─ database/
 │  ├─ mysql/                   # DDL, índices, seed y migraciones versionadas
 │  ├─ mongo/                   # Init collections, índices, ejemplos aggregation
@@ -172,12 +174,13 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Ventas flash por vendedor con reservas atómicas](docs/25-ventas-flash.md)
 - [Decisión entre grafos y base columnar](docs/26-decision-grafos-columnar.md)
 - [Analítica temporal con Cassandra](docs/27-analitica-cassandra.md)
+- [Línea base de la Entrega 3](docs/evidencia/linea-base-entrega3.md)
 
 ## Entregas del proyecto
 
 | Entrega | Estado | Contenido |
 |---|---|---|
 | **Entrega 1** | **Completada** | MySQL normalizado + migración a MongoDB + historial por eventos |
-| Entrega 2 | En progreso | Redis (carrito y ventas flash) + comparación grafos/columnar + Cassandra para analítica temporal |
-| Entrega 3 | Pendiente | Motor de búsqueda y estrategia de consistencia distribuida |
+| **Entrega 2** | **Completada** | Redis (carrito y ventas flash) + comparación grafos/columnar + Cassandra (tendencias) y Neo4j (fraude en reseñas) |
+| Entrega 3 | En progreso | Motor de búsqueda y estrategia de consistencia distribuida ([línea base](docs/evidencia/linea-base-entrega3.md)) |
 | Entrega final | Pendiente | Base vectorial, seguridad NoSQL e integración completa |
