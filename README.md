@@ -5,15 +5,19 @@ Portal de e-commerce con arquitectura políglota: MySQL 8 para operaciones,
 MongoDB 7 para el catálogo, Redis 7 para datos efímeros, Cassandra 4.1 para
 analítica temporal y Neo4j 5 para reseñas y detección de fraude.
 
-## Arquitectura actual (inicio de Entrega 3)
+## Arquitectura actual (cierre de Entrega 3)
 
 ```
-React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inventario, outbox)
+React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inventario, pagos, outbox)
                                 → MongoDB 7 (catálogo documental, proyecciones, eventos)
-                                → Redis 7   (carritos activos con expiración)
+                                → Redis 7   (carritos activos con expiración, ventas flash)
+                                → Elasticsearch 8.15 (búsqueda con tolerancia y facetas)
                                 → Cassandra 4.1 (ventas y tendencias semanales)
                                 → Neo4j 5   (reseñas, compras verificadas y fraude)
+                                → Pasarela de pagos simulada (saga del checkout)
 ```
+
+Diagrama completo en [`docs/05-diagrama-arquitectura.md`](docs/05-diagrama-arquitectura.md).
 
 ## Requisitos
 
@@ -37,6 +41,7 @@ React (Vite) → FastAPI (Python) → MySQL 8  (usuarios, ofertas, pedidos, inve
 | Elasticsearch | http://localhost:9200 |
 | Elasticvue (interfaz de Elasticsearch) | http://localhost:8083 |
 | Pasarela de pagos simulada | http://127.0.0.1:8001/docs (la levanta `start-dev.ps1`) |
+| Laboratorio de consistencia (solo desarrollo) | http://localhost:5174 — ver [`laboratorio/README.md`](laboratorio/README.md) |
 
 ## Credenciales de prueba
 
@@ -191,6 +196,11 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Analítica temporal con Cassandra](docs/27-analitica-cassandra.md)
 - [Línea base de la Entrega 3](docs/evidencia/linea-base-entrega3.md)
 - [Comparación de búsqueda MongoDB vs Elasticsearch](docs/evidencia/busqueda-comparacion.md)
+- [Informe de Entrega 3](docs/informe-entrega3.md)
+- [ADR-003: motor de búsqueda](docs/28-ADR-003-motor-busqueda.md)
+- [Búsqueda con Elasticsearch: detalle técnico](docs/29-busqueda-elasticsearch.md)
+- [Estrategia de consistencia del checkout distribuido](docs/30-estrategia-consistencia-checkout.md)
+- [Evidencia de las pruebas de falla](docs/31-evidencia-pruebas-falla.md)
 
 El checkout es una saga con una pasarela de pagos externa simulada
 (`payment_simulator/`): reserva el inventario, cobra fuera de la transacción y
@@ -201,6 +211,13 @@ probar fallas:
 Invoke-RestMethod -Method Post http://127.0.0.1:8001/control -ContentType 'application/json' -Body '{"modo":"rechazar"}'
 # modos: aprobar, rechazar, timeout, cobrar_y_fallar, error_antes
 ```
+
+Para provocar fallas y observar la recuperación existe el **laboratorio de
+consistencia** (`laboratorio/`, puerto 5174): una herramienta de desarrollo
+aparte de la tienda, que se conecta al backend solo por su API. Requiere
+`FAULT_INJECTION_ENABLED=true` en `backend/.env`; sin esa bandera el backend ni
+siquiera registra sus endpoints. La evidencia reproducible de las pruebas de
+falla está en [`docs/31-evidencia-pruebas-falla.md`](docs/31-evidencia-pruebas-falla.md).
 
 La búsqueda de productos está en `GET /api/v1/search` (texto libre con
 tolerancia a errores, sinónimos, relevancia y facetas) y
@@ -213,5 +230,5 @@ ambas continúan sobre MongoDB y lo indican con `degradado: true`.
 |---|---|---|
 | **Entrega 1** | **Completada** | MySQL normalizado + migración a MongoDB + historial por eventos |
 | **Entrega 2** | **Completada** | Redis (carrito y ventas flash) + comparación grafos/columnar + Cassandra (tendencias) y Neo4j (fraude en reseñas) |
-| Entrega 3 | En progreso | Motor de búsqueda y estrategia de consistencia distribuida ([línea base](docs/evidencia/linea-base-entrega3.md)) |
+| **Entrega 3** | **Completada** | Elasticsearch (tolerancia, relevancia y facetas) + checkout como saga con pasarela externa, outbox por destino y pruebas de falla ([informe](docs/informe-entrega3.md)) |
 | Entrega final | Pendiente | Base vectorial, seguridad NoSQL e integración completa |

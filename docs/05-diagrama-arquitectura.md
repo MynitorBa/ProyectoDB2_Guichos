@@ -1,43 +1,71 @@
 # Diagrama de Arquitectura — TiendaYa
 
-## Arquitectura actual (cierre de Entrega 2 / inicio de Entrega 3)
+## Arquitectura actual (cierre de Entrega 3)
 
 ```mermaid
 flowchart LR
-    RCT["React + Vite\nSPA :5173"] -->|HTTP / JSON| FPI["FastAPI\nAPI :8000"]
+    RCT["React + Vite\nTienda :5173"] -->|HTTP / JSON| FPI["FastAPI\nAPI :8000"]
+    LAB["Laboratorio de consistencia\n:5174 (solo desarrollo)"] -.->|/admin/fallas, /admin/consistencia| FPI
+    FPI -->|"cobro / consulta / reembolso\n(Idempotency-Key)"| PAS["Pasarela de pagos simulada\n:8001 + libro SQLite"]
+    LAB -.->|modo de falla| PAS
 
-    subgraph Datos["Persistencia políglota activa"]
-        MYS[("MySQL 8\nOperación ACID")]
+    subgraph Datos["Persistencia políglota"]
+        MYS[("MySQL 8\nAutoridad ACID")]
         MNG[("MongoDB 7\nCatálogo documental")]
-        RED[("Redis 7\nCarrito y reservas TTL")]
+        RED[("Redis 7\nCarrito y flash")]
+        ESR[("Elasticsearch 8.15\nÍndice de búsqueda")]
         CAS[("Cassandra 4.1\nAnalítica semanal")]
         NEO[("Neo4j 5.26\nReseñas y fraude")]
     end
 
-    FPI -->|SQLAlchemy| MYS
-    FPI -->|PyMongo| MNG
-    FPI -->|redis-py| RED
-    FPI -->|cassandra-driver| CAS
-    FPI -->|neo4j driver / Bolt| NEO
-    MYS -->|Outbox idempotente| FPI
+    FPI -->|"T1 reserva · T2 confirma/compensa"| MYS
+    FPI -->|catálogo| MNG
+    FPI -->|carrito, reservas flash| RED
+    FPI -->|"búsqueda, facetas\n(respaldo: MongoDB)"| ESR
+    FPI -->|paneles| CAS
+    FPI -->|reseñas, fraude| NEO
+
+    subgraph Workers["Hilos en segundo plano (FastAPI)"]
+        OBX["Outbox: un consumidor\npor destino"]
+        REC["Reconciliador y\nrecolector de la saga"]
+        FLS["Worker de ventas flash"]
+    end
+
+    MYS -->|outbox_eventos| OBX
+    OBX --> MNG
+    OBX --> ESR
+    OBX --> CAS
+    OBX --> NEO
+    OBX --> RED
+    REC -->|"pagos en verificación,\nreservas vencidas"| MYS
+    REC -->|consulta por clave| PAS
+    FLS --> RED
+    FLS --> MYS
 ```
 
 ## Responsabilidad por motor
 
 | Componente | Autoridad y propósito |
 |---|---|
-| MySQL | Usuarios, vendedores, ofertas, precios, inventario, pedidos, pagos, solicitudes y outbox |
-| MongoDB | Productos, variantes, atributos e historial documental; no decide precio ni stock |
+| MySQL | Usuarios, vendedores, ofertas, precios, inventario, pedidos, pagos, bitácora de la saga y outbox. **Única fuente de verdad** de dinero e inventario |
+| MongoDB | Productos, variantes, atributos e historial documental; no decide precio ni stock. Respaldo de la búsqueda |
 | Redis | Carritos activos y reservas de venta flash con expiración automática |
+| Elasticsearch | Proyección de búsqueda: decide qué productos y en qué orden; precio y stock mostrados se hidratan desde MySQL |
 | Cassandra | Proyección analítica de ventas pagadas por producto, oferta, vendedor y semana |
 | Neo4j | Reseñas, compras verificadas (`COMPRO`) y detección de patrones de fraude |
+| Pasarela simulada | Sistema externo no transaccional; cobro, consulta y reembolso idempotentes por clave |
 
-FastAPI orquesta los cinco motores. El checkout solo depende de MySQL para
-confirmar la compra: vuelve a validar y bloquear precio, estado e inventario.
-Después publica eventos en el outbox dentro de la misma transacción. El worker
-actualiza MongoDB o Cassandra según el tipo de evento y puede reintentar sin
-duplicar resultados. La arista `COMPRO` de Neo4j todavía se escribe después del
-commit con un bloque de mejor esfuerzo (sin reintento).
+El checkout es una **saga**: reserva el inventario en MySQL (T1), cobra en la
+pasarela fuera de toda transacción y confirma o compensa (T2). La confirmación
+inserta en la misma transacción una fila de outbox **por destino** (MongoDB,
+Elasticsearch, Cassandra, Neo4j y Redis); cada destino tiene su propio
+consumidor con reintentos exponenciales, así que una base caída no retrasa a
+las demás. El reconciliador resuelve pagos con resultado desconocido y el
+recolector libera las reservas de sagas interrumpidas. La arista `COMPRO` de
+Neo4j, que en la Entrega 2 se escribía con un bloque de mejor esfuerzo, ahora
+llega por el outbox con reintentos. Detalle en
+[`30-estrategia-consistencia-checkout.md`](30-estrategia-consistencia-checkout.md)
+y [`29-busqueda-elasticsearch.md`](29-busqueda-elasticsearch.md).
 
 ## Decisión de la Entrega 2: grafos y columnar
 
@@ -54,12 +82,7 @@ opuestos, por lo que se implementó una familia para cada una:
 La justificación completa está en
 [`26-decision-grafos-columnar.md`](26-decision-grafos-columnar.md).
 
-## Componentes previstos para la Entrega 3
+## Decisión de la Entrega 3: motor de búsqueda
 
-| Componente | Rol previsto |
-|---|---|
-| Elasticsearch 8 | Búsqueda de texto libre con tolerancia a errores, relevancia y facetas |
-| Pasarela de pagos simulada | Sistema externo, no transaccional, que vuelve explícitas las fallas parciales del checkout |
-| Outbox por destino | Sincronización independiente hacia MongoDB, Elasticsearch, Cassandra, Neo4j y Redis |
-
-Este diagrama se actualizará al cerrar la Entrega 3.
+Elasticsearch como proyección de solo lectura del catálogo, con MongoDB como
+respaldo. Ver [`28-ADR-003-motor-busqueda.md`](28-ADR-003-motor-busqueda.md).
