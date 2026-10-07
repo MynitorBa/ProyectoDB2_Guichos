@@ -12,7 +12,7 @@ bases y un servicio de pagos externo que pueden fallar por separado.
 | Motor de búsqueda con tolerancia ortográfica y facetas | 5 | §1 · [ADR-003](28-ADR-003-motor-busqueda.md) · [detalle técnico](29-busqueda-elasticsearch.md) |
 | Documento de estrategia de consistencia del checkout distribuido | 5 | §2 · [estrategia](30-estrategia-consistencia-checkout.md) |
 | Evidencia de una prueba de falla simulada | 4 | §3 · [evidencia](31-evidencia-pruebas-falla.md) · [escenarios](evidencia/fallas/README.md) |
-| Calidad del informe y del repositorio | 1 | §4–§6 |
+| Calidad del informe y del repositorio | 1 | §4–§5 |
 | Diagrama de arquitectura actualizado | — | [05-diagrama-arquitectura.md](05-diagrama-arquitectura.md) |
 
 ## 1. Búsqueda de productos (Elasticsearch)
