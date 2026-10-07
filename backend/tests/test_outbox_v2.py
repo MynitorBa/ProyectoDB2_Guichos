@@ -197,6 +197,43 @@ def test_destino_redis_retira_solo_lo_comprado():
 
 # ── Aislamiento, backoff y fallidos ───────────────────────────────────────────
 
+def test_cada_consumidor_solo_toma_eventos_de_su_destino(eventos_creados, ref_dell):
+    with SessionLocal() as db:
+        filas = _encolar(
+            db, eventos_creados, tipo_evento='inventario.actualizado', agregado_tipo='prueba',
+            agregado_id='consumidor-destino', producto_ref=ref_dell, payload={},
+        )
+        db.commit()
+        nuestros = {f.id for f in filas}
+        por_destino = {f.destino: f.id for f in filas}
+    # Lo que reclama cada consumidor siempre es de su destino (si un backend de
+    # desarrollo está corriendo puede adelantarse y reclamar primero: por eso
+    # se acepta None, pero nunca un evento de otro destino).
+    reclamado = outbox._claim_one('cassandra')
+    assert reclamado not in nuestros
+    reclamado = outbox._claim_one('busqueda')
+    assert reclamado in (None, por_destino['busqueda'])
+    with SessionLocal() as db:
+        for evento_id in filter(None, [reclamado]):
+            evento = db.get(OutboxEvento, evento_id)
+            assert evento.destino == 'busqueda' and evento.estado == 'procesando'
+            evento.estado, evento.intentos = 'pendiente', 0  # se devuelve a la cola
+        db.commit()
+
+
+def test_endpoints_del_laboratorio_solo_existen_con_la_bandera():
+    from fastapi import FastAPI
+
+    from app.api.v1 import consistency
+
+    rutas = {r.path for r in consistency.router_fallas.routes}
+    assert {'/admin/fallas', '/admin/fallas/pasarela', '/admin/checkout/recuperar'} <= rutas
+    # El diagnóstico de solo lectura no forma parte del control de fallas.
+    assert not {r.path for r in consistency.router.routes} & {'/admin/fallas', '/admin/checkout/recuperar'}
+    sin_bandera = FastAPI()
+    sin_bandera.include_router(consistency.router, prefix='/api/v1')
+    assert not [r for r in sin_bandera.routes if 'fallas' in getattr(r, 'path', '')]
+
 def test_falla_de_un_destino_no_bloquea_a_los_demas_y_usa_backoff(eventos_creados, ref_dell):
     with SessionLocal() as db:
         roto = _encolar(

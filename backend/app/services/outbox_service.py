@@ -40,7 +40,6 @@ PAUSA_MAXIMA_DESTINO_SEGUNDOS = 30
 POLL_SECONDS = 1.0
 RECONCILIAR_BUSQUEDA_SEGUNDOS = 600
 _stop_event = threading.Event()
-_worker_thread: threading.Thread | None = None
 
 # Destinos que deben recibir cada tipo de evento. Un tipo no listado se
 # proyecta solo hacia MongoDB (comportamiento histórico del outbox).
@@ -297,10 +296,13 @@ def _pausar(destino: str, intentos: int) -> None:
     _pausas[destino] = time.monotonic() + min(2 ** max(intentos, 0), PAUSA_MAXIMA_DESTINO_SEGUNDOS)
 
 
-# Toma el evento más antiguo listo para procesar con SKIP LOCKED (sin doble proceso)
-def _claim_one() -> str | None:
+# Toma el evento más antiguo listo para procesar con SKIP LOCKED (sin doble proceso).
+# Con ``destino`` solo considera los eventos de ese componente.
+def _claim_one(destino: str | None = None) -> str | None:
     ahora = _now()
     pausados = _destinos_en_pausa()
+    if destino is not None and destino in pausados:
+        return None
     with SessionLocal() as db:
         query = (
             select(OutboxEvento)
@@ -321,7 +323,9 @@ def _claim_one() -> str | None:
             .limit(1)
             .with_for_update(skip_locked=True)
         )
-        if pausados:
+        if destino is not None:
+            query = query.where(OutboxEvento.destino == destino)
+        elif pausados:
             query = query.where(OutboxEvento.destino.notin_(pausados))
         event = db.execute(query).scalars().first()
         if not event:
@@ -335,8 +339,8 @@ def _claim_one() -> str | None:
         return event_id
 
 
-def process_one() -> bool:
-    event_id = _claim_one()
+def process_one(destino_filtro: str | None = None) -> bool:
+    event_id = _claim_one(destino_filtro)
     if not event_id:
         return False
     destino = None
@@ -374,10 +378,10 @@ def process_one() -> bool:
     return True
 
 
-def process_batch(limit: int = 20) -> int:
+def process_batch(limit: int = 20, destino: str | None = None) -> int:
     processed = 0
     for _ in range(limit):
-        if not process_one():
+        if not process_one(destino):
             break
         processed += 1
     return processed
@@ -409,12 +413,22 @@ def _reconciliar_busqueda() -> None:
         logger.info('Reconciliación del índice de búsqueda: %s', resumen)
 
 
-def _worker_loop() -> None:
-    _recover_stale_claims()
+def _worker_loop(destino: str) -> None:
+    """Consumidor de un único destino.
+
+    Cada componente tiene su propio hilo: si uno está caído, sus intentos
+    esperan su timeout y su backoff sin retrasar a los demás destinos.
+    SKIP LOCKED garantiza que dos consumidores nunca tomen el mismo evento.
+    """
+    reconcilia = destino == 'busqueda'
     proxima_reconciliacion = time.monotonic() + RECONCILIAR_BUSQUEDA_SEGUNDOS
     while not _stop_event.is_set():
-        processed = process_batch()
-        if time.monotonic() >= proxima_reconciliacion:
+        try:
+            processed = process_batch(destino=destino)
+        except Exception:  # p. ej. MySQL momentáneamente caído
+            logger.exception('Error en el consumidor del outbox (%s)', destino)
+            processed = 0
+        if reconcilia and time.monotonic() >= proxima_reconciliacion:
             proxima_reconciliacion = time.monotonic() + RECONCILIAR_BUSQUEDA_SEGUNDOS
             try:
                 _reconciliar_busqueda()
@@ -424,26 +438,30 @@ def _worker_loop() -> None:
             _stop_event.wait(POLL_SECONDS)
 
 
-# Arranca el hilo demonio del outbox al iniciar la app; no hace nada si ya está corriendo
+_worker_threads: dict[str, threading.Thread] = {}
+
+
+# Arranca un consumidor por destino al iniciar la app; no duplica los que ya corren
 def start_outbox_worker() -> None:
-    global _worker_thread
-    if _worker_thread and _worker_thread.is_alive():
-        return
     _stop_event.clear()
-    _worker_thread = threading.Thread(
-        target=_worker_loop,
-        name='tiendaya-outbox',
-        daemon=True,
-    )
-    _worker_thread.start()
+    _recover_stale_claims()
+    for destino in DESTINOS_OUTBOX:
+        hilo = _worker_threads.get(destino)
+        if hilo and hilo.is_alive():
+            continue
+        hilo = threading.Thread(
+            target=_worker_loop, args=(destino,), name=f'tiendaya-outbox-{destino}', daemon=True,
+        )
+        _worker_threads[destino] = hilo
+        hilo.start()
 
 
 def stop_outbox_worker() -> None:
-    global _worker_thread
     _stop_event.set()
-    if _worker_thread and _worker_thread.is_alive():
-        _worker_thread.join(timeout=5)
-    _worker_thread = None
+    for hilo in _worker_threads.values():
+        if hilo.is_alive():
+            hilo.join(timeout=5)
+    _worker_threads.clear()
 
 
 # ── Operación y observabilidad ────────────────────────────────────────────────

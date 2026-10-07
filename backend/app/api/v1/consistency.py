@@ -18,7 +18,12 @@ from app.models.usuario import Usuario
 from app.services import consistency_service
 from app.services.checkout_recovery_worker import reconcile_once
 
+# Diagnóstico de solo lectura (invariantes y bitácora de la saga): siempre disponible para admin.
 router = APIRouter(prefix='/admin', tags=['Consistencia'])
+# Control de fallas y recuperación manual: herramienta de desarrollo que usa el
+# laboratorio de consistencia. main.py solo lo registra con FAULT_INJECTION_ENABLED,
+# así que en producción estos endpoints no existen.
+router_fallas = APIRouter(prefix='/admin', tags=['Laboratorio de consistencia (solo desarrollo)'])
 
 MODOS_PASARELA = ('aprobar', 'rechazar', 'timeout', 'cobrar_y_fallar', 'error_antes')
 
@@ -53,7 +58,7 @@ def verificar_consistencia(
     return consistency_service.verificar(db, mongo, es)
 
 
-@router.get('/fallas')
+@router_fallas.get('/fallas')
 def estado_fallas(_: Usuario = Depends(get_admin_user)):
     try:
         pasarela = httpx.get(f'{settings.PAYMENT_GATEWAY_URL}/control', timeout=2).json()
@@ -63,7 +68,7 @@ def estado_fallas(_: Usuario = Depends(get_admin_user)):
 
 
 # Activa (una vez o siempre) o desactiva un punto de falla del checkout o del outbox
-@router.post('/fallas')
+@router_fallas.post('/fallas')
 def configurar_falla(payload: FallaPayload, _: Usuario = Depends(get_admin_user)):
     _exigir_fallas_habilitadas()
     try:
@@ -76,14 +81,14 @@ def configurar_falla(payload: FallaPayload, _: Usuario = Depends(get_admin_user)
     return fault_injection.estado()
 
 
-@router.delete('/fallas')
+@router_fallas.delete('/fallas')
 def desactivar_fallas(_: Usuario = Depends(get_admin_user)):
     fault_injection.desactivar()
     return fault_injection.estado()
 
 
 # Cambia el comportamiento de la pasarela simulada (aprobar, rechazar, timeout...)
-@router.post('/fallas/pasarela')
+@router_fallas.post('/fallas/pasarela')
 def configurar_pasarela(payload: PasarelaPayload, _: Usuario = Depends(get_admin_user)):
     _exigir_fallas_habilitadas()
     if payload.modo not in MODOS_PASARELA:
@@ -97,7 +102,7 @@ def configurar_pasarela(payload: PasarelaPayload, _: Usuario = Depends(get_admin
 
 
 # Ejecuta ya el reconciliador y el recolector (sin esperar al ciclo del worker)
-@router.post('/checkout/recuperar')
+@router_fallas.post('/checkout/recuperar')
 def recuperar_checkout(_: Usuario = Depends(get_admin_user)):
     return reconcile_once()
 

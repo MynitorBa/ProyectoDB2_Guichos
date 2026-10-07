@@ -112,6 +112,18 @@ $backendJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\backend
 Write-Host "Iniciando frontend React en :5173..." -ForegroundColor Yellow
 $frontendJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\frontend`" && npm run dev" -PassThru -WindowStyle Normal
 
+# 5. Laboratorio de consistencia (herramienta de desarrollo aparte de la tienda).
+# Solo tiene sentido si el backend registra los endpoints de fallas.
+$labHabilitado = Select-String -Path "$Root\backend\.env" -Pattern '^\s*FAULT_INJECTION_ENABLED\s*=\s*true' -Quiet -ErrorAction SilentlyContinue
+if ($labHabilitado) {
+    if (-not (Test-Path "$Root\laboratorio\node_modules")) {
+        Write-Host "Instalando dependencias del laboratorio..." -ForegroundColor Yellow
+        Push-Location "$Root\laboratorio"; npm install --silent; Pop-Location
+    }
+    Write-Host "Iniciando laboratorio de consistencia en :5174..." -ForegroundColor Yellow
+    $labJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\laboratorio`" && npm run dev" -PassThru -WindowStyle Normal
+}
+
 Start-Sleep 3
 
 Write-Host "`n==========================================" -ForegroundColor Green
@@ -127,6 +139,11 @@ Write-Host "  Cassandra CQL: localhost:9042 (cqlsh dentro de tiendaya_cassandra)
 Write-Host "  Neo4j Browser: http://localhost:7474  (neo4j / tiendaya123)" -ForegroundColor Cyan
 Write-Host "  Elasticsearch: http://localhost:9200  ·  Elasticvue: http://localhost:8083" -ForegroundColor Cyan
 Write-Host "  Pasarela de pagos simulada: http://127.0.0.1:8001/docs" -ForegroundColor Cyan
+if ($labHabilitado) {
+    Write-Host "  Laboratorio de consistencia: http://localhost:5174  (herramienta de desarrollo)" -ForegroundColor Magenta
+} else {
+    Write-Host "  Laboratorio de consistencia: deshabilitado (FAULT_INJECTION_ENABLED=true en backend\.env para usarlo)" -ForegroundColor Gray
+}
 Write-Host ""
 Write-Host "  Admin: admin@tiendaya.gt / password123" -ForegroundColor Yellow
 Write-Host ""

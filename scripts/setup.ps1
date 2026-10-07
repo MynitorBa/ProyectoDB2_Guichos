@@ -300,6 +300,11 @@ if (-not $SkipFrontend) {
     node --version
     npm install
     Write-Host "  Frontend listo." -ForegroundColor Green
+
+    # Laboratorio de consistencia: herramienta de desarrollo aparte de la tienda.
+    Set-Location "$Root\laboratorio"
+    npm install
+    Write-Host "  Laboratorio de consistencia listo (se usa con FAULT_INJECTION_ENABLED=true)." -ForegroundColor Green
     Set-Location $Root
 } else {
     Write-Host "[8/8] Frontend: OMITIDO" -ForegroundColor Gray

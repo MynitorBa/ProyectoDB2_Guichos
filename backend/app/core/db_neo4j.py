@@ -17,6 +17,10 @@ def get_driver() -> Driver:
         _driver = GraphDatabase.driver(
             settings.NEO4J_URI,
             auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+            # Por defecto el driver espera hasta 30 s por una conexión; si Neo4j
+            # cae, sus eventos del outbox deben fallar rápido y pasar a backoff.
+            connection_timeout=5.0,
+            connection_acquisition_timeout=10.0,
         )
         _driver.verify_connectivity()
         _ensure_constraints(_driver)

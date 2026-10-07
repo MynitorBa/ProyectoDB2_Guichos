@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from bson import ObjectId
+from pymongo.errors import PyMongoError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,8 @@ from app.core.db_cassandra import get_cassandra_session
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import SessionLocal
 
+
+logger = logging.getLogger(__name__)
 
 GT_TZ = timezone(timedelta(hours=-6))
 ZERO = Decimal('0.00')
@@ -119,6 +123,19 @@ def _product_images(mongo, refs: set[str]) -> dict[str, str | None]:
     return result
 
 
+def _imagenes_actuales(cassandra, claves: set[tuple[date, str]]) -> dict[str, str | None]:
+    """Imágenes ya proyectadas en Cassandra, para no borrarlas si MongoDB no responde."""
+    consulta = cassandra.prepare(
+        'SELECT imagen_snapshot FROM resumen_productos_semana WHERE semana_inicio = ? AND producto_ref = ?'
+    )
+    result: dict[str, str | None] = {}
+    for week, ref in claves:
+        fila = cassandra.execute(consulta, (week, ref)).one()
+        if fila and fila.imagen_snapshot:
+            result[ref] = fila.imagen_snapshot
+    return result
+
+
 def _week_for_row(row: dict) -> date:
     moment = row['fecha_hora']
     if moment.tzinfo is None:
@@ -172,7 +189,12 @@ def _write_rows(cassandra, rows: list[dict], mongo) -> dict:
     product_groups = defaultdict(list)
     vendor_groups = defaultdict(list)
     vendor_product_groups = defaultdict(list)
-    images = _product_images(mongo, {row['producto_ref'] for row in rows})
+    try:
+        images = _product_images(mongo, {row['producto_ref'] for row in rows})
+    except PyMongoError as exc:
+        # La imagen es solo decorativa: MongoDB caído no debe detener la analítica.
+        logger.warning('MongoDB no disponible para imágenes de analítica; se conservan las actuales: %s', exc)
+        images = _imagenes_actuales(cassandra, {(_week_for_row(row), row['producto_ref']) for row in rows})
     for row in rows:
         week = _week_for_row(row)
         refunded = row['estado_pago'] == 'reembolsado'

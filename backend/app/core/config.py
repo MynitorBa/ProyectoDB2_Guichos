@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     # Inyección de fallas para demostrar la estrategia de consistencia. Nunca
     # habilitarla fuera de desarrollo: permite provocar errores a voluntad.
     FAULT_INJECTION_ENABLED: bool = False
+    # Laboratorio de consistencia (laboratorio/, herramienta aparte de la tienda).
+    # Solo se acepta su origen en CORS cuando la inyección de fallas está habilitada.
+    LAB_URL: str = 'http://localhost:5174'
 
     # Email (SMTP) — dejar vacío para deshabilitar envío de correos
     SMTP_HOST: str = 'smtp.gmail.com'

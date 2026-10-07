@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* Paleta propia del laboratorio: tono oscuro en la cabecera para distinguirlo
+   a simple vista de la tienda; los mismos nombres de tokens que el frontend. */
+@theme {
+  --color-background: #F4F5F8;
+  --color-surface: #FFFFFF;
+  --color-text-primary: #0C0F1A;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94A3B8;
+  --color-action: #4338CA;
+  --color-action-h: #3730A3;
+  --color-success: #059669;
+  --color-success-light: #D1FAE5;
+  --color-warning: #B45309;
+  --color-warning-light: #FEF3C7;
+  --color-error: #DC2626;
+  --color-error-light: #FEE2E2;
+  --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
+  --color-lab: #111827;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}

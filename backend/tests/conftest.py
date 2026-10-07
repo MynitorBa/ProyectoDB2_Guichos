@@ -16,7 +16,12 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.core.config import settings
+# Las pruebas ejercitan también los endpoints del laboratorio de consistencia,
+# que main.py solo registra con la inyección de fallas habilitada. Se fija antes
+# de importar la configuración para no depender del backend/.env de cada equipo.
+os.environ['FAULT_INJECTION_ENABLED'] = 'true'
+
+from app.core.config import settings  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
 PUERTO_PASARELA = 8091

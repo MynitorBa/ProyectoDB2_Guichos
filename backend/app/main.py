@@ -37,6 +37,8 @@ app.add_middleware(
         settings.FRONTEND_URL,
         'http://localhost:5173',
         'http://127.0.0.1:5173',
+        # Laboratorio de consistencia (solo en desarrollo, con inyección de fallas)
+        *([settings.LAB_URL, 'http://127.0.0.1:5174'] if settings.FAULT_INJECTION_ENABLED else []),
     ],
     allow_credentials=True,
     allow_methods=['*'],
@@ -84,6 +86,10 @@ app.include_router(reviews_router, prefix='/api/v1')
 app.include_router(sync.router, prefix='/api/v1')
 app.include_router(search.router, prefix='/api/v1')
 app.include_router(consistency.router, prefix='/api/v1')
+# El laboratorio de consistencia es una herramienta de desarrollo aparte de la
+# tienda: sus endpoints de control de fallas solo existen si se habilitan.
+if settings.FAULT_INJECTION_ENABLED:
+    app.include_router(consistency.router_fallas, prefix='/api/v1')
 
 
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
