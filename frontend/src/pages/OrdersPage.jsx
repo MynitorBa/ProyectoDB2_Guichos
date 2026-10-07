@@ -23,7 +23,7 @@ const ESTADO_BADGE = {
 }
 
 const ESTADO_LABEL = {
-  pendiente:       'Pendiente',
+  pendiente:       'Pago en proceso',
   confirmado:      'Confirmado',
   en_preparacion:  'En preparación',
   enviado:         'Enviado',

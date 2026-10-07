@@ -83,3 +83,21 @@ export const approveCatalogRequest = (requestId, observaciones = '') =>
 
 export const rejectCatalogRequest = (requestId, observaciones) =>
   api.post(`/admin/catalog-requests/${requestId}/reject`, { observaciones })
+
+// ── Consistencia entre componentes (Entrega 3) ────────────────────────────────
+
+// Salud de la sincronización: outbox por destino e índice de búsqueda
+export const getSyncOutbox = () => api.get('/admin/sync/outbox')
+export const retrySyncEvents = (data = {}) => api.post('/admin/sync/outbox/reintentar', data)
+export const getSearchIndexStatus = () => api.get('/admin/sync/busqueda')
+export const reindexSearch = (completo = false) =>
+  api.post('/admin/sync/busqueda/reindexar', null, { params: { completo } })
+
+// Laboratorio de fallas: puntos de falla, pasarela simulada, recuperación e invariantes
+export const getFaults = () => api.get('/admin/fallas')
+export const setFault = (punto, modo) => api.post('/admin/fallas', { punto, modo })
+export const clearFaults = () => api.delete('/admin/fallas')
+export const setGatewayMode = (modo) => api.post('/admin/fallas/pasarela', { modo })
+export const runCheckoutRecovery = () => api.post('/admin/checkout/recuperar')
+export const getSagaLog = (params = {}) => api.get('/admin/checkout/saga', { params })
+export const getConsistency = () => api.get('/admin/consistencia')

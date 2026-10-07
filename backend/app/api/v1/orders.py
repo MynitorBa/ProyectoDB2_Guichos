@@ -23,7 +23,9 @@ from app.models.vendedor import Vendedor
 from app.models.notificacion import Notificacion
 from app.schemas.checkout import CheckoutItem, CheckoutRequest, CheckoutResponse
 from app.models.pago import Pago
-from app.services.checkout_service import procesar_checkout, CheckoutError, huella_solicitud
+from app.services.checkout_service import (
+    MENSAJES_CANCELACION, CheckoutError, huella_solicitud, procesar_checkout,
+)
 from app.services.invoice_service import generar_factura_pdf
 from app.services.email_service import enviar_factura_por_correo
 from app.services import redis_cart_service as rcs
@@ -406,6 +408,13 @@ def detalle_pedido(
         'impuestos': float(pedido.impuestos),
         'total': float(pedido.total),
         'fecha': pedido.fecha_creacion.replace(tzinfo=timezone.utc).isoformat(),
+        # Saga del checkout: por qué se canceló y hasta cuándo retiene inventario.
+        'motivo_cancelacion': pedido.motivo_cancelacion,
+        'mensaje_cancelacion': MENSAJES_CANCELACION.get(pedido.motivo_cancelacion),
+        'reserva_expira_en': (
+            pedido.reserva_expira_en.replace(tzinfo=timezone.utc).isoformat()
+            if pedido.reserva_expira_en else None
+        ),
         'lineas': [
             {
                 'producto_nombre': l.producto_nombre,
@@ -421,6 +430,7 @@ def detalle_pedido(
                 'monto': float(p.monto),
                 'estado': p.estado,
                 'referencia': p.referencia_transaccion,
+                'referencia_pasarela': p.referencia_pasarela,
                 'fecha': p.fecha.replace(tzinfo=timezone.utc).isoformat(),
             }
             for p in pedido.pagos

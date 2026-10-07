@@ -339,6 +339,11 @@ def test_api_pago_rechazado_responde_402_y_conserva_el_carrito(reset_stock, clie
     assert detalle['code'] == 'PAYMENT_DECLINED'
     assert detalle['carrito_conservado'] is True
     assert [i['oferta_id'] for i in rcs.obtener_carrito(get_redis(), USUARIO_COMPRADOR_ID)] == [OFERTA_TEST_ID]
+    # El detalle del pedido explica al cliente por qué se canceló.
+    pedido = cliente.get(f"/api/v1/orders/{detalle['pedido_id']}").json()
+    assert (pedido['estado'], pedido['motivo_cancelacion']) == ('cancelado', 'pago_rechazado')
+    assert 'No se realizó ningún cargo' in pedido['mensaje_cancelacion']
+    assert pedido['pagos'][0]['estado'] == 'rechazado'
 
 
 def test_api_pago_en_verificacion_responde_202_y_bloquea_otra_compra(reset_stock, cliente_comprador, pasarela_en_modo):

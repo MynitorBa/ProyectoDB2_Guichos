@@ -9,8 +9,9 @@ import {
   BarChart2, Package, History, Users, ShieldCheck, ShoppingBag, User,
   Plus, Edit, Trash2, FolderTree, X as XIcon, ImagePlus, Image as ImageIcon, Search,
   TrendingUp, FileSpreadsheet, ChevronDown, ChevronRight, ClipboardList, Store, Layers,
-  Inbox, GitBranch, Star, AlertTriangle, CheckCircle, XCircle,
+  Inbox, GitBranch, Star, AlertTriangle, CheckCircle, XCircle, RefreshCw, FlaskConical,
 } from 'lucide-react'
+import { FaultLabSection, SyncHealthSection } from '../components/admin/ConsistencySections'
 import { toast } from 'sonner'
 import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
 import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, setTiendayaVendor, getProductOffers, getProductVariants, addProductVariant, updateProductVariant, deleteProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
@@ -40,6 +41,8 @@ const NAV_ITEMS = [
   { id: 'sales',      label: 'Ventas',       icon: TrendingUp     },
   { id: 'requests',   label: 'Solicitudes',  icon: Inbox          },
   { id: 'fraud',      label: 'Fraude & Reseñas', icon: AlertTriangle },
+  { id: 'sync',       label: 'Salud de sincronización', icon: RefreshCw },
+  { id: 'faults',     label: 'Laboratorio de fallas', icon: FlaskConical },
 ]
 
 const ESTADO_BADGE = {
@@ -2417,6 +2420,8 @@ export default function AdminPage() {
           {activeSection === 'sales'      && <SalesSection />}
           {activeSection === 'requests'   && <AdminCatalogRequestsSection />}
           {activeSection === 'fraud'      && <FraudSection />}
+          {activeSection === 'sync'       && <SyncHealthSection />}
+          {activeSection === 'faults'     && <FaultLabSection />}
         </main>
       </div>
     </div>

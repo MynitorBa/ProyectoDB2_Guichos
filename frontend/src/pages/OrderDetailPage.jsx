@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Package, Check } from 'lucide-react'
+import { ArrowLeft, Package, Check, Loader2, XCircle } from 'lucide-react'
 import { getOrder } from '../api/orders'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
@@ -89,13 +90,72 @@ function ProgressBar({ estado }) {
 }
 
 // Detalle de un pedido: barra de progreso del envío, líneas de productos y resumen de pago
+const PAGO_LABEL = {
+  pendiente: 'Pendiente',
+  en_verificacion: 'En verificación',
+  aprobado: 'Aprobado',
+  rechazado: 'Rechazado',
+  reembolsado: 'Reembolsado',
+}
+
+// Estado del pago dentro de la saga del checkout, explicado al cliente
+function AvisoPago({ pedido }) {
+  const pago = pedido.pagos?.[0]
+  if (pedido.estado === 'pendiente') {
+    const verificando = pago?.estado === 'en_verificacion'
+    return (
+      <div role="status" className="mx-5 mt-4 rounded-[var(--radius-md)] border border-amber-300 bg-amber-50 px-4 py-3 flex gap-3">
+        <Loader2 size={18} className="text-amber-700 animate-spin shrink-0 mt-0.5" />
+        <div className="font-sans text-sm text-amber-900 space-y-1">
+          <p className="font-semibold">{verificando ? 'Estamos verificando tu pago' : 'Procesando tu pago'}</p>
+          <p>
+            {verificando
+              ? 'La pasarela no confirmó el cobro a tiempo. Lo consultamos automáticamente: si se cobró, confirmaremos tu pedido; si no, lo cancelaremos sin ningún cargo.'
+              : 'Tus productos están reservados mientras se completa el pago.'}
+            {' '}Esta página se actualiza sola.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  if (pedido.estado === 'cancelado' && pedido.mensaje_cancelacion) {
+    return (
+      <div className="mx-5 mt-4 rounded-[var(--radius-md)] border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-3 flex gap-3">
+        <XCircle size={18} className="text-[var(--color-error)] shrink-0 mt-0.5" />
+        <div className="font-sans text-sm space-y-1">
+          <p className="font-semibold text-[var(--color-error)]">Pedido cancelado</p>
+          <p className="text-[var(--color-text-secondary)]">{pedido.mensaje_cancelacion}</p>
+          <Link to="/cart" className="inline-block text-[var(--color-action)] font-semibold hover:underline">
+            Volver al carrito
+          </Link>
+        </div>
+      </div>
+    )
+  }
+  return null
+}
+
+// Detalle de un pedido: barra de progreso del envío, líneas de productos y resumen de pago
 export default function OrderDetailPage() {
   const { id } = useParams()
+  const queryClient = useQueryClient()
 
   const { data: pedido, isLoading, isError } = useQuery({
     queryKey: ['order', id],
     queryFn: () => getOrder(id).then((r) => r.data),
+    // Mientras la saga no termina, se consulta periódicamente hasta conocer el desenlace.
+    refetchInterval: (query) => (query.state.data?.estado === 'pendiente' ? 3000 : false),
+    // También si el cliente cambia de pestaña mientras espera: al volver ya ve el desenlace.
+    refetchIntervalInBackground: true,
   })
+
+  const estado = pedido?.estado
+  useEffect(() => {
+    // Al resolverse, la lista de pedidos y el carrito pueden haber cambiado.
+    if (estado && estado !== 'pendiente') {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+    }
+  }, [estado, queryClient])
 
   if (isLoading) {
     return (
@@ -149,9 +209,11 @@ export default function OrderDetailPage() {
               </p>
             </div>
             <Badge variant={ESTADO_BADGE[pedido.estado] || 'default'} className="text-sm px-3 py-1">
-              {pedido.estado}
+              {pedido.estado === 'pendiente' ? 'pago en proceso' : pedido.estado}
             </Badge>
           </div>
+
+          <AvisoPago pedido={pedido} />
 
           <div className="px-5 py-4 border-b border-[var(--color-border)]">
             <h2 className="font-sans text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-3">
@@ -213,7 +275,7 @@ export default function OrderDetailPage() {
                 {pedido.pagos.map((pago, idx) => (
                   <div key={idx} className="flex items-center justify-between font-sans text-sm text-[var(--color-text-secondary)]">
                     <span>
-                      {pago.estado}
+                      {PAGO_LABEL[pago.estado] || pago.estado}
                       {pago.referencia && (
                         <span className="font-mono ml-2 text-xs text-[var(--color-text-muted)]">
                           Ref: {pago.referencia}

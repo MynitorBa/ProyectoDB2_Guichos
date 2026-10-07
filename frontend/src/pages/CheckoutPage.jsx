@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { CheckCircle, MapPin, CreditCard, ClipboardList, ChevronRight, Landmark, ArrowLeftRight, Package } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  CheckCircle, MapPin, CreditCard, ClipboardList, ChevronRight, Landmark, ArrowLeftRight, Package,
+  AlertTriangle, Clock, RotateCw, XCircle,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { getCart } from '../api/cart'
 import { checkout, getAddresses } from '../api/orders'
@@ -18,6 +21,81 @@ const PAYMENT_METHODS = [
   { id: 3, label: 'Transferencia bancaria', Icon: ArrowLeftRight  },
   { id: 4, label: 'Contra entrega',         Icon: Package         },
 ]
+
+// ── Intento de compra idempotente ─────────────────────────────────────────────
+// Cada intento lleva una clave única. Se conserva (también al recargar la
+// página) mientras el intento sea el mismo y se reutiliza al reintentar tras un
+// error de red: el servidor devuelve el pedido ya creado en lugar de crear otro.
+const CLAVE_INTENTO = 'tiendaya.checkout.intento'
+
+function claveDelIntento(firma) {
+  try {
+    const guardado = JSON.parse(sessionStorage.getItem(CLAVE_INTENTO) || 'null')
+    if (guardado?.firma === firma) return guardado.clave
+  } catch {
+    // sessionStorage no disponible: cada intento usa una clave nueva.
+  }
+  const clave = crypto.randomUUID()
+  try {
+    sessionStorage.setItem(CLAVE_INTENTO, JSON.stringify({ firma, clave }))
+  } catch {
+    // Sin almacenamiento la clave vive solo durante este intento.
+  }
+  return clave
+}
+
+function descartarIntento() {
+  try { sessionStorage.removeItem(CLAVE_INTENTO) } catch { /* nada que limpiar */ }
+}
+
+const TIPO_ERROR = {
+  PRICE_CHANGED: 'precio',
+  PAYMENT_DECLINED: 'rechazado',
+  PAYMENT_UNAVAILABLE: 'no_disponible',
+  ORDER_NOT_FULFILLABLE: 'no_cumplible',
+  PAYMENT_PENDING_EXISTS: 'pendiente_existente',
+  CHECKOUT_IN_PROGRESS: 'en_proceso',
+}
+
+const AVISOS = {
+  rechazado:           { titulo: 'Pago rechazado', tono: 'error', Icon: XCircle },
+  no_disponible:       { titulo: 'Pasarela de pagos no disponible', tono: 'error', Icon: XCircle },
+  no_cumplible:        { titulo: 'Pedido no disponible', tono: 'error', Icon: XCircle },
+  pendiente_existente: { titulo: 'Tienes un pago en verificación', tono: 'aviso', Icon: Clock },
+  en_proceso:          { titulo: 'Tu compra se está procesando', tono: 'aviso', Icon: Clock },
+  red:                 { titulo: 'Sin respuesta del servidor', tono: 'aviso', Icon: AlertTriangle },
+  precio:              { titulo: 'Los precios cambiaron', tono: 'aviso', Icon: AlertTriangle },
+  generico:            { titulo: 'No se pudo completar la compra', tono: 'error', Icon: XCircle },
+}
+
+function AvisoCheckout({ error, reintentando, onReintentar }) {
+  const aviso = AVISOS[error.tipo] || AVISOS.generico
+  const { Icon } = aviso
+  const colores = aviso.tono === 'error'
+    ? 'bg-[var(--color-error)]/10 border-[var(--color-error)]/30 text-[var(--color-error)]'
+    : 'bg-amber-50 border-amber-300 text-amber-900'
+  const reintentoSeguro = error.tipo === 'red' || error.tipo === 'en_proceso'
+  return (
+    <div role="alert" className={cn('rounded-[var(--radius-md)] border px-4 py-3 space-y-2', colores)}>
+      <p className="flex items-center gap-2 font-sans text-sm font-semibold">
+        <Icon size={16} className="shrink-0" /> {aviso.titulo}
+      </p>
+      <p className="font-sans text-sm text-[var(--color-text-secondary)]">{error.mensaje}</p>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {reintentoSeguro && (
+          <Button size="sm" variant="secondary" loading={reintentando} onClick={onReintentar}>
+            <RotateCw size={13} /> Reintentar de forma segura
+          </Button>
+        )}
+        {error.pedidoId && (
+          <Button size="sm" variant="ghost" asChild>
+            <Link to={`/orders/${error.pedidoId}`}>Ver pedido #{error.pedidoId}</Link>
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const STEPS = [
   { id: 1, label: 'Dirección', icon: MapPin },
@@ -131,7 +209,8 @@ export default function CheckoutPage() {
   const [selectedPayment, setSelectedPayment] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [successData, setSuccessData] = useState(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     getCart().then((r) => setCart(r.data))
@@ -149,9 +228,17 @@ export default function CheckoutPage() {
   const items = cart?.items || []
   const priceChanges = items.filter((item) => item.precio_cambio && !item.sin_stock)
 
+  // Firma del intento: mismo carrito, dirección y método ⇒ mismo intento de compra.
+  const firmaIntento = JSON.stringify({
+    items: items.map((i) => [i.oferta_id, i.cantidad]).sort((a, b) => a[0] - b[0]),
+    direccion: selectedAddress,
+    metodo: selectedPayment,
+  })
+
   async function handleConfirm() {
-    setError('')
+    setError(null)
     setSubmitting(true)
+    const clave = claveDelIntento(firmaIntento)
     try {
       const orderItems = items.map((i) => ({
         oferta_id: i.oferta_id,
@@ -165,12 +252,25 @@ export default function CheckoutPage() {
         precios_confirmados: Object.fromEntries(
           items.map((item) => [item.oferta_id, item.precio])
         ),
-      })
+      }, clave)
+      descartarIntento()
+      if (res.status === 202) {
+        // El cobro salió pero la pasarela no confirmó: se resolverá en segundo plano.
+        toast.info('Estamos verificando tu pago con la pasarela.')
+        navigate(`/orders/${res.data.pedido_id}`, { state: { verificando: true } })
+        return
+      }
       setSuccessData(res.data)
       await fetchCart()
     } catch (err) {
-      const raw = err?.response?.data?.detail
-      const code = typeof raw === 'object' ? raw?.code : err?.response?.data?.code
+      if (!err?.response) {
+        // Sin respuesta (red caída o timeout): no sabemos si se creó el pedido.
+        // Se conserva la clave para que el reintento sea seguro.
+        setError({ tipo: 'red', mensaje: 'No recibimos respuesta del servidor. Tu compra pudo haberse registrado; reintentar es seguro y no generará un cobro doble.' })
+        return
+      }
+      const raw = err.response.data?.detail
+      const code = typeof raw === 'object' ? raw?.code : err.response.data?.code
       const msg =
         typeof raw === 'string'
           ? raw
@@ -179,6 +279,9 @@ export default function CheckoutPage() {
           : Array.isArray(raw)
           ? 'Datos de envío inválidos. Verifica tu dirección y método de pago.'
           : 'No se pudo procesar el pedido. Intenta de nuevo.'
+      const tipo = TIPO_ERROR[code] || 'generico'
+      // La compra sigue en curso: la misma clave permite consultar su resultado.
+      if (tipo !== 'en_proceso') descartarIntento()
       if (code === 'PRICE_CHANGED') {
         try {
           const refreshed = await getCart()
@@ -187,8 +290,11 @@ export default function CheckoutPage() {
           // El mensaje original de cambio de precio sigue siendo el relevante.
         }
       }
-      setError(msg)
-      toast.error(msg)
+      if (tipo === 'rechazado' || tipo === 'no_disponible' || tipo === 'no_cumplible') {
+        await fetchCart() // el carrito se conserva para reintentar con otro medio
+      }
+      setError({ tipo, mensaje: msg, pedidoId: raw?.pedido_id })
+      if (tipo === 'generico') toast.error(msg)
     } finally {
       setSubmitting(false)
     }
@@ -205,7 +311,9 @@ export default function CheckoutPage() {
             ¡Pedido confirmado!
           </h1>
           <p className="font-sans text-sm text-[var(--color-text-secondary)] mb-6">
-            Tu pedido ha sido procesado exitosamente.
+            {successData.codigo === 'IDEMPOTENT_REPLAY'
+              ? 'Tu compra ya se había registrado en el intento anterior; no se realizó ningún cobro adicional.'
+              : 'Tu pedido ha sido procesado exitosamente.'}
           </p>
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-6 mb-6 text-left space-y-3">
             <div className="flex justify-between">
@@ -393,9 +501,7 @@ export default function CheckoutPage() {
                 </div>
 
                 {error && (
-                  <div className="rounded-[var(--radius-md)] bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 px-4 py-3">
-                    <p className="text-sm font-sans text-[var(--color-error)]">{error}</p>
-                  </div>
+                  <AvisoCheckout error={error} reintentando={submitting} onReintentar={handleConfirm} />
                 )}
 
                 {priceChanges.length > 0 && (
