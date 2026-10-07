@@ -14,7 +14,6 @@ bases y un servicio de pagos externo que pueden fallar por separado.
 | Evidencia de una prueba de falla simulada | 4 | §3 · [evidencia](31-evidencia-pruebas-falla.md) · [escenarios](evidencia/fallas/README.md) |
 | Calidad del informe y del repositorio | 1 | §4–§6 |
 | Diagrama de arquitectura actualizado | — | [05-diagrama-arquitectura.md](05-diagrama-arquitectura.md) |
-| Distribución de responsabilidades | — | §6 |
 
 ## 1. Búsqueda de productos (Elasticsearch)
 
@@ -121,10 +120,3 @@ destino, el reconciliador y recolector de la saga, y el laboratorio de consisten
 Instalación desde cero con `scripts/setup.ps1` (levanta Elasticsearch, crea el índice y lo
 llena) y arranque con `scripts/start-dev.ps1` (API, pasarela, tienda y, si la bandera está
 activa, el laboratorio).
-
-## 6. Distribución de responsabilidades
-
-| Integrante | Responsabilidades en la Entrega 3 |
-|---|---|
-| _Por completar_ | |
-| _Por completar_ | |
