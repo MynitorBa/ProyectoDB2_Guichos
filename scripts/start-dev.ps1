@@ -64,6 +64,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de solicitudes de catálogo.' }
     & $python scripts\apply_unique_nombre_tiendaya.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de reglas del catálogo.' }
+    # El modelo ORM de Pedido ya incluye las columnas de la saga. Instálalas
+    # antes de ejecutar migraciones antiguas que consultan pedidos con ese
+    # modelo, especialmente al arrancar por primera vez después de un pull.
+    & $python scripts\apply_checkout_saga.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del checkout como saga.' }
     & $python scripts\apply_fulfillment.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la actualización de envíos y variantes.' }
     & $python scripts\migrate_cart_to_redis.py
@@ -72,8 +77,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
     & $python scripts\apply_outbox_v2.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del outbox por destino.' }
-    & $python scripts\apply_checkout_saga.py
-    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del checkout como saga.' }
     & $python -c "from app.core.db_cassandra import cassandra_health, close_cassandra; print(cassandra_health()); close_cassandra()"
     if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de Cassandra.' }
     & $python scripts\repair_catalog_data.py --apply

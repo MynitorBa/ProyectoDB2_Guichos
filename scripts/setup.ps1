@@ -217,6 +217,14 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Falló la migración de unicidad de nombre y columna es_tiendaya.'
 }
 
+# apply_fulfillment importa el modelo ORM actual de Pedido. En una base que
+# todavía no recibió la migración 20, ese modelo ya espera las columnas de la
+# saga y la consulta de compatibilidad falla antes de que setup pueda crearlas.
+# La migración es aditiva e idempotente, por lo que debe instalarse antes de
+# cualquier script que cargue el modelo actual de pedidos.
+& $python scripts\apply_checkout_saga.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del checkout como saga.' }
+
 & $python scripts\apply_fulfillment.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la migración de envíos parciales y solicitudes de variantes.' }
 
@@ -228,9 +236,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
 
 & $python scripts\apply_outbox_v2.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del outbox por destino.' }
-
-& $python scripts\apply_checkout_saga.py
-if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del checkout como saga.' }
 
 & $python scripts\backfill_cassandra_analytics.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
