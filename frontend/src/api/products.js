@@ -10,6 +10,9 @@ export const getAdminProducts = (params) =>
 export const getProduct = (id) =>
   api.get(`/products/${id}`)
 
+export const getProductRecommendations = (id, limite = 8) =>
+  api.get(`/products/${id}/recommendations`, { params: { limite } })
+
 export const getActiveFlashSales = (ofertaId) =>
   api.get('/flash-sales/active', { params: { oferta_id: ofertaId } })
 

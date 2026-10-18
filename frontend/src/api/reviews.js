@@ -6,8 +6,11 @@ export const getReviews = (productoRef, todas = false) =>
 export const createReview = (data) =>
   api.post('/reviews', data)
 
-export const puedeOpinar = (productoRef) =>
-  api.get(`/reviews/puede-opinar/${productoRef}`)
+export const updateReview = (resenaId, data) =>
+  api.put(`/reviews/${resenaId}`, data)
+
+export const puedeOpinar = (productoRef, vendedorId) =>
+  api.get(`/reviews/puede-opinar/${productoRef}`, { params: { vendedor_id: vendedorId } })
 
 export const createReply = (resenaId, data) =>
   api.post(`/reviews/${resenaId}/respuestas`, data)
@@ -34,3 +37,15 @@ export const getFraudSinCompra = () =>
 
 export const getFraudCluster = (params) =>
   api.get('/reviews/admin/fraude/cluster', { params })
+
+export const recalculateFraudAlerts = () =>
+  api.post('/reviews/admin/fraude/recalcular')
+
+export const getFraudAlerts = (params = {}) =>
+  api.get('/reviews/admin/fraude/alertas', { params })
+
+export const updateFraudAlert = (alertaId, data) =>
+  api.patch(`/reviews/admin/fraude/alertas/${alertaId}`, data)
+
+export const getFlashFraudHistory = (params = {}) =>
+  api.get('/reviews/admin/fraude/ventas-flash', { params })

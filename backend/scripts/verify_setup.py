@@ -594,6 +594,57 @@ def main():
             else:
                 print('MySQL reglas de catálogo: nombres únicos y prioridad TiendaYa')
 
+            review_errors = []
+            review_tables = {'resena_imagenes', 'resena_respuestas', 'alertas_fraude'}
+            missing_review_tables = sorted(review_tables - installed_tables)
+            if missing_review_tables:
+                review_errors.append(f'tablas faltantes: {missing_review_tables}')
+            required_review_columns = {
+                ('resenas', 'public_id'), ('resenas', 'vendedor_id'),
+                ('resenas', 'pedido_linea_id'), ('resenas', 'estado_moderacion'),
+                ('resenas', 'verificada_compra'), ('resenas', 'version'),
+            }
+            missing_review_columns = sorted(required_review_columns - installed_columns)
+            if missing_review_columns:
+                review_errors.append(f'columnas faltantes: {missing_review_columns}')
+            cur.execute("""
+                SELECT INDEX_NAME FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='resenas'
+                  AND NON_UNIQUE=0
+            """)
+            review_unique_indexes = {row['INDEX_NAME'] for row in cur.fetchall()}
+            if 'uq_resenas_usuario_producto_vendedor' not in review_unique_indexes:
+                review_errors.append('falta unicidad usuario/producto/vendedor')
+            if not review_errors:
+                cur.execute("""
+                    SELECT COUNT(*) AS n FROM resenas r
+                    WHERE r.verificada_compra=1 AND NOT EXISTS (
+                      SELECT 1 FROM pedido_lineas pl
+                      JOIN pedidos p ON p.id=pl.pedido_id
+                      JOIN pedido_vendedores pv ON pv.id=pl.pedido_vendedor_id
+                      WHERE pl.id=r.pedido_linea_id
+                        AND p.usuario_id=r.usuario_id
+                        AND pl.producto_ref=(
+                          SELECT pr.producto_ref FROM producto_referencias pr
+                          WHERE pr.id=r.producto_referencia_id
+                        )
+                        AND pv.vendedor_id=r.vendedor_id
+                        AND p.estado NOT IN ('cancelado','reembolsado')
+                        AND EXISTS (SELECT 1 FROM pagos pa
+                                    WHERE pa.pedido_id=p.id AND pa.estado='aprobado')
+                    )
+                """)
+                invalid_verified = cur.fetchone()['n']
+                if invalid_verified:
+                    review_errors.append(
+                        f'{invalid_verified} reseñas verificadas sin compra pagada atribuible'
+                    )
+            if review_errors:
+                print('MySQL reseñas/fraude: ' + '; '.join(review_errors))
+                ok = False
+            else:
+                print('MySQL reseñas/fraude: autoridad, unicidad y respaldo de compra OK')
+
             legacy_tables = {'productos'} & installed_tables
             fulfillment_errors = []
             if not {'pedido_envios', 'pedido_envio_lineas'} <= installed_tables:
@@ -974,23 +1025,64 @@ def main():
     # ── Neo4j ─────────────────────────────────────────────────────────────────
     try:
         from app.core.db_neo4j import close_driver, get_driver
+        from app.core.db_mysql import SessionLocal
+        from app.models.oferta import Oferta
+        from app.models.resena import Resena
+        from sqlalchemy import text
+        with SessionLocal() as verification_db:
+            expected_purchases = verification_db.execute(text("""
+                SELECT COUNT(*) FROM pedido_lineas pl
+                JOIN pedidos p ON p.id=pl.pedido_id
+                WHERE p.estado NOT IN ('cancelado','reembolsado')
+                  AND EXISTS (
+                    SELECT 1 FROM pagos pa
+                    WHERE pa.pedido_id=p.id AND pa.estado='aprobado'
+                  )
+            """)).scalar_one()
+            expected_offers = verification_db.query(Oferta).count()
+            expected_verified_reviews = verification_db.query(Resena).filter(
+                Resena.verificada_compra.is_(True)
+            ).count()
         with get_driver().session() as neo4j_session:
             constraints = {
                 row['name'] for row in neo4j_session.run('SHOW CONSTRAINTS YIELD name')
             }
             counts = neo4j_session.run(
                 'MATCH (p:Producto) WITH count(p) AS productos '
-                'OPTIONAL MATCH (r:Reseña) RETURN productos, count(r) AS resenas'
+                'OPTIONAL MATCH (r:Reseña) '
+                'WITH productos, count(r) AS resenas '
+                'OPTIONAL MATCH (c:Compra) '
+                'WITH productos, resenas, count(c) AS compras '
+                'OPTIONAL MATCH ()-[o:OFRECE]->() '
+                'WITH productos, resenas, compras, count(o) AS ofertas '
+                'OPTIONAL MATCH (:Reseña)-[b:BASADA_EN]->(:Compra) '
+                'RETURN productos, resenas, compras, ofertas, count(b) AS respaldadas'
             ).single()
-        expected_constraints = {'usuario_id', 'producto_ref', 'vendedor_id', 'resena_id'}
+        expected_constraints = {
+            'usuario_id', 'producto_ref', 'vendedor_id', 'resena_id',
+            'compra_linea_id', 'respuesta_id',
+        }
         missing = expected_constraints - constraints
         if missing:
             print(f'Neo4j: ERROR - faltan restricciones de unicidad {sorted(missing)}')
             ok = False
+        elif (
+            counts['compras'] != expected_purchases
+            or counts['ofertas'] != expected_offers
+            or counts['respaldadas'] != expected_verified_reviews
+        ):
+            print(
+                'Neo4j: ERROR - proyección divergente '
+                f"(compras {counts['compras']}/{expected_purchases}, "
+                f"ofertas {counts['ofertas']}/{expected_offers}, "
+                f"reseñas respaldadas {counts['respaldadas']}/{expected_verified_reviews})"
+            )
+            ok = False
         else:
             print(
                 f"Neo4j: OK ({counts['productos']} productos, "
-                f"{counts['resenas']} reseñas, restricciones de unicidad instaladas)"
+                f"{counts['compras']} compras, {counts['ofertas']} ofertas, "
+                f"{counts['resenas']} reseñas, restricciones instaladas)"
             )
         close_driver()
     except Exception as e:

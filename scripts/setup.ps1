@@ -237,6 +237,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
 & $python scripts\apply_outbox_v2.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del outbox por destino.' }
 
+& $python scripts\apply_review_authority.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la migración durable de reseñas.' }
+
+& $python scripts\apply_fraud_alerts.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del expediente de alertas de fraude.' }
+
 & $python scripts\backfill_cassandra_analytics.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
 
@@ -272,6 +278,14 @@ if ($LASTEXITCODE -ne 0) {
     throw 'No se pudo completar el historial de productos.'
 }
 Write-Host "  Historial verificado." -ForegroundColor Green
+
+# Neo4j es una proyección reconstruible. Conserva las compras y reseñas reales
+# del esquema heredado; no utiliza el generador de datos de demostración.
+Write-Host "  Reconstruyendo compras y reseñas reales en Neo4j..." -ForegroundColor Yellow
+& $python scripts\backfill_neo4j_reviews.py --apply
+if ($LASTEXITCODE -ne 0) {
+    throw 'No se pudo reconstruir la proyección de compras y reseñas en Neo4j.'
+}
 
 # El índice de búsqueda es una proyección: se crea si falta y se sincroniza
 # con el estado actual de MongoDB, MySQL y Neo4j. Es idempotente.

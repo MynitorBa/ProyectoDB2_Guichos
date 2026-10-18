@@ -1,4 +1,4 @@
-"""Conexión singleton a Neo4j para el grafo de reseñas."""
+"""Conexión singleton al grafo reconstruible de compras y relaciones."""
 from __future__ import annotations
 import threading
 from neo4j import GraphDatabase, Driver
@@ -32,6 +32,8 @@ def _ensure_constraints(driver: Driver) -> None:
         s.run("CREATE CONSTRAINT producto_ref IF NOT EXISTS FOR (p:Producto) REQUIRE p.ref IS UNIQUE")
         s.run("CREATE CONSTRAINT vendedor_id IF NOT EXISTS FOR (v:Vendedor) REQUIRE v.id IS UNIQUE")
         s.run("CREATE CONSTRAINT resena_id IF NOT EXISTS FOR (r:Reseña) REQUIRE r.id IS UNIQUE")
+        s.run("CREATE CONSTRAINT compra_linea_id IF NOT EXISTS FOR (c:Compra) REQUIRE c.linea_id IS UNIQUE")
+        s.run("CREATE CONSTRAINT respuesta_id IF NOT EXISTS FOR (r:Respuesta) REQUIRE r.id IS UNIQUE")
 
 def close_driver() -> None:
     global _driver

@@ -46,14 +46,19 @@ _stop_event = threading.Event()
 RUTAS: dict[str, tuple[str, ...]] = {
     'inventario.actualizado': ('mongo', 'busqueda'),
     'inventario.reconciliado': ('mongo', 'busqueda'),
-    'oferta.precio_actualizado': ('mongo', 'busqueda'),
-    'oferta.estado_actualizado': ('mongo', 'busqueda'),
-    'oferta.vendedor_actualizado': ('mongo', 'busqueda'),
-    'producto.oferta_principal_actualizada': ('mongo', 'busqueda'),
+    'oferta.precio_actualizado': ('mongo', 'busqueda', 'neo4j'),
+    'oferta.estado_actualizado': ('mongo', 'busqueda', 'neo4j'),
+    'oferta.vendedor_actualizado': ('mongo', 'busqueda', 'neo4j'),
+    'producto.oferta_principal_actualizada': ('mongo', 'busqueda', 'neo4j'),
     'producto.catalogo_actualizado': ('busqueda',),
     'flash.estado_cambiado': ('busqueda',),
     'analytics.pedido_actualizado': ('cassandra', 'busqueda'),
     'grafo.compra_registrada': ('neo4j',),
+    'grafo.pedido_actualizado': ('neo4j',),
+    'resena.creada': ('neo4j', 'busqueda'),
+    'resena.actualizada': ('neo4j', 'busqueda'),
+    'resena.moderada': ('neo4j', 'busqueda'),
+    'resena.respuesta_creada': ('neo4j',),
     'carrito.limpiar': ('redis',),
     'flash.consumir': ('redis',),
 }
@@ -115,6 +120,16 @@ def encolar_reindexado(db: Session, producto_ref: str, motivo: str) -> None:
         agregado_id=producto_ref,
         producto_ref=producto_ref,
         payload={'motivo': motivo},
+    )
+
+
+def encolar_resena(
+    db: Session, *, tipo_evento: str, resena_id: int,
+    producto_ref: str, payload: dict | None = None,
+) -> None:
+    enqueue_outbox(
+        db, tipo_evento=tipo_evento, agregado_tipo='resena',
+        agregado_id=resena_id, producto_ref=producto_ref, payload=payload or {},
     )
 
 
@@ -206,19 +221,68 @@ def _proyectar_cassandra(event: OutboxEvento, db: Session) -> None:
 
 
 def _proyectar_neo4j(event: OutboxEvento, db: Session) -> None:
-    """Registra las aristas COMPRO de un pedido (habilitan reseñas verificadas)."""
+    """Proyecta compras o reseñas desde la autoridad MySQL."""
     from app.core.db_neo4j import get_driver
+    if event.agregado_tipo == 'resena':
+        from app.services.review_service import proyectar_resena_mysql
+
+        with get_driver().session() as s:
+            proyectar_resena_mysql(s, db, int(event.agregado_id))
+        return
     from app.models.pedido import Pedido, PedidoLinea
     from app.models.pedido_vendedor import PedidoVendedor
+    from app.models.oferta import Oferta
+    from app.models.producto_variante_referencia import ProductoVarianteReferencia
     from app.models.usuario import Usuario
     from app.models.vendedor import Vendedor
     from app.services.review_service import (
-        ensure_producto, ensure_usuario, ensure_vendedor, registrar_compra,
+        ensure_producto, ensure_usuario, ensure_vendedor, proyectar_oferta,
+        registrar_compra,
     )
+
+    if event.agregado_tipo == 'oferta':
+        offer = db.get(Oferta, int(event.agregado_id))
+        if not offer:
+            # La relación es una proyección reconstruible; si la autoridad ya
+            # no contiene la oferta, retirar solo esa relación es idempotente.
+            with get_driver().session() as s:
+                s.run(
+                    'MATCH ()-[o:OFRECE {oferta_id:$oferta_id}]->() DELETE o',
+                    oferta_id=int(event.agregado_id),
+                )
+            return
+        seller = db.get(Vendedor, offer.vendedor_id)
+        variant = db.get(ProductoVarianteReferencia, offer.producto_variante_id)
+        if not seller or not variant:
+            raise RuntimeError(f'Oferta {offer.id} sin vendedor o variante canónica.')
+        with get_driver().session() as s:
+            proyectar_oferta(
+                s, vendedor_id=seller.id,
+                vendedor_nombre=seller.nombre_comercial,
+                vendedor_usuario_id=seller.usuario_id,
+                producto_ref=offer.producto_ref, oferta_id=offer.id,
+                producto_variante_id=offer.producto_variante_id,
+                variante_ref=variant.variante_ref, sku=offer.sku,
+                estado=offer.estado,
+            )
+        return
 
     pedido = db.get(Pedido, int(event.agregado_id))
     if not pedido:
         raise RuntimeError(f'Pedido {event.agregado_id} inexistente para evento {event.id}')
+    if pedido.estado in {'cancelado', 'reembolsado'} or not any(
+        pago.estado == 'aprobado' for pago in pedido.pagos
+    ):
+        with get_driver().session() as s:
+            s.run(
+                'MATCH (c:Compra {pedido_id:$pedido_id}) DETACH DELETE c',
+                pedido_id=pedido.id,
+            )
+            s.run(
+                'MATCH ()-[c:COMPRO {pedido_id:$pedido_id}]->() DELETE c',
+                pedido_id=pedido.id,
+            )
+        return
     usuario = db.get(Usuario, pedido.usuario_id)
     lineas = (
         db.query(PedidoLinea, Vendedor)
@@ -228,6 +292,19 @@ def _proyectar_neo4j(event: OutboxEvento, db: Session) -> None:
         .all()
     )
     fecha = pedido.fecha_creacion.replace(tzinfo=timezone.utc).isoformat()
+    from app.models.promocion_flash import PromocionFlash, ReservaFlash
+    flash_by_offer = {
+        offer_id: promo_id
+        for offer_id, promo_id in (
+            db.query(PromocionFlash.oferta_id, ReservaFlash.promocion_id)
+            .join(ReservaFlash, ReservaFlash.promocion_id == PromocionFlash.id)
+            .filter(
+                ReservaFlash.pedido_id == pedido.id,
+                ReservaFlash.estado == 'convertida',
+            )
+            .all()
+        )
+    }
     with get_driver().session() as s:
         ensure_usuario(s, usuario.id, f'{usuario.nombre} {usuario.apellido}'.strip(), usuario.email)
         for linea, vendedor in lineas:
@@ -235,8 +312,29 @@ def _proyectar_neo4j(event: OutboxEvento, db: Session) -> None:
                 continue
             ensure_producto(s, linea.producto_ref, linea.producto_nombre)
             ensure_vendedor(s, vendedor.id, vendedor.nombre_comercial)
-            # MERGE por pedido_id: repetir el evento no duplica la arista.
-            registrar_compra(s, usuario.id, linea.producto_ref, pedido.id, linea.oferta_id, fecha)
+            offer = db.get(Oferta, linea.oferta_id)
+            variant = (
+                db.get(ProductoVarianteReferencia, offer.producto_variante_id)
+                if offer else None
+            )
+            if offer and variant:
+                proyectar_oferta(
+                    s, vendedor_id=vendedor.id,
+                    vendedor_nombre=vendedor.nombre_comercial,
+                    vendedor_usuario_id=vendedor.usuario_id,
+                    producto_ref=linea.producto_ref, oferta_id=offer.id,
+                    producto_variante_id=offer.producto_variante_id,
+                    variante_ref=variant.variante_ref, sku=offer.sku,
+                    estado=offer.estado,
+                )
+            registrar_compra(
+                s, usuario.id, linea.producto_ref, pedido.id, linea.oferta_id, fecha,
+                linea_id=linea.id, vendedor_id=vendedor.id,
+                cantidad=linea.cantidad,
+                precio_unitario=float(linea.precio_unitario),
+                sku=linea.sku_snapshot,
+                promocion_flash_id=flash_by_offer.get(linea.oferta_id),
+            )
 
 
 def _proyectar_redis(event: OutboxEvento, db: Session) -> None:

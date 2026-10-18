@@ -12,7 +12,7 @@ from app.models.inventario import (
 from app.models.pedido import Pedido, PedidoLinea
 from app.models.pago import MetodoPago, Pago
 from app.models.carrito import Carrito, CarritoItem
-from app.models.resena import Resena
+from app.models.resena import Resena, ResenaImagen, ResenaRespuesta
 from app.models.notificacion import Notificacion
 from app.models.oferta import Oferta, OfertaPrecioHistorial, OfertaEstadoHistorial
 from app.models.pedido_vendedor import PedidoVendedor, PedidoDireccion
@@ -20,6 +20,7 @@ from app.models.pedido_envio import PedidoEnvio, PedidoEnvioLinea
 from app.models.outbox import OutboxEvento
 from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.models.checkout_saga import CheckoutSagaPaso
+from app.models.alerta_fraude import AlertaFraude
 from app.models.solicitud_catalogo import (
     SolicitudCatalogo, SolicitudCatalogoCategoria, SolicitudCatalogoImagen,
 )
@@ -34,13 +35,14 @@ __all__ = [
     'Pedido', 'PedidoLinea',
     'MetodoPago', 'Pago',
     'Carrito', 'CarritoItem',
-    'Resena',
+    'Resena', 'ResenaImagen', 'ResenaRespuesta',
     'Notificacion',
     'Oferta', 'OfertaPrecioHistorial', 'OfertaEstadoHistorial',
     'PedidoVendedor', 'PedidoDireccion',
     'OutboxEvento',
     'PromocionFlash', 'ReservaFlash',
     'CheckoutSagaPaso',
+    'AlertaFraude',
     'SolicitudCatalogo', 'SolicitudCatalogoCategoria',
     'SolicitudCatalogoImagen',
 ]

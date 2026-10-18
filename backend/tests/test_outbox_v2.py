@@ -169,10 +169,16 @@ def test_destino_neo4j_registra_compras_de_forma_idempotente():
         )
         outbox.project_event(evento, db)
         with get_driver().session() as s:
-            primero = s.run('MATCH ()-[c:COMPRO {pedido_id: $id}]->() RETURN count(c) AS n', id=pedido_id).single()['n']
+            primero = s.run(
+                'MATCH (c:Compra {pedido_id: $id}) RETURN count(c) AS n',
+                id=pedido_id,
+            ).single()['n']
         outbox.project_event(evento, db)
         with get_driver().session() as s:
-            segundo = s.run('MATCH ()-[c:COMPRO {pedido_id: $id}]->() RETURN count(c) AS n', id=pedido_id).single()['n']
+            segundo = s.run(
+                'MATCH (c:Compra {pedido_id: $id}) RETURN count(c) AS n',
+                id=pedido_id,
+            ).single()['n']
     assert primero > 0
     assert segundo == primero
 

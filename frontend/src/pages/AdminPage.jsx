@@ -28,7 +28,7 @@ import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequests
 import { AdminVendorsSection } from './AdminVendorPage'
 import { getAdminProductTrend, getAdminTrends } from '../api/analytics'
 import ProductPicker from '../components/ProductPicker'
-import { getFraudSummary, getFraudSinCompra, moderateReview } from '../api/reviews'
+import { getFraudSummary, getFraudSinCompra, getFraudAlerts, recalculateFraudAlerts, updateFraudAlert, moderateReview } from '../api/reviews'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
@@ -2257,6 +2257,27 @@ function FraudSection() {
     queryFn: () => getFraudSinCompra().then(r => r.data),
   })
 
+  const { data: alerts = [], isLoading: alertsLoading } = useQuery({
+    queryKey: ['fraud-alerts'],
+    queryFn: () => getFraudAlerts().then(r => r.data),
+  })
+
+  const recalculateMutation = useMutation({
+    mutationFn: recalculateFraudAlerts,
+    onSuccess: (res) => {
+      toast.success(`Análisis actualizado: ${res.data.autocompras} autocompras y ${res.data.inventario_atipico} señales de inventario.`)
+      qc.invalidateQueries({ queryKey: ['fraud-alerts'] })
+      qc.invalidateQueries({ queryKey: ['fraud-summary'] })
+    },
+    onError: () => toast.error('No se pudo recalcular las señales.'),
+  })
+
+  const alertMutation = useMutation({
+    mutationFn: ({ id, estado }) => updateFraudAlert(id, { estado }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['fraud-alerts'] }),
+    onError: () => toast.error('No se pudo actualizar la alerta.'),
+  })
+
   const moderateMutation = useMutation({
     mutationFn: ({ resenaId, estado }) => moderateReview(resenaId, estado),
     onSuccess: () => {
@@ -2293,6 +2314,49 @@ function FraudSection() {
             </div>
           )
         })}
+      </div>
+
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-4">
+          <div>
+            <h3 className="font-display font-semibold text-base">Alertas comerciales explicables</h3>
+            <p className="font-sans text-xs text-[var(--color-text-muted)] mt-0.5">
+              Indicios de autocompras e inventario atípico; requieren revisión humana y no bloquean cuentas.
+            </p>
+          </div>
+          <Button size="sm" loading={recalculateMutation.isPending} onClick={() => recalculateMutation.mutate()}>
+            Recalcular señales
+          </Button>
+        </div>
+        <div className="divide-y divide-[var(--color-border)]">
+          {alertsLoading
+            ? <div className="p-5"><Skeleton className="h-16 w-full" /></div>
+            : alerts.length === 0
+              ? <p className="p-8 text-center text-sm text-[var(--color-text-muted)]">No hay alertas calculadas.</p>
+              : alerts.map(alert => (
+                <div key={alert.id} className="p-4 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant={alert.prioridad === 'alta' ? 'error' : alert.prioridad === 'media' ? 'warning' : 'default'}>{alert.prioridad}</Badge>
+                      <span className="font-display text-sm font-semibold">{alert.tipo.replaceAll('_', ' ')}</span>
+                      <span className="font-mono text-xs text-[var(--color-text-muted)]">oferta #{alert.oferta_id || '—'} · vendedor #{alert.vendedor_id || '—'}</span>
+                    </div>
+                    <ul className="mt-2 text-xs text-[var(--color-text-secondary)] space-y-1 list-disc pl-4">
+                      {(alert.motivos || []).map((motivo, i) => <li key={i}>{motivo}</li>)}
+                    </ul>
+                  </div>
+                  <Select value={alert.estado} onValueChange={estado => alertMutation.mutate({ id: alert.id, estado })}>
+                    <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pendiente">Pendiente</SelectItem>
+                      <SelectItem value="en_revision">En revisión</SelectItem>
+                      <SelectItem value="descartada">Descartada</SelectItem>
+                      <SelectItem value="revisada">Revisada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+        </div>
       </div>
 
       {/* Tabla de reseñas sin compra verificada */}

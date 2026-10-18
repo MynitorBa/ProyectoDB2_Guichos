@@ -171,23 +171,11 @@ def _entradas_sugerencia(nombre: str) -> list[str]:
     return entradas
 
 
-def _ratings(neo4j_driver, refs: list[str]) -> dict[str, tuple[float, int]]:
-    if neo4j_driver is None or not refs:
-        return {}
-    try:
-        with neo4j_driver.session() as s:
-            filas = s.run(
-                """
-                MATCH (r:Reseña {estado: 'aprobada'})-[:SOBRE]->(p:Producto)
-                WHERE p.ref IN $refs
-                RETURN p.ref AS ref, avg(r.calificacion) AS promedio, count(r) AS total
-                """,
-                refs=refs,
-            ).data()
-        return {f['ref']: (round(f['promedio'] or 0.0, 2), f['total']) for f in filas}
-    except Exception as exc:  # El rating es opcional para indexar.
-        logger.warning('Neo4j no disponible al indexar ratings: %s', exc)
-        return {}
+def _ratings(mysql_db: Session, refs: list[str]) -> dict[str, tuple[float, int]]:
+    """Calificación pública desde la autoridad MySQL; Neo4j es proyección."""
+    from app.services.review_mysql_service import ratings_por_producto
+
+    return ratings_por_producto(mysql_db, refs)
 
 
 def _ventas(mysql_db: Session, refs: list[str]) -> dict[str, int]:
@@ -306,7 +294,7 @@ def construir_documentos(
         mysql_db, [o['oferta_id'] for lista in ofertas.values() for o in lista]
     )
     ventas = _ventas(mysql_db, activos) if activos else {}
-    ratings = _ratings(neo4j_driver, activos)
+    ratings = _ratings(mysql_db, activos)
     variantes = defaultdict(list)
     for variante in mongo.producto_variantes.find(
         {'producto_ref': {'$in': activos}, 'estado': 'activa'}, {'producto_ref': 1, 'atributos': 1}

@@ -581,7 +581,7 @@ def confirmar_pedido(db: Session, pedido_id: int, *, referencia: str | None = No
     # el worker del outbox lo aplica con reintentos idempotentes:
     # - Cassandra: proyección analítica de la venta (y el índice de búsqueda,
     #   que refleja las ventas en su ranking).
-    # - Neo4j: aristas COMPRO que habilitan reseñas verificadas.
+    # - Neo4j: nodos Compra pagados que habilitan reseñas verificadas.
     # - Redis: retirar del carrito lo comprado y cerrar reservas flash, como
     #   respaldo de la limpieza inmediata que intenta el endpoint.
     enqueue_outbox(db, tipo_evento='analytics.pedido_actualizado', agregado_tipo='pedido',

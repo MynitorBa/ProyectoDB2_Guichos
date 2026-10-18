@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
+from app.core.deps import get_optional_user
+from app.models.usuario import Usuario
 from app.models.producto_imagen import ProductoImagen
 from app.services import catalog_service
+from app.services import recommendation_service
 
 router = APIRouter(prefix='/products', tags=['Productos'])
 
@@ -60,6 +63,22 @@ def servir_imagen(
         media_type=img.mime_type,
         headers={'Cache-Control': 'public, max-age=86400'},
     )
+
+
+@router.get('/{producto_id}/recommendations')
+def recomendaciones_producto(
+    producto_id: str,
+    limite: int = Query(8, ge=1, le=20),
+    user: Usuario | None = Depends(get_optional_user),
+    db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
+):
+    return {
+        'items': recommendation_service.recomendar(
+            mysql_db, db, producto_ref=producto_id,
+            usuario_id=user.id if user else None, limite=limite,
+        )
+    }
 
 
 # Detalle de un producto por su _id de MongoDB enriquecido con todas las ofertas activas de MySQL

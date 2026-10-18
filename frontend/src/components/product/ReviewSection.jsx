@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Star, MessageSquare, Store, ImagePlus, X, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { getReviews, createReview, createReply, uploadReviewImages, puedeOpinar, getMiVendedor } from '../../api/reviews'
+import { getReviews, createReview, updateReview, createReply, uploadReviewImages, puedeOpinar, getMiVendedor } from '../../api/reviews'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/button'
 
@@ -294,9 +294,9 @@ export default function ReviewSection({ productoRef, vendedorId }) {
   })
 
   const { data: puedeData, isLoading: puedeLoading } = useQuery({
-    queryKey: ['puede-opinar', productoRef],
-    queryFn: () => puedeOpinar(productoRef).then(r => r.data),
-    enabled: Boolean(user && productoRef),
+    queryKey: ['puede-opinar', productoRef, vendedorId],
+    queryFn: () => puedeOpinar(productoRef, vendedorId).then(r => r.data),
+    enabled: Boolean(user && productoRef && vendedorId),
   })
 
   const { data: vendorData } = useQuery({
@@ -310,7 +310,10 @@ export default function ReviewSection({ productoRef, vendedorId }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await createReview({ producto_ref: productoRef, vendedor_id: vendedorId, calificacion, texto })
+      const existente = puedeData?.resena
+      const res = existente
+        ? await updateReview(existente.id, { calificacion, texto })
+        : await createReview({ producto_ref: productoRef, vendedor_id: vendedorId, calificacion, texto })
       const resenaId = res.data.id
       if (imageFiles.length > 0) {
         const fd = new FormData()
@@ -332,7 +335,7 @@ export default function ReviewSection({ productoRef, vendedorId }) {
       }
       setCalificacion(0); setTexto(''); setImageFiles([]); setMostrarForm(false)
       qc.invalidateQueries({ queryKey: ['reviews', productoRef] })
-      qc.invalidateQueries({ queryKey: ['puede-opinar', productoRef] })
+      qc.invalidateQueries({ queryKey: ['puede-opinar', productoRef, vendedorId] })
     },
     onError: (err) => {
       toast.error(err.response?.data?.detail || 'No se pudo enviar la reseña.')
@@ -373,13 +376,17 @@ export default function ReviewSection({ productoRef, vendedorId }) {
         puedeData?.puede ? (
           <button
             type="button"
-            onClick={() => setMostrarForm(true)}
+            onClick={() => {
+              const existente = puedeData?.resena
+              setCalificacion(existente?.calificacion || 0)
+              setTexto(existente?.texto || '')
+              setImageFiles([])
+              setMostrarForm(true)
+            }}
             className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--color-border)] py-3.5 text-sm font-semibold text-[var(--color-text-muted)] hover:border-[var(--color-action)] hover:text-[var(--color-action)] transition-all duration-150"
           >
-            <Star size={15} /> Escribir una reseña
+            <Star size={15} /> {puedeData?.ya_reseno ? 'Editar tu reseña para este vendedor' : 'Escribir una reseña'}
           </button>
-        ) : puedeData?.ya_reseno ? (
-          <p className="text-center text-sm text-[var(--color-text-muted)] py-2">Ya dejaste una reseña para este producto.</p>
         ) : (
           <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
             <ShieldCheck size={16} className="shrink-0 text-[var(--color-text-muted)]" />
@@ -391,7 +398,9 @@ export default function ReviewSection({ productoRef, vendedorId }) {
       {/* ── Formulario de reseña ── */}
       {mostrarForm && (
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 space-y-4 shadow-[0_4px_20px_rgba(41,182,246,0.08)]">
-          <p className="font-display font-bold text-base text-[var(--color-text-primary)]">Tu reseña</p>
+          <p className="font-display font-bold text-base text-[var(--color-text-primary)]">
+            {puedeData?.ya_reseno ? 'Editar tu reseña' : 'Tu reseña'}
+          </p>
 
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">Calificación</p>
@@ -416,7 +425,7 @@ export default function ReviewSection({ productoRef, vendedorId }) {
               loading={mutation.isPending}
               onClick={() => mutation.mutate()}
             >
-              Publicar reseña
+              {puedeData?.ya_reseno ? 'Guardar cambios' : 'Publicar reseña'}
             </Button>
             <Button variant="ghost" onClick={() => { setMostrarForm(false); setImageFiles([]) }}>
               Cancelar

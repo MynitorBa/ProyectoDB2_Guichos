@@ -200,7 +200,9 @@ def admin_status(db, order_id, user, target):
     db.add(Notificacion(usuario_id=order.usuario_id, tipo='pedido', titulo=f'Pedido #{order.id} {target}',
         mensaje='Actualización administrativa del pedido. Los pagos de esta aplicación son simulados.'))
     if target in {'cancelado', 'reembolsado'}:
-        from app.services.outbox_service import enqueue_outbox
+        from app.models.producto_referencia import ProductoReferencia
+        from app.services.outbox_service import enqueue_outbox, encolar_resena
+        from app.services.review_mysql_service import revalidar_por_pedido
         enqueue_outbox(
             db,
             tipo_evento='analytics.pedido_actualizado',
@@ -209,6 +211,19 @@ def admin_status(db, order_id, user, target):
             producto_ref=None,
             payload={'motivo': target},
         )
+        enqueue_outbox(
+            db,
+            tipo_evento='grafo.pedido_actualizado',
+            agregado_tipo='pedido', agregado_id=order.id,
+            producto_ref=None, payload={'motivo': target},
+        )
+        for review in revalidar_por_pedido(db, order.id):
+            reference = db.get(ProductoReferencia, review.producto_referencia_id)
+            encolar_resena(
+                db, tipo_evento='resena.actualizada', resena_id=review.id,
+                producto_ref=reference.producto_ref,
+                payload={'motivo': target},
+            )
     db.commit()
 
 

@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch, Store, ShieldCheck, Zap } from 'lucide-react'
 import { motion, useInView } from 'motion/react'
-import { useRef } from 'react'
 import { toast } from 'sonner'
-import { getProduct, getActiveFlashSales, reserveFlashSale } from '../api/products'
+import { getProduct, getProductRecommendations, getActiveFlashSales, reserveFlashSale } from '../api/products'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { ProductImage } from '../components/product/ProductImage'
+import { ProductCard } from '../components/product/ProductCard'
 import { CategoryAttrPanel } from '../components/product/CategoryAttrPanel'
 import ReviewSection from '../components/product/ReviewSection'
 import { StarRating } from '../components/ui/star-rating'
@@ -77,6 +77,12 @@ export default function ProductDetailPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['product', id],
     queryFn: () => getProduct(id).then((r) => r.data),
+  })
+  const { data: recommendationData } = useQuery({
+    queryKey: ['product-recommendations', id, user?.id],
+    queryFn: () => getProductRecommendations(id, 8).then((r) => r.data),
+    enabled: Boolean(id),
+    staleTime: 60_000,
   })
   const { data: allFlashRows = [], refetch: refetchFlash } = useQuery({
     queryKey: ['flash-sales-product', id],
@@ -608,7 +614,28 @@ export default function ProductDetailPage() {
             </>
           )}
 
-          {/* Reseñas Neo4j */}
+          {(recommendationData?.items?.length || 0) > 0 && (
+            <>
+              <Reveal>
+                <section>
+                  <h2 className="font-display font-bold text-xl text-[var(--color-text-primary)] mb-1">
+                    Quienes compraron este producto también compraron
+                  </h2>
+                  <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
+                    Recomendaciones por compradores en común; precio y existencia se validan en tiempo real.
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {recommendationData.items.map(item => (
+                      <ProductCard key={item._id} product={item} />
+                    ))}
+                  </div>
+                </section>
+              </Reveal>
+              <Separator />
+            </>
+          )}
+
+          {/* Reseñas autoritativas en MySQL; Neo4j conserva la proyección relacional. */}
           <Reveal className="mt-10">
             <div className="border-t border-[var(--color-border)] pt-8">
               <h2 className="font-display font-bold text-xl mb-6">Reseñas del producto</h2>

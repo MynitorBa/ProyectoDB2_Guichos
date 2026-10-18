@@ -103,12 +103,13 @@ def ya_reseno(s, user_id: int, producto_ref: str) -> bool:
     return bool(row and row["cnt"] > 0)
 
 
-def registrar_compra(s, user_id, producto_ref, pedido_id, oferta_id, fecha):
+def registrar_compra(s, user_id, producto_ref, pedido_id, oferta_id, vendedor_id, fecha):
     s.run(
         "MATCH (u:Usuario {id:$uid}), (p:Producto {ref:$ref}) "
-        "MERGE (u)-[c:COMPRO {pedido_id:$pid}]->(p) "
-        "SET c.oferta_id=$oid, c.fecha=$fecha",
-        uid=user_id, ref=producto_ref, pid=pedido_id, oid=oferta_id, fecha=fecha,
+        "MERGE (u)-[c:COMPRO {linea_id:$linea_id}]->(p) "
+        "SET c.pedido_id=$pid, c.oferta_id=$oid, c.vendedor_id=$vid, c.fecha=$fecha",
+        uid=user_id, ref=producto_ref, linea_id=pedido_id, pid=pedido_id,
+        oid=oferta_id, vid=vendedor_id, fecha=fecha,
     )
 
 
@@ -148,6 +149,15 @@ def merge_nodes(s, users, productos_map, vendors_map):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    print(
+        "Este generador quedó deshabilitado: no se inventan compras ni reseñas "
+        "verificadas en Neo4j. Usa scripts/backfill_neo4j_reviews.py --apply "
+        "para reconstruir la proyección desde MySQL."
+    )
+    return 2
+
+    # Código histórico conservado temporalmente como referencia; es
+    # inalcanzable para impedir que una demo cree compras ficticias.
     print("🔗 Conectando a MySQL...")
     engine = get_engine()
 
@@ -223,7 +233,9 @@ def main():
                     continue
 
                 fecha = rand_fecha()
-                registrar_compra(s, user["id"], ref, pid_base + i, oferta["id"], fecha)
+                registrar_compra(
+                    s, user["id"], ref, pid_base + i, oferta["id"], vid, fecha,
+                )
 
                 rating = rand_rating()
                 texto  = rand_text(rating)
