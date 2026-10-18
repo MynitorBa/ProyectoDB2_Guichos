@@ -606,8 +606,17 @@ def e12_neo4j(c):
     def compra_registrada(e, pid):
         from app.core.db_neo4j import get_driver
         with get_driver().session() as s:
-            aristas = s.run('MATCH ()-[c:COMPRO {pedido_id: $p}]->() RETURN count(c) AS n', p=pid).single()['n']
-        e.comprobar('La compra quedó registrada en Neo4j (arista COMPRO): habilita reseña verificada', aristas >= 1)
+            compras = s.run(
+                'MATCH (:Usuario)-[:REALIZO]->(c:Compra {pedido_id:$p}) '
+                'WHERE EXISTS { MATCH (c)-[:DE_PRODUCTO]->(:Producto) } '
+                '  AND EXISTS { MATCH (c)-[:A_VENDEDOR]->(:Vendedor) } '
+                'RETURN count(c) AS n',
+                p=pid,
+            ).single()['n']
+        e.comprobar(
+            'La compra quedó registrada con REALIZO, DE_PRODUCTO y A_VENDEDOR',
+            compras >= 1,
+        )
     return _componente_caido(c, 'E12', 'tiendaya_neo4j', 'neo4j', 'Neo4j', None, compra_registrada)
 
 

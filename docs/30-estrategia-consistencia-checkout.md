@@ -17,7 +17,7 @@ Un checkout escribe en seis lugares que **no comparten transacción**:
 | MongoDB | Stock y precio mostrados en el catálogo | Proyección |
 | Elasticsearch | Documento de búsqueda (stock, ventas) | Proyección |
 | Cassandra | Ventas por semana | Proyección analítica |
-| Neo4j | Arista `COMPRO` (compra verificada para reseñas) | Proyección |
+| Neo4j | Nodo `Compra` y relaciones `REALIZO`, `DE_PRODUCTO` y `A_VENDEDOR` | Proyección |
 
 Una transacción distribuida clásica (2PC/XA) no es posible: la pasarela, Redis, MongoDB,
 Elasticsearch, Cassandra y Neo4j no son participantes XA. Aunque lo fueran, 2PC bloquea
@@ -187,7 +187,7 @@ flowchart LR
 | F14 | Redis no responde al iniciar el checkout | No se crea pedido ni se toca inventario; el carrito sigue intacto al volver Redis. Si Redis cae después de confirmar, la limpieza del carrito espera en el outbox | 503 `CART_UNAVAILABLE` | E09 |
 | F15 | MongoDB caído | Pedido confirmado; evento `mongo` retenido; los demás destinos al día | 201 | E10 |
 | F16 | Elasticsearch caído | Pedido confirmado; búsqueda degradada a MongoDB | 201 | E11 |
-| F17 | Neo4j caído | Pedido confirmado; la arista `COMPRO` llega al volver | 201 | E12 |
+| F17 | Neo4j caído | Pedido confirmado; el nodo `Compra` y sus relaciones definitivas llegan al volver | 201 | E12 |
 | F18 | Cassandra caída | Pedido confirmado; la proyección analítica se pone al día | 201 | E13 |
 | F19 | Un destino falla 10 veces | Evento `fallido`, reintentable sin afectar a los demás | — | `test_evento_agotado_queda_fallido_y_se_puede_reintentar` |
 

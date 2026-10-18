@@ -63,7 +63,8 @@ consumidor con reintentos exponenciales, así que una base caída no retrasa a
 las demás. El reconciliador resuelve pagos con resultado desconocido y el
 recolector libera las reservas de sagas interrumpidas. Neo4j recibe por outbox
 el modelo `Usuario → Compra → Producto/Vendedor`, con una compra única por línea
-pagada; la arista histórica `COMPRO` se mantiene únicamente durante la transición.
+pagada. Las 80 aristas históricas `COMPRO` permanecen inertes para preservar la
+evidencia, pero ningún consumidor funcional las lee, crea, modifica o elimina.
 Detalle en
 [`30-estrategia-consistencia-checkout.md`](30-estrategia-consistencia-checkout.md)
 y [`29-busqueda-elasticsearch.md`](29-busqueda-elasticsearch.md).

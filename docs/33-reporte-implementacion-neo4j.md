@@ -1,6 +1,8 @@
 # Reporte de implementación definitiva de Neo4j
 
 Fecha de trabajo: 17 de octubre de 2026. Rama local: `entrega3-mynor`.
+Commit local de implementación revisado:
+`66328618eaab842a439fb48215df2b8a48d69953`.
 
 Este reporte distingue lo implementado de lo comprobado. No sustituye el
 procedimiento de instalación ni autoriza eliminar el modelo heredado.
@@ -49,9 +51,34 @@ Usuario -ESCRIBIO-> Reseña -SOBRE-> Producto
 - El backfill es reconstruible desde MySQL y MongoDB.
 
 Conciliación local aplicada: 77 nodos `Compra`, 72 relaciones `OFRECE`, 42
-reseñas y 17 relaciones `BASADA_EN`. `COMPRO` continúa temporalmente para no
-romper evidencias heredadas; retirarla requiere autorización expresa y una
-última comprobación de consumidores.
+reseñas y 17 relaciones `BASADA_EN`.
+
+## Cierre de dependencias heredadas `COMPRO`
+
+- La proyección de compras crea solamente `Compra`, `REALIZO`, `DE_PRODUCTO` y
+  `A_VENDEDOR`; dejó de escribir `COMPRO`.
+- La cancelación retira el nodo `Compra` correspondiente y ya no intenta borrar
+  una arista heredada.
+- El escenario E12 de `demo_fallas.py` comprueba el modelo definitivo después
+  de recuperar Neo4j.
+- `simulate_fraud.py` quedó como auditoría de solo lectura. Ya no inyecta ni
+  elimina nodos para fabricar casos.
+- `seed_reviews.py` quedó retirado como generador heredado y remite al backfill
+  idempotente desde las autoridades actuales.
+- Se retiró el CRUD de reseñas Neo4j que ya no tenía consumidores; las rutas
+  autoritativas permanecen en `review_mysql_service.py`.
+- Una prueba de regresión inspecciona estos consumidores para impedir que
+  `COMPRO` vuelva a introducirse.
+
+Las 80 relaciones `COMPRO` existentes no fueron modificadas. Se conservan como
+evidencia histórica inerte y su eventual eliminación debe realizarse en una
+operación separada, expresamente autorizada y respaldada.
+
+Los tres pedidos semilla anteriores a la saga (`13`, `14` y `27`) se mantienen
+sin alteraciones. Se identifican por no tener `clave_idempotencia`; el
+verificador los reporta como nota histórica y aplica el invariante de pago
+solamente a pedidos creados por la saga. No se reescriben para simular datos
+modernos ni se eliminan.
 
 ## Fase 3 — Recomendaciones
 
@@ -86,8 +113,12 @@ romper evidencias heredadas; retirarla requiere autorización expresa y una
 ## Evidencia de pruebas
 
 - Compilación Python de los módulos modificados: aprobada.
-- Nueve pruebas nuevas de modelo, unicidad, atribución a vendedor,
-  recomendaciones, fraude, ventas flash y rutas de outbox: aprobadas.
+- El commit definitivo agregó nueve pruebas de modelo, unicidad, atribución a
+  vendedor, recomendaciones, fraude, ventas flash y rutas de outbox. El dato
+  anterior de “ocho nuevas” era un conteo preliminar; no se eliminó ni sustituyó
+  ninguna prueba. La base inmediatamente anterior tenía 162 y quedó en 171.
+- Este cierre agrega dos regresiones para impedir la reintroducción de `COMPRO`
+  en consumidores y para validar E12 contra el nodo `Compra` completo.
 - Build de producción del frontend: aprobado.
 - `setup.ps1` y `verify_setup.py` terminaron en `Setup completo` con 77 compras,
   72 ofertas, 42 reseñas y 17 respaldos `BASADA_EN` proyectados en Neo4j.
@@ -96,8 +127,12 @@ romper evidencias heredadas; retirarla requiere autorización expresa y una
 - La diferencia Cassandra 78 / Neo4j 77 no es una divergencia: Cassandra
   conserva además la línea 106 del pedido reembolsado 96 para calcular ingresos
   reembolsados y netos; Neo4j proyecta únicamente las 77 compras pagadas que
-  siguen vigentes. No se alteró la proyección Cassandra durante este cierre.
-- La suite integral terminó con **171 pruebas aprobadas y 0 fallos**.
+  siguen vigentes. `setup.ps1` volvió a ejecutar el backfill idempotente y
+  conservó exactamente las mismas 78 líneas; no cambió el contenido lógico ni
+  se intentó ajustar artificialmente la diferencia.
+- Antes de este cierre, la suite integral terminó con **171 pruebas aprobadas y
+  0 fallos**. Tras agregar las dos regresiones, la ejecución final terminó con
+  **173 pruebas aprobadas y 0 fallos**.
 - La compilación final de Vite procesó 3060 módulos y terminó correctamente.
 
 ## Comandos finales de comprobación
@@ -113,4 +148,6 @@ cd ..\frontend
 npm run build
 ```
 
-No se creó commit ni se hizo push durante esta implementación.
+La implementación definitiva ya estaba conservada en el commit local
+`66328618eaab842a439fb48215df2b8a48d69953`. Durante este cierre no se creó otro
+commit ni se hizo push.

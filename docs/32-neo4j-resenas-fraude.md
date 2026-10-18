@@ -32,9 +32,10 @@
 siempre se leen desde MySQL. Una variante se identifica mediante las referencias
 canónicas existentes, sin crear otro nodo.
 
-La arista histórica `COMPRO` se conserva temporalmente para validar las
-consultas heredadas. Las funciones nuevas usan exclusivamente nodos `Compra`.
-No debe borrarse hasta autorizar el corte y comprobar que ninguna consulta la usa.
+Las 80 aristas históricas `COMPRO` se conservan únicamente como evidencia de la
+etapa anterior. El cierre verificó que código, demostraciones y rutas actuales
+usan exclusivamente nodos `Compra`; ninguna función las crea, lee o elimina.
+Su eliminación física queda separada y requiere autorización expresa.
 
 ## Reseñas
 

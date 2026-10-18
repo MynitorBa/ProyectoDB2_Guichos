@@ -53,7 +53,7 @@ cobros de la pasarela.
 | [E09](evidencia/fallas/E09.md) | Redis (carrito) no responde | 503 `CART_UNAVAILABLE` | Ningún pedido creado, inventario intacto; el carrito sigue al volver Redis | — |
 | [E10](evidencia/fallas/E10.md) | MongoDB detenido | 201 | Eventos `mongo` retenidos; Cassandra, Neo4j y Redis al día con MongoDB caído; todo converge al volver | Demás destinos al día en 6.5 s |
 | [E11](evidencia/fallas/E11.md) | Elasticsearch detenido | 201 | La búsqueda sigue en modo degradado (MongoDB); el índice converge al volver | Demás destinos al día en 0.5 s |
-| [E12](evidencia/fallas/E12.md) | Neo4j detenido | 201 | La arista `COMPRO` espera en el outbox y llega al volver | Demás destinos al día en 9.1 s |
+| [E12](evidencia/fallas/E12.md) | Neo4j detenido | 201 | El nodo `Compra` y sus relaciones definitivas esperan en el outbox y llegan al volver | Demás destinos al día en 9.1 s |
 | [E13](evidencia/fallas/E13.md) | Cassandra detenida | 201 | La proyección analítica se pone al día al volver | Demás destinos al día en 0.5 s |
 
 En E10 la búsqueda (`busqueda`) también espera, porque sus documentos se arman con el

@@ -278,10 +278,6 @@ def _proyectar_neo4j(event: OutboxEvento, db: Session) -> None:
                 'MATCH (c:Compra {pedido_id:$pedido_id}) DETACH DELETE c',
                 pedido_id=pedido.id,
             )
-            s.run(
-                'MATCH ()-[c:COMPRO {pedido_id:$pedido_id}]->() DELETE c',
-                pedido_id=pedido.id,
-            )
         return
     usuario = db.get(Usuario, pedido.usuario_id)
     lineas = (

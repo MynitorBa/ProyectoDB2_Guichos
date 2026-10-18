@@ -45,6 +45,7 @@ def test_purchase_projection_is_identified_by_line_and_records_seller():
     assert 'MERGE (c:Compra {linea_id: $linea_id})' in session.query
     assert 'MERGE (u)-[:REALIZO]->(c)' in session.query
     assert 'MERGE (c)-[:A_VENDEDOR]->(v)' in session.query
+    assert ':COMPRO' not in session.query
     assert session.params['linea_id'] == 30
     assert session.params['vendedor_id'] == 40
 
@@ -122,6 +123,31 @@ def test_offer_changes_are_routed_to_neo4j():
     assert 'neo4j' in destinos_de('oferta.estado_actualizado')
     assert 'neo4j' in destinos_de('oferta.vendedor_actualizado')
     assert 'neo4j' in destinos_de('producto.oferta_principal_actualizada')
+
+
+def test_functional_consumers_no_longer_read_or_write_legacy_compro():
+    backend = Path(__file__).resolve().parents[1]
+    paths = [
+        backend / 'app' / 'services' / 'review_service.py',
+        backend / 'app' / 'services' / 'outbox_service.py',
+        backend / 'scripts' / 'demo_fallas.py',
+        backend / 'scripts' / 'simulate_fraud.py',
+        backend / 'scripts' / 'seed_reviews.py',
+    ]
+
+    for path in paths:
+        assert ':COMPRO' not in path.read_text(encoding='utf-8'), path
+
+
+def test_failure_demo_validates_complete_purchase_node():
+    script = (
+        Path(__file__).resolve().parents[1]
+        / 'scripts' / 'demo_fallas.py'
+    ).read_text(encoding='utf-8')
+
+    assert ':REALIZO' in script
+    assert ':DE_PRODUCTO' in script
+    assert ':A_VENDEDOR' in script
 
 
 def test_review_create_duplicate_and_edit_are_enforced_transactionally():

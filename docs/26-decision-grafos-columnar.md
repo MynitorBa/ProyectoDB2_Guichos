@@ -45,15 +45,21 @@ MySQL (auto-JOIN repetidos sobre reseñas y usuarios).
 (:Producto {ref, nombre})          ref = ObjectId del catálogo MongoDB
 (:Vendedor {id, nombre})
 (:Reseña {id, calificacion, texto, fecha, estado, verificada, imagenes})
+(:Compra {linea_id, pedido_id, oferta_id, fecha, cantidad, promocion_flash_id})
 
 (Usuario)-[:ESCRIBIO]->(Reseña)
 (Reseña)-[:SOBRE]->(Producto)
-(Reseña)-[:PARA_VENDEDOR]->(Vendedor)
-(Usuario)-[:COMPRO {pedido_id, oferta_id, fecha}]->(Producto)
+(Reseña)-[:CALIFICA_A]->(Vendedor)
+(Reseña)-[:BASADA_EN]->(Compra)
+(Usuario)-[:REALIZO]->(Compra)
+(Compra)-[:DE_PRODUCTO]->(Producto)
+(Compra)-[:A_VENDEDOR]->(Vendedor)
+(Usuario)-[:GESTIONA]->(Vendedor)
+(Vendedor)-[:OFRECE]->(Producto)
 ```
 
-Restricciones de unicidad: `Usuario.id`, `Producto.ref`, `Vendedor.id` y
-`Reseña.id` (ver `backend/app/core/db_neo4j.py`).
+Restricciones de unicidad: `Usuario.id`, `Producto.ref`, `Vendedor.id`,
+`Reseña.id` y `Compra.linea_id` (ver `backend/app/core/db_neo4j.py`).
 
 ### Consultas de detección (`backend/app/services/fraud_detection_service.py`)
 
@@ -62,7 +68,7 @@ Restricciones de unicidad: `Usuario.id`, `Producto.ref`, `Vendedor.id` y
 | Cluster coordinado | Pares de usuarios que reseñaron los mismos ≥3 productos: `(u1)-[:ESCRIBIO]->()-[:SOBRE]->(p)<-[:SOBRE]-()<-[:ESCRIBIO]-(u2)` | 4 |
 | Reseñador de un solo vendedor | Usuarios con ≥3 reseñas, todas hacia el mismo vendedor | 2 |
 | Bombardeo | Productos con ≥5 reseñas en 24 horas | 1 |
-| Sin compra verificada | Reseñas cuyo autor no tiene arista `COMPRO` hacia el producto | 2 |
+| Sin compra verificada | Reseñas sin `BASADA_EN` hacia una `Compra` pagada y atribuible | 1 |
 
 La consulta de cluster coordinado es la consulta de varios saltos que exige el
 enunciado. Además, las reglas de bombardeo y reseñador único se evalúan antes
@@ -70,9 +76,10 @@ de crear cada reseña: si se activan, la reseña queda `pendiente` de moderació
 
 ### Datos de demostración
 
-- `backend/scripts/seed_reviews.py` genera compras y reseñas realistas.
-- `backend/scripts/simulate_fraud.py` inyecta los cuatro patrones pasando por el
-  servicio real (`--limpiar` los retira).
+- `backend/scripts/seed_reviews.py` quedó retirado como generador para impedir
+  que recree el modelo heredado; solo conserva un mensaje de compatibilidad.
+- `backend/scripts/simulate_fraud.py` es una auditoría de solo lectura sobre
+  los patrones presentes. No inyecta ni elimina usuarios, compras o reseñas.
 
 ## Límites de responsabilidad
 
@@ -81,12 +88,13 @@ de crear cada reseña: si se activan, la reseña queda `pendiente` de moderació
 - **Redis** conserva carrito y reservas efímeras de ventas flash.
 - **Cassandra** mantiene una proyección reconstruible para analítica; nunca
   aprueba pagos ni descuenta inventario.
-- **Neo4j** es la fuente de las reseñas y del grafo de interacción. La arista
-  `COMPRO` es una proyección de los pedidos de MySQL que habilita las reseñas
-  verificadas; nunca decide pagos ni inventario.
+- **MySQL** también es la autoridad de reseñas, imágenes, respuestas y su
+  verificación. Impone la unicidad por usuario, producto y vendedor.
+- **Neo4j** es una proyección reconstruible para recomendaciones y fraude. Las
+  compras se modelan con `Compra`, `REALIZO`, `DE_PRODUCTO` y `A_VENDEDOR`;
+  nunca decide pagos, inventario ni elegibilidad de una reseña.
 
 Ninguno de los dos motores analíticos participa en la decisión de una compra.
-Cassandra recibe las ventas mediante el outbox después del commit en MySQL. A
-inicios de la Entrega 3, la arista `COMPRO` se escribe después del commit con
-un bloque de mejor esfuerzo que descarta errores silenciosamente; esa falla
-parcial se aborda en la estrategia de consistencia de la Entrega 3.
+Cassandra y Neo4j reciben sus proyecciones mediante el outbox después del
+commit en MySQL. Las 80 aristas `COMPRO` de la etapa anterior permanecen como
+evidencia histórica inerte: ningún consumidor funcional las lee o escribe.
