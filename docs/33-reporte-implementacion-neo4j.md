@@ -70,9 +70,10 @@ reseñas y 17 relaciones `BASADA_EN`.
 - Una prueba de regresión inspecciona estos consumidores para impedir que
   `COMPRO` vuelva a introducirse.
 
-Las 80 relaciones `COMPRO` existentes no fueron modificadas. Se conservan como
-evidencia histórica inerte y su eventual eliminación debe realizarse en una
-operación separada, expresamente autorizada y respaldada.
+Al cerrar esta fase funcional, las 80 relaciones `COMPRO` todavía no habían sido
+modificadas: se conservaron temporalmente como evidencia histórica inerte hasta
+la operación separada, expresamente autorizada y respaldada, que se documenta
+en la sección **Limpieza definitiva de `COMPRO`** de este reporte.
 
 Los tres pedidos semilla anteriores a la saga (`13`, `14` y `27`) se mantienen
 sin alteraciones. Se identifican por no tener `clave_idempotencia`; el
@@ -149,5 +150,42 @@ npm run build
 ```
 
 La implementación definitiva ya estaba conservada en el commit local
-`66328618eaab842a439fb48215df2b8a48d69953`. Durante este cierre no se creó otro
-commit ni se hizo push.
+`66328618eaab842a439fb48215df2b8a48d69953`. El retiro de consumidores heredados
+se consolidó posteriormente en el segundo commit indicado a continuación. No
+se hizo push.
+
+## Limpieza definitiva de `COMPRO`
+
+Fecha de ejecución: 17 de octubre de 2026, hora de Guatemala. Segundo commit
+local previo a la operación:
+`3455b76b4554e11585a3240f9b39f9d329221d0b`.
+
+- Se auditaron 80 relaciones heredadas `COMPRO`, con 11 usuarios y 48 productos
+  distintos. Todos los extremos y los 80 `pedido_id` pudieron resolverse.
+- El respaldo restaurable se guardó fuera de Git en
+  `C:\Users\fboan\Documents\ChatGPT\Proyecto Base de datos\Respaldos TiendaYa\neo4j\compro_legacy_20261018_054437.json`.
+- SHA-256 del archivo:
+  `c2e736fa4026f306d972fff6346d8b3bfe3bc28a4a7482bf706cc7fac1ce307b`.
+- SHA-256 del arreglo canónico de relaciones:
+  `e4f469209ae90e4a2294c068236c61823f0db38361b721ddb7a98e5cd95d027f`.
+- El respaldo se releyó, conservó 80 registros, coincidió con el estado de
+  Neo4j, resolvió sus 80 usuarios y productos y la consulta de restauración fue
+  validada con `EXPLAIN`.
+- Una única transacción eliminó exactamente 80 relaciones con
+  `MATCH ()-[r:COMPRO]->() DELETE r`. No se usó `DETACH DELETE` ni se eliminaron
+  nodos u otras relaciones.
+- Resultado final: 0 `COMPRO`, 77 `Compra`, 77 `DE_PRODUCTO`, 77 `A_VENDEDOR`,
+  72 `OFRECE` y 17 `BASADA_EN`; no hay compras incompletas.
+- MySQL conserva 42 reseñas (17 verificadas y 25 históricas no verificadas) y
+  los pedidos semilla 13, 14 y 27.
+- El backfill Neo4j reconstruyó la proyección definitiva y `COMPRO` permaneció
+  en cero. `verify_setup.py` terminó correctamente, los siete invariantes se
+  cumplieron y la suite final aprobó 173 pruebas.
+- No se ejecutó `setup.ps1` completo después de la eliminación porque también
+  reconstruye Cassandra y esta operación prohibía modificarla. Se ejecutó
+  directamente el mismo backfill Neo4j invocado por setup y se comprobó en el
+  código que setup, backfill y outbox no contienen consumidores de `COMPRO`.
+
+El modelo Neo4j definitivo opera exclusivamente con nodos `Compra` y las
+relaciones `REALIZO`, `DE_PRODUCTO` y `A_VENDEDOR`. El respaldo debe conservarse
+hasta el cierre académico o hasta que el equipo autorice retirarlo.
