@@ -77,6 +77,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de ventas flash.' }
     & $python scripts\apply_outbox_v2.py
     if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del outbox por destino.' }
+    & $python scripts\apply_fraud_alerts.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de alertas de fraude.' }
+    & $python scripts\apply_fraud_automation.py
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de automatización de fraude.' }
     & $python -c "from app.core.db_cassandra import cassandra_health, close_cassandra; print(cassandra_health()); close_cassandra()"
     if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de Cassandra.' }
     & $python scripts\repair_catalog_data.py --apply
@@ -114,6 +118,13 @@ $backendJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\backend
 # 4. Frontend (en proceso separado)
 Write-Host "Iniciando frontend React en :5173..." -ForegroundColor Yellow
 $frontendJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\frontend`" && npm run dev" -PassThru -WindowStyle Normal
+
+# Worker de fraude separado de FastAPI. Permanece apagado por defecto.
+$fraudWorkerHabilitado = Select-String -Path "$Root\backend\.env" -Pattern '^\s*FRAUD_ANALYSIS_ENABLED\s*=\s*true' -Quiet -ErrorAction SilentlyContinue
+if ($fraudWorkerHabilitado) {
+    Write-Host "Iniciando análisis horario de fraude..." -ForegroundColor Yellow
+    $fraudWorkerJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root\backend`" && `"$python`" scripts\run_fraud_analysis.py --serve" -PassThru -WindowStyle Normal
+}
 
 # 5. Laboratorio de consistencia (herramienta de desarrollo aparte de la tienda).
 # Solo tiene sentido si el backend registra los endpoints de fallas.

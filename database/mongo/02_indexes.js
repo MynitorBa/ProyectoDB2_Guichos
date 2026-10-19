@@ -2,7 +2,7 @@
 // TiendaYa — Índices MongoDB
 // =============================================================================
 
-const db = db.getSiblingDB('tiendaya');
+const db = db.getSiblingDB(process.env.MONGO_INITDB_DATABASE || 'tiendaya');
 
 // ─── Colección: productos ─────────────────────────────────────────────────────
 

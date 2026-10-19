@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     NEO4J_USER: str = "neo4j"
     NEO4J_PASSWORD: str = "tiendaya123"
 
+    # Análisis de fraude. El worker independiente permanece apagado hasta que
+    # la migración y las pruebas se validen en cada entorno.
+    FRAUD_ANALYSIS_ENABLED: bool = False
+    FRAUD_ANALYSIS_INTERVAL_SECONDS: int = 3600
+    FRAUD_ANALYSIS_LOCK_NAME: str = 'tiendaya:fraud-analysis'
+    FRAUD_ANALYSIS_LOCK_TIMEOUT_SECONDS: int = 0
+    FRAUD_SELF_PURCHASE_WINDOW_DAYS: int = 30
+
     # Elasticsearch (índice de búsqueda; proyección reconstruible del catálogo)
     # 127.0.0.1 y no localhost: en Windows, localhost intenta IPv6 primero y
     # agrega ~40 ms a cada consulta.

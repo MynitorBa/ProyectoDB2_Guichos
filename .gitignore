@@ -20,6 +20,9 @@ dist/
 .env
 .env.local
 .env.production
+.env.demo
+backend/.env.demo
+demo-seed-state/
 
 # OneDrive / Windows
 desktop.ini

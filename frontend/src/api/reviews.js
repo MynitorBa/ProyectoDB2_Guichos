@@ -41,8 +41,17 @@ export const getFraudCluster = (params) =>
 export const recalculateFraudAlerts = () =>
   api.post('/reviews/admin/fraude/recalcular')
 
+export const getFraudAnalysisStatus = () =>
+  api.get('/reviews/admin/fraude/estado-analisis')
+
 export const getFraudAlerts = (params = {}) =>
   api.get('/reviews/admin/fraude/alertas', { params })
+
+export const getFraudIndicator = (regla, params = {}) =>
+  api.get(`/reviews/admin/fraude/indicadores/${regla}`, { params })
+
+export const getFraudAlertsPaginated = (params = {}) =>
+  api.get('/reviews/admin/fraude/alertas-paginadas', { params })
 
 export const updateFraudAlert = (alertaId, data) =>
   api.patch(`/reviews/admin/fraude/alertas/${alertaId}`, data)

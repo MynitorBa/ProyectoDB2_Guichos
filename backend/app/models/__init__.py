@@ -21,6 +21,7 @@ from app.models.outbox import OutboxEvento
 from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.models.checkout_saga import CheckoutSagaPaso
 from app.models.alerta_fraude import AlertaFraude
+from app.models.fraud_analysis_run import FraudAnalysisRun
 from app.models.solicitud_catalogo import (
     SolicitudCatalogo, SolicitudCatalogoCategoria, SolicitudCatalogoImagen,
 )
@@ -42,7 +43,7 @@ __all__ = [
     'OutboxEvento',
     'PromocionFlash', 'ReservaFlash',
     'CheckoutSagaPaso',
-    'AlertaFraude',
+    'AlertaFraude', 'FraudAnalysisRun',
     'SolicitudCatalogo', 'SolicitudCatalogoCategoria',
     'SolicitudCatalogoImagen',
 ]

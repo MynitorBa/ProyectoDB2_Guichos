@@ -243,6 +243,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la migración durable de reseñas.' }
 & $python scripts\apply_fraud_alerts.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del expediente de alertas de fraude.' }
 
+& $python scripts\apply_fraud_automation.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de automatización de fraude.' }
+
 & $python scripts\backfill_cassandra_analytics.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
 

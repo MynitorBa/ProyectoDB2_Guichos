@@ -32,6 +32,15 @@ def iter_statements(script: str):
 def run_sql_file(connection: pymysql.Connection, path: Path) -> int:
     count = 0
     script = path.read_text(encoding='utf-8-sig')
+    # Las migraciones históricas contienen ``USE tiendaya``. Respetar la base
+    # seleccionada por la conexión permite ejecutarlas en un entorno aislado
+    # (por ejemplo ``tiendaya_demo``) sin conceder acceso a la base principal.
+    database = connection.db
+    if isinstance(database, bytes):
+        database = database.decode('utf-8')
+    if database:
+        safe_database = str(database).replace('`', '``')
+        script = script.replace('USE tiendaya;', f'USE `{safe_database}`;')
     with connection.cursor() as cursor:
         for statement in iter_statements(script):
             cursor.execute(statement)

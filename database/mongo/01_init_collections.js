@@ -5,7 +5,7 @@
 // categoria_esquemas que alimenta los formularios dinámicos del panel admin.
 // =============================================================================
 
-const db = db.getSiblingDB('tiendaya');
+const db = db.getSiblingDB(process.env.MONGO_INITDB_DATABASE || 'tiendaya');
 
 // ─── Colección: productos ─────────────────────────────────────────────────────
 db.createCollection('productos', {

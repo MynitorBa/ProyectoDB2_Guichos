@@ -645,6 +645,28 @@ def main():
             else:
                 print('MySQL reseñas/fraude: autoridad, unicidad y respaldo de compra OK')
 
+            automation_errors = []
+            if 'fraud_analysis_runs' not in installed_tables:
+                automation_errors.append('falta tabla fraud_analysis_runs')
+            required_automation_columns = {
+                ('alertas_fraude', 'activa'),
+                ('alertas_fraude', 'resuelta_en'),
+                ('alertas_fraude', 'ultima_ejecucion_id'),
+                ('alertas_fraude', 'origen_ultima_deteccion'),
+            }
+            missing_automation_columns = sorted(
+                required_automation_columns - installed_columns
+            )
+            if missing_automation_columns:
+                automation_errors.append(
+                    f'columnas faltantes: {missing_automation_columns}'
+                )
+            if automation_errors:
+                print('MySQL automatización fraude: ' + '; '.join(automation_errors))
+                ok = False
+            else:
+                print('MySQL automatización fraude: bitácora y vigencia instaladas')
+
             legacy_tables = {'productos'} & installed_tables
             fulfillment_errors = []
             if not {'pedido_envios', 'pedido_envio_lineas'} <= installed_tables:

@@ -41,10 +41,17 @@ export default function LoginPage() {
       navigate('/')
     } catch (err) {
       localStorage.removeItem('token')
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        'Credenciales incorrectas. Intenta de nuevo.'
+      let msg
+      if (!err?.response) {
+        msg = 'No fue posible conectar con el servidor. Verifica que TiendaYa esté iniciado e intenta de nuevo.'
+      } else if (err.response.status === 401) {
+        msg = err.response.data?.detail || 'Credenciales incorrectas. Intenta de nuevo.'
+      } else {
+        msg =
+          err.response.data?.detail ||
+          err.response.data?.message ||
+          'El servidor no pudo completar el inicio de sesión. Intenta de nuevo en unos momentos.'
+      }
       setError('root', { message: msg })
     }
   }

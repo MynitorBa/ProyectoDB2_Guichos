@@ -28,7 +28,7 @@ import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequests
 import { AdminVendorsSection } from './AdminVendorPage'
 import { getAdminProductTrend, getAdminTrends } from '../api/analytics'
 import ProductPicker from '../components/ProductPicker'
-import { getFraudSummary, getFraudSinCompra, getFraudAlerts, recalculateFraudAlerts, updateFraudAlert, moderateReview } from '../api/reviews'
+import { getFraudSummary, getFraudIndicator, getFraudAlertsPaginated, getFraudAnalysisStatus, recalculateFraudAlerts, updateFraudAlert, moderateReview } from '../api/reviews'
 
 const NAV_ITEMS = [
   { id: 'stats',      label: 'Estadísticas', icon: BarChart2      },
@@ -2243,66 +2243,187 @@ function SalesSection() {
   )
 }
 
+function FraudAlertRow({ alert, onUpdate, loading }) {
+  const [notes, setNotes] = useState(alert.notas_revision || '')
+  const save = (estado = alert.estado) => onUpdate({
+    id: alert.id, data: { estado, notas: notes || null },
+  })
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant={alert.prioridad === 'alta' ? 'error' : alert.prioridad === 'media' ? 'warning' : 'default'}>{alert.prioridad}</Badge>
+            <Badge variant={alert.activa ? 'success' : 'default'}>{alert.activa ? 'Activa' : 'Histórica'}</Badge>
+            <span className="font-display text-sm font-semibold">{{ autocompra: 'F05 · Autocompra', inventario_atipico: 'F06 · Inventario atípico', coincidencia_cantidad: 'F07 · Coincidencia exacta' }[alert.tipo] || alert.tipo.replaceAll('_', ' ')}</span>
+            <span className="font-mono text-xs text-[var(--color-text-muted)]">oferta #{alert.oferta_id || '—'} · {alert.vendedor_nombre || `vendedor #${alert.vendedor_id || '—'}`}</span>
+          </div>
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+            {alert.producto_nombre || alert.producto_ref || 'Producto sin nombre'}{alert.oferta_sku ? ` · SKU ${alert.oferta_sku}` : ''}{alert.usuario_nombre ? ` · comprador ${alert.usuario_nombre}` : ''}
+          </p>
+          <ul className="mt-2 text-xs text-[var(--color-text-secondary)] space-y-1 list-disc pl-4">
+            {(alert.motivos || []).map((motivo, i) => <li key={i}>{motivo}</li>)}
+          </ul>
+          <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+            Última detección: {formatDate(alert.ultima_deteccion)} · Origen: {alert.origen || 'anterior a la automatización'}
+          </p>
+        </div>
+        <Select value={alert.estado} disabled={loading} onValueChange={save}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pendiente">Pendiente</SelectItem>
+            <SelectItem value="en_revision">En revisión</SelectItem>
+            <SelectItem value="descartada">Descartada</SelectItem>
+            <SelectItem value="revisada">Revisada</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <details className="text-xs rounded border border-[var(--color-border)] p-3">
+        <summary className="cursor-pointer font-semibold">Evidencia detallada</summary>
+        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-[11px]">{JSON.stringify(alert.evidencias || {}, null, 2)}</pre>
+      </details>
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <Label className="text-xs">Notas de revisión</Label>
+          <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Conclusiones del administrador" />
+        </div>
+        <Button variant="secondary" size="sm" loading={loading} onClick={() => save()}>Guardar notas</Button>
+      </div>
+    </div>
+  )
+}
+
 // ── FraudSection ──
 function FraudSection() {
   const qc = useQueryClient()
+  const [indicator, setIndicator] = useState(null)
+  const [indicatorPage, setIndicatorPage] = useState(1)
+  const [indicatorSize, setIndicatorSize] = useState(20)
+  const [indicatorSearch, setIndicatorSearch] = useState('')
+  const [alertPage, setAlertPage] = useState(1)
+  const [alertSize, setAlertSize] = useState(20)
+  const [alertSearch, setAlertSearch] = useState('')
+  const [alertType, setAlertType] = useState('todos')
+  const [alertPriority, setAlertPriority] = useState('todas')
+  const [alertState, setAlertState] = useState('todos')
+  const [alertActive, setAlertActive] = useState('todas')
+  const [alertOrder, setAlertOrder] = useState('fecha_desc')
 
   const { data: fraudData, isLoading: fraudLoading } = useQuery({
     queryKey: ['fraud-summary'],
     queryFn: () => getFraudSummary().then(r => r.data),
   })
 
-  const { data: sinCompraData, isLoading: sinCompraLoading } = useQuery({
-    queryKey: ['fraud-sin-compra'],
-    queryFn: () => getFraudSinCompra().then(r => r.data),
+  const indicatorRule = indicator?.rule || indicator?.key?.replace('_historico', '')
+  const indicatorSegment = indicator?.key?.endsWith('_historico')
+    ? 'historicas_no_verificadas' : 'verificadas_publicas'
+  const { data: indicatorData, isLoading: indicatorLoading, isError: indicatorError } = useQuery({
+    queryKey: ['fraud-indicator', indicatorRule, indicatorSegment, indicatorPage, indicatorSize, indicatorSearch],
+    queryFn: () => getFraudIndicator(indicatorRule, {
+      pagina: indicatorPage, tamano: indicatorSize, buscar: indicatorSearch || undefined,
+      segmento: indicatorSegment,
+    }).then(r => r.data),
+    enabled: Boolean(indicatorRule),
+    placeholderData: keepPreviousData,
   })
 
-  const { data: alerts = [], isLoading: alertsLoading } = useQuery({
-    queryKey: ['fraud-alerts'],
-    queryFn: () => getFraudAlerts().then(r => r.data),
+  const alertParams = {
+    pagina: alertPage, tamano: alertSize, buscar: alertSearch || undefined,
+    tipo: alertType === 'todos' ? undefined : alertType,
+    prioridad: alertPriority === 'todas' ? undefined : alertPriority,
+    estado: alertState === 'todos' ? undefined : alertState,
+    activa: alertActive === 'todas' ? undefined : alertActive === 'activas',
+    orden: alertOrder,
+  }
+  const { data: alertsData, isLoading: alertsLoading, isError: alertsError } = useQuery({
+    queryKey: ['fraud-alerts', alertParams],
+    queryFn: () => getFraudAlertsPaginated(alertParams).then(r => r.data),
+    placeholderData: keepPreviousData,
+  })
+  const alerts = alertsData?.items || []
+
+  const { data: analysisStatus, isLoading: analysisLoading } = useQuery({
+    queryKey: ['fraud-analysis-status'],
+    queryFn: () => getFraudAnalysisStatus().then(r => r.data),
+    refetchInterval: 30000,
   })
 
   const recalculateMutation = useMutation({
     mutationFn: recalculateFraudAlerts,
     onSuccess: (res) => {
-      toast.success(`Análisis actualizado: ${res.data.autocompras} autocompras y ${res.data.inventario_atipico} señales de inventario.`)
+      const summary = res.data?.resumen || {}
+      toast.success(`Análisis actualizado: ${summary.autocompras ?? 0} F05, ${summary.inventario_atipico ?? 0} F06 y ${summary.coincidencia_cantidad ?? 0} F07.`)
       qc.invalidateQueries({ queryKey: ['fraud-alerts'] })
       qc.invalidateQueries({ queryKey: ['fraud-summary'] })
+      qc.invalidateQueries({ queryKey: ['fraud-analysis-status'] })
     },
-    onError: () => toast.error('No se pudo recalcular las señales.'),
+    onError: (error) => toast.error(error?.response?.status === 409
+      ? 'Ya hay un análisis de fraude en curso.'
+      : 'No se pudo recalcular las señales.'),
   })
 
   const alertMutation = useMutation({
-    mutationFn: ({ id, estado }) => updateFraudAlert(id, { estado }),
+    mutationFn: ({ id, data }) => updateFraudAlert(id, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['fraud-alerts'] }),
     onError: () => toast.error('No se pudo actualizar la alerta.'),
   })
 
   const moderateMutation = useMutation({
     mutationFn: ({ resenaId, estado }) => moderateReview(resenaId, estado),
-    onSuccess: () => {
-      toast.success('Estado de reseña actualizado.')
-      qc.invalidateQueries({ queryKey: ['fraud-sin-compra'] })
+    onSuccess: (_, variables) => {
+      toast.success(variables.estado === 'aprobada'
+        ? 'Moderación aprobada. La reseña seguirá oculta mientras su compra no pueda verificarse.'
+        : 'Estado de reseña actualizado.')
+      qc.invalidateQueries({ queryKey: ['fraud-indicator'] })
       qc.invalidateQueries({ queryKey: ['fraud-summary'] })
     },
     onError: () => toast.error('No se pudo actualizar la reseña.'),
   })
 
   const FRAUD_CARDS = [
-    { key: 'bombardeo',             label: 'Bombardeo',              color: 'text-red-600 bg-red-50 border-red-200'     },
-    { key: 'sin_compra_verificada', label: 'Sin compra verificada',  color: 'text-amber-600 bg-amber-50 border-amber-200' },
-    { key: 'reviewer_unico_vendedor', label: 'Reviewer único vendedor', color: 'text-orange-600 bg-orange-50 border-orange-200' },
-    { key: 'cluster_coordinado',    label: 'Cluster coordinado',     color: 'text-purple-600 bg-purple-50 border-purple-200' },
+    { key: 'bombardeo',             rule: 'bombardeo', label: 'F01 · Bombardeo', color: 'text-red-600 bg-red-50 border-red-200' },
+    { key: 'sin_compra_verificada', rule: 'sin_compra', label: 'F04 · Compra no verificable', color: 'text-amber-600 bg-amber-50 border-amber-200' },
+    { key: 'reviewer_unico_vendedor', rule: 'reviewer_unico_vendedor', label: 'F02 · Un vendedor', color: 'text-orange-600 bg-orange-50 border-orange-200' },
+    { key: 'cluster_coordinado',    rule: 'cluster', label: 'F03 · Cluster coordinado', color: 'text-purple-600 bg-purple-50 border-purple-200' },
+    { key: 'bombardeo_historico', rule: 'bombardeo', label: 'F01 · Histórico', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+    { key: 'reviewer_unico_vendedor_historico', rule: 'reviewer_unico_vendedor', label: 'F02 · Histórico', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+    { key: 'cluster_coordinado_historico', rule: 'cluster', label: 'F03 · Histórico', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+    { key: 'autocompra', commercialType: 'autocompra', label: 'F05 · Autocompra', color: 'text-rose-600 bg-rose-50 border-rose-200' },
+    { key: 'inventario_atipico', commercialType: 'inventario_atipico', label: 'F06 · Inventario', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+    { key: 'coincidencia_cantidad', commercialType: 'coincidencia_cantidad', label: 'F07 · Coincidencia', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
   ]
+
+  const runLabel = (run) => run
+    ? `${run.estado} · ${formatDate(run.finalizada_en || run.iniciada_en)} · ${run.duracion_ms ?? 0} ms`
+    : 'Sin ejecuciones'
 
   return (
     <div className="space-y-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          ['Última automática', analysisStatus?.ultima_automatica],
+          ['Última manual', analysisStatus?.ultima_manual],
+          ['Último análisis exitoso', analysisStatus?.ultimo_exito],
+        ].map(([label, run]) => (
+          <div key={label} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <p className="text-xs uppercase font-bold text-[var(--color-text-muted)]">{label}</p>
+            {analysisLoading ? <Skeleton className="h-5 mt-2" /> : <p className="text-sm mt-2">{runLabel(run)}</p>}
+            {run?.error && <p className="text-xs text-red-600 mt-1">{run.error}</p>}
+          </div>
+        ))}
+      </div>
+      {analysisStatus?.en_curso && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Hay un análisis en curso desde {formatDate(analysisStatus.en_curso.iniciada_en)}.
+        </div>
+      )}
       {/* Tarjetas de resumen */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {FRAUD_CARDS.map(({ key, label, color }) => {
+        {FRAUD_CARDS.map((card) => {
+          const { key, label, color } = card
           const item = fraudData?.[key]
           return (
-            <div key={key} className={`rounded-[var(--radius-lg)] border p-4 ${color}`}>
+            <button key={key} type="button" onClick={() => { if (card.commercialType) { setAlertType(card.commercialType); setAlertPage(1); document.getElementById('fraud-commercial-alerts')?.scrollIntoView({ behavior: 'smooth' }) } else { setIndicator(card); setIndicatorPage(1); setIndicatorSearch('') } }} className={`rounded-[var(--radius-lg)] border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${color}`}>
               <div className="flex items-center gap-2 mb-1">
                 <AlertTriangle size={15} />
                 <span className="font-sans text-xs font-bold uppercase tracking-wide">{label}</span>
@@ -2311,12 +2432,13 @@ function FraudSection() {
                 ? <Skeleton className="h-8 w-16 mt-1" />
                 : <p className="font-mono font-bold text-3xl">{item?.count ?? 0}</p>
               }
-            </div>
+              <p className="mt-2 text-[11px] font-semibold">Ver registros →</p>
+            </button>
           )
         })}
       </div>
 
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
+      <div id="fraud-commercial-alerts" className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
         <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-4">
           <div>
             <h3 className="font-display font-semibold text-base">Alertas comerciales explicables</h3>
@@ -2324,116 +2446,106 @@ function FraudSection() {
               Indicios de autocompras e inventario atípico; requieren revisión humana y no bloquean cuentas.
             </p>
           </div>
-          <Button size="sm" loading={recalculateMutation.isPending} onClick={() => recalculateMutation.mutate()}>
+          <Button size="sm" disabled={Boolean(analysisStatus?.en_curso)} loading={recalculateMutation.isPending} onClick={() => recalculateMutation.mutate()}>
             Recalcular señales
           </Button>
+        </div>
+        <div className="p-4 border-b border-[var(--color-border)] grid grid-cols-1 md:grid-cols-7 gap-2">
+          <Input className="md:col-span-2" value={alertSearch} onChange={e => { setAlertSearch(e.target.value); setAlertPage(1) }} placeholder="Buscar vendedor, producto, SKU u oferta" />
+          <Select value={alertType} onValueChange={v => { setAlertType(v); setAlertPage(1) }}><SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger><SelectContent>
+            <SelectItem value="todos">F05–F07</SelectItem><SelectItem value="autocompra">F05 · Autocompra</SelectItem><SelectItem value="inventario_atipico">F06 · Inventario</SelectItem><SelectItem value="coincidencia_cantidad">F07 · Coincidencia</SelectItem>
+          </SelectContent></Select>
+          <Select value={alertPriority} onValueChange={v => { setAlertPriority(v); setAlertPage(1) }}><SelectTrigger><SelectValue placeholder="Prioridad" /></SelectTrigger><SelectContent>
+            <SelectItem value="todas">Toda prioridad</SelectItem>{['informativa','baja','media','alta'].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+          </SelectContent></Select>
+          <Select value={alertState} onValueChange={v => { setAlertState(v); setAlertPage(1) }}><SelectTrigger><SelectValue placeholder="Revisión" /></SelectTrigger><SelectContent>
+            <SelectItem value="todos">Todo estado</SelectItem><SelectItem value="pendiente">Pendiente</SelectItem><SelectItem value="en_revision">En revisión</SelectItem><SelectItem value="descartada">Descartada</SelectItem><SelectItem value="revisada">Revisada</SelectItem>
+          </SelectContent></Select>
+          <Select value={alertActive} onValueChange={v => { setAlertActive(v); setAlertPage(1) }}><SelectTrigger><SelectValue placeholder="Vigencia" /></SelectTrigger><SelectContent>
+            <SelectItem value="todas">Activas e históricas</SelectItem><SelectItem value="activas">Activas</SelectItem><SelectItem value="historicas">Históricas</SelectItem>
+          </SelectContent></Select>
+          <Select value={alertOrder} onValueChange={v => { setAlertOrder(v); setAlertPage(1) }}><SelectTrigger><SelectValue placeholder="Orden" /></SelectTrigger><SelectContent><SelectItem value="fecha_desc">Más recientes</SelectItem><SelectItem value="prioridad_desc">Mayor prioridad</SelectItem></SelectContent></Select>
         </div>
         <div className="divide-y divide-[var(--color-border)]">
           {alertsLoading
             ? <div className="p-5"><Skeleton className="h-16 w-full" /></div>
+            : alertsError
+              ? <p className="p-8 text-center text-sm text-red-600">No fue posible consultar los expedientes. Intenta nuevamente.</p>
             : alerts.length === 0
-              ? <p className="p-8 text-center text-sm text-[var(--color-text-muted)]">No hay alertas calculadas.</p>
-              : alerts.map(alert => (
-                <div key={alert.id} className="p-4 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant={alert.prioridad === 'alta' ? 'error' : alert.prioridad === 'media' ? 'warning' : 'default'}>{alert.prioridad}</Badge>
-                      <span className="font-display text-sm font-semibold">{alert.tipo.replaceAll('_', ' ')}</span>
-                      <span className="font-mono text-xs text-[var(--color-text-muted)]">oferta #{alert.oferta_id || '—'} · vendedor #{alert.vendedor_id || '—'}</span>
-                    </div>
-                    <ul className="mt-2 text-xs text-[var(--color-text-secondary)] space-y-1 list-disc pl-4">
-                      {(alert.motivos || []).map((motivo, i) => <li key={i}>{motivo}</li>)}
-                    </ul>
-                  </div>
-                  <Select value={alert.estado} onValueChange={estado => alertMutation.mutate({ id: alert.id, estado })}>
-                    <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pendiente">Pendiente</SelectItem>
-                      <SelectItem value="en_revision">En revisión</SelectItem>
-                      <SelectItem value="descartada">Descartada</SelectItem>
-                      <SelectItem value="revisada">Revisada</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
+              ? <p className="p-8 text-center text-sm text-[var(--color-text-muted)]">
+                  {analysisStatus?.ultimo_exito
+                    ? 'No se detectaron alertas comerciales.'
+                    : 'Aún no se ha ejecutado un análisis comercial.'}
+                </p>
+              : alerts.map(alert => <FraudAlertRow
+                  key={alert.id}
+                  alert={alert}
+                  loading={alertMutation.isPending}
+                  onUpdate={(payload) => alertMutation.mutate(payload)}
+                />)}
+        </div>
+        <div className="p-4 border-t border-[var(--color-border)] flex items-center justify-between gap-3">
+          <span className="text-xs text-[var(--color-text-muted)]">{alertsData?.total || 0} expedientes · página {alertsData?.pagina || 1} de {alertsData?.paginas || 1}</span>
+          <div className="flex items-center gap-2">
+            <Select value={String(alertSize)} onValueChange={v => { setAlertSize(Number(v)); setAlertPage(1) }}><SelectTrigger className="w-20"><SelectValue /></SelectTrigger><SelectContent>{[10,20,50].map(v => <SelectItem key={v} value={String(v)}>{v}</SelectItem>)}</SelectContent></Select>
+            <Button variant="secondary" size="sm" disabled={alertPage <= 1} onClick={() => setAlertPage(p => p - 1)}>Anterior</Button>
+            <Button variant="secondary" size="sm" disabled={alertPage >= (alertsData?.paginas || 1)} onClick={() => setAlertPage(p => p + 1)}>Siguiente</Button>
+          </div>
         </div>
       </div>
 
-      {/* Tabla de reseñas sin compra verificada */}
-      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[var(--color-border)]">
-          <h3 className="font-display font-semibold text-base text-[var(--color-text-primary)]">
-            Reseñas pendientes / sin compra verificada
-          </h3>
-          <p className="font-sans text-xs text-[var(--color-text-muted)] mt-0.5">
-            Usuarios que reseñaron sin haber comprado el producto — requieren moderación manual
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[var(--color-background)]">
-                {['Usuario', 'Producto', 'Cal.', 'Fecha', 'Reseña ID', 'Acciones'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left font-sans font-semibold text-xs uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border)] whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sinCompraLoading
-                ? Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}><td colSpan={6} className="px-4 py-2"><Skeleton className="h-7 w-full" /></td></tr>
-                  ))
-                : !sinCompraData?.length
-                  ? <tr><td colSpan={6} className="px-4 py-10 text-center font-sans text-sm text-[var(--color-text-muted)]">No hay reseñas sin compra verificada actualmente.</td></tr>
-                  : sinCompraData.map((r) => (
-                      <tr key={r.resena_id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)]/60">
-                        <td className="px-4 py-3">
-                          <p className="font-display font-semibold text-xs">{r.usuario_nombre}</p>
-                          <p className="font-mono text-[10px] text-[var(--color-text-muted)]">ID {r.usuario_id}</p>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-[var(--color-text-muted)] max-w-[120px] truncate" title={r.producto_ref}>
-                          {r.producto_nombre || r.producto_ref}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-0.5">
-                            {[1,2,3,4,5].map(n => (
-                              <Star key={n} size={11} className={r.calificacion >= n ? 'fill-amber-400 text-amber-400' : 'text-gray-200'} />
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-sans text-xs text-[var(--color-text-muted)] whitespace-nowrap">
-                          {r.fecha ? new Date(r.fecha).toLocaleDateString('es-GT') : '—'}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-[10px] text-[var(--color-text-muted)] max-w-[100px] truncate" title={r.resena_id}>
-                          {r.resena_id}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
-                              disabled={moderateMutation.isPending}
-                              onClick={() => moderateMutation.mutate({ resenaId: r.resena_id, estado: 'aprobada' })}
-                              title="Aprobar reseña"
-                            >
-                              <CheckCircle size={14} /> Aprobar
-                            </button>
-                            <button
-                              className="flex items-center gap-1 text-xs font-semibold text-red-500 hover:text-red-600 disabled:opacity-50"
-                              disabled={moderateMutation.isPending}
-                              onClick={() => moderateMutation.mutate({ resenaId: r.resena_id, estado: 'rechazada' })}
-                              title="Rechazar reseña"
-                            >
-                              <XCircle size={14} /> Rechazar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Dialog open={Boolean(indicator)} onOpenChange={open => !open && setIndicator(null)}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogTitle>{indicator?.label || 'Detalle del indicador'}</DialogTitle>
+          <DialogDescription>
+            {indicatorRule === 'sin_compra'
+              ? 'Reseñas autoritativas consultadas en MySQL; Neo4j aporta únicamente el nombre proyectado del producto.'
+              : 'Registros reales consultados en Neo4j. El indicador es explicativo y no bloquea operaciones.'}
+          </DialogDescription>
+          {indicatorRule === 'cluster' && <p className="text-xs text-[var(--color-text-muted)]">Cada registro representa un par de usuarios; varios pares pueden pertenecer al mismo grupo conectado. Compartir productos reseñados requiere revisión y no demuestra coordinación fraudulenta.</p>}
+          {indicatorRule === 'bombardeo' && (
+            <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              Ventana analizada: últimas 24 horas · umbral: 5 reseñas verificadas por producto.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Input value={indicatorSearch} onChange={e => { setIndicatorSearch(e.target.value); setIndicatorPage(1) }} placeholder="Buscar usuario, producto o vendedor" />
+            <Select value={String(indicatorSize)} onValueChange={v => { setIndicatorSize(Number(v)); setIndicatorPage(1) }}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent>{[10,20,50].map(v => <SelectItem key={v} value={String(v)}>{v}</SelectItem>)}</SelectContent></Select>
+          </div>
+          {indicatorLoading ? <Skeleton className="h-52 w-full" /> : indicatorError ? <p className="py-10 text-center text-sm text-red-600">No fue posible consultar este indicador.</p> : (
+            <div className="space-y-2">
+              {(indicatorData?.items || []).map((item, index) => (
+                <div key={item.resena_id || `${item.usuario_id || item.usuario1_id || item.producto_ref}-${index}`} className="rounded border border-[var(--color-border)] p-3 text-sm">
+                  <p className="font-semibold">{item.producto_nombre || item.vendedor_nombre || `${item.usuario1_nombre || item.usuario_nombre || 'Registro'}${item.usuario2_nombre ? ` ↔ ${item.usuario2_nombre}` : ''}`}</p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                    {item.total_resenas != null && `${item.total_resenas} reseñas`}
+                    {item.productos_comunes != null && `${item.productos_comunes} productos comunes`}
+                    {item.calificacion != null && `Calificación ${item.calificacion}/5 · ${formatDate(item.fecha)}`}
+                  </p>
+                  {item.resena_id && <p className="font-mono text-[11px] mt-1">Reseña {item.resena_id} · producto {item.producto_ref}</p>}
+                  {indicatorRule === 'sin_compra' && <div className="mt-2 rounded bg-amber-50 border border-amber-200 p-2 text-xs text-amber-900"><p>Vendedor: {item.vendedor_nombre || 'sin vendedor proyectado'} · Moderación: {item.estado} · Compra verificada: {item.verificada ? 'sí' : 'no'}</p><p className="mt-1">Motivo: {item.motivo_no_verificada}</p><p className="mt-1">Evidencia faltante: {item.evidencia_faltante}</p></div>}
+                  {(item.resenas || item.productos) && <details className="mt-2 text-xs rounded border border-[var(--color-border)] p-2"><summary className="cursor-pointer font-semibold">Abrir reseñas y evidencia</summary>
+                    <div className="mt-2 space-y-2">
+                      {(item.resenas || []).map((review) => <div key={review.resena_id} className="rounded bg-[var(--color-background)] p-2">
+                        <p className="font-mono">Reseña {review.resena_id} · {formatDate(review.fecha)}</p>
+                        <p>{review.usuario_nombre && `${review.usuario_nombre} · `}{review.producto_nombre || review.producto_ref || ''} · compra {review.verificada ? 'verificada' : 'no verificada'}{review.estado ? ` · ${review.estado}` : ''}</p>
+                      </div>)}
+                      {(item.productos || []).map((product) => <div key={product.ref} className="rounded bg-[var(--color-background)] p-2">
+                        <p className="font-semibold">{product.nombre || product.ref} <span className="font-mono font-normal">({product.ref})</span></p>
+                        {(product.resenas || []).map((pair, idx) => <p key={`${pair.resena1_id}-${pair.resena2_id}-${idx}`} className="font-mono mt-1">{pair.resena1_id} ({formatDate(pair.resena1_fecha)}) ↔ {pair.resena2_id} ({formatDate(pair.resena2_fecha)})</p>)}
+                      </div>)}
+                    </div>
+                    <details className="mt-2"><summary className="cursor-pointer text-[var(--color-text-muted)]">Ver evidencia técnica</summary><pre className="mt-1 whitespace-pre-wrap overflow-x-auto">{JSON.stringify(item.resenas || item.productos, null, 2)}</pre></details>
+                  </details>}
+                  {indicatorRule === 'sin_compra' && <div className="flex gap-3 mt-2"><button className="text-xs font-semibold text-emerald-600" disabled={moderateMutation.isPending} onClick={() => moderateMutation.mutate({ resenaId: item.resena_id, estado: 'aprobada' })}><CheckCircle size={13} className="inline" /> Aprobar moderación</button><button className="text-xs font-semibold text-red-600" disabled={moderateMutation.isPending} onClick={() => moderateMutation.mutate({ resenaId: item.resena_id, estado: 'rechazada' })}><XCircle size={13} className="inline" /> Rechazar</button></div>}
+                </div>
+              ))}
+              {!indicatorData?.items?.length && <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">No se detectaron casos para estos filtros.</p>}
+            </div>
+          )}
+          <div className="flex justify-between items-center"><span className="text-xs text-[var(--color-text-muted)]">{indicatorData?.total || 0} registros · página {indicatorData?.pagina || 1} de {indicatorData?.paginas || 1}</span><div className="flex gap-2"><Button variant="secondary" size="sm" disabled={indicatorPage <= 1} onClick={() => setIndicatorPage(p => p - 1)}>Anterior</Button><Button variant="secondary" size="sm" disabled={indicatorPage >= (indicatorData?.paginas || 1)} onClick={() => setIndicatorPage(p => p + 1)}>Siguiente</Button><DialogClose asChild><Button variant="secondary" size="sm">Cerrar</Button></DialogClose></div></div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

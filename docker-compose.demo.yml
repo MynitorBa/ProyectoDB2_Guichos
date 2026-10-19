@@ -1,0 +1,128 @@
+name: tiendaya_demo
+
+# Entorno completamente aislado para datos sintéticos. Nunca comparte
+# contenedores, volúmenes, puertos ni nombres de base con la instancia principal.
+services:
+  mysql-demo:
+    image: mysql:8.0
+    container_name: tiendaya_demo_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DEMO_MYSQL_ROOT_PASSWORD:-demo-root-local}
+      MYSQL_DATABASE: tiendaya_demo
+      MYSQL_USER: tiendaya_demo
+      MYSQL_PASSWORD: ${DEMO_MYSQL_PASSWORD:-demo-only-local}
+    ports: ["3317:3306"]
+    volumes:
+      - demo_mysql_data:/var/lib/mysql
+    # Perfil eficiente para una DEMO local: mantiene margen para el motor
+    # principal sin cambiar ninguna de sus opciones.
+    mem_limit: 768m
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=256M --performance-schema=OFF
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DEMO_MYSQL_ROOT_PASSWORD:-demo-root-local}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  mongo-demo:
+    image: mongo:7.0
+    container_name: tiendaya_demo_mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: demo_admin
+      MONGO_INITDB_ROOT_PASSWORD: ${DEMO_MONGO_PASSWORD:-demo-only-local}
+      MONGO_INITDB_DATABASE: tiendaya_demo
+    ports: ["27117:27017"]
+    mem_limit: 768m
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
+    volumes:
+      - demo_mongo_data:/data/db
+      - ./database/mongo:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  redis-demo:
+    image: redis:7.2-alpine
+    container_name: tiendaya_demo_redis
+    ports: ["6389:6379"]
+    volumes: ["demo_redis_data:/data"]
+    mem_limit: 256m
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 192mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  cassandra-demo:
+    image: cassandra:4.1.12
+    container_name: tiendaya_demo_cassandra
+    ports: ["9142:9042"]
+    environment:
+      CASSANDRA_CLUSTER_NAME: TiendaYa DEMO Analytics
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    mem_limit: 1536m
+    volumes: ["demo_cassandra_data:/var/lib/cassandra"]
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT release_version FROM system.local' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+      start_period: 90s
+
+  neo4j-demo:
+    image: neo4j:5.26
+    container_name: tiendaya_demo_neo4j
+    ports: ["7574:7474", "7787:7687"]
+    environment:
+      NEO4J_AUTH: neo4j/${DEMO_NEO4J_PASSWORD:-demo-only-local}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    mem_limit: 1024m
+    volumes: ["demo_neo4j_data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 45s
+
+  elasticsearch-demo:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: tiendaya_demo_elasticsearch
+    ports: ["9210:9200"]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.ml.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      cluster.name: tiendaya-demo-busqueda
+      http.cors.enabled: "true"
+      http.cors.allow-origin: http://localhost:8183
+      http.cors.allow-headers: X-Requested-With,Content-Type,Content-Length,Authorization
+    mem_limit: 1280m
+    volumes: ["demo_es_data:/usr/share/elasticsearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+      start_period: 60s
+
+volumes:
+  demo_mysql_data:
+  demo_mongo_data:
+  demo_redis_data:
+  demo_cassandra_data:
+  demo_neo4j_data:
+  demo_es_data:

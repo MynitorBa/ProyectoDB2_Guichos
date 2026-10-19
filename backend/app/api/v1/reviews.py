@@ -22,6 +22,9 @@ from app.models.producto_referencia import ProductoReferencia
 from app.services import review_mysql_service as mysql_svc
 from app.services.outbox_service import encolar_resena
 from app.services import fraud_detection_service as fraud
+from app.services.fraud_analysis_service import (
+    FraudAnalysisBusy, fraud_analysis_status, run_fraud_analysis_once,
+)
 
 router = APIRouter(prefix='/reviews', tags=['Reseñas'])
 get_admin = require_role('administrador')
@@ -235,19 +238,58 @@ def moderar(
 @router.get('/admin/fraude/resumen')
 def fraude_resumen(
     _: Usuario = Depends(get_admin),
+    db: Session = Depends(get_db),
     neo4j: Neo4jSession = Depends(get_neo4j),
 ):
-    return fraud.resumen_fraude(neo4j)
+    summary = fraud.resumen_fraude(neo4j)
+    f04 = fraud.listar_sin_compra_mysql(db, pagina=1, tamano=5)
+    fraud.enriquecer_nombres_producto(neo4j, f04['items'])
+    summary['sin_compra_verificada'] = {
+        'count': f04['total'], 'items': f04['items'],
+    }
+    summary.update(fraud.resumen_alertas_comerciales(db))
+    return summary
+
+
+@router.get('/admin/fraude/indicadores/{regla}')
+def fraude_indicador_paginado(
+    regla: str,
+    pagina: int = Query(1, ge=1),
+    tamano: int = Query(20, enum=[10, 20, 50]),
+    buscar: str | None = Query(None, max_length=120),
+    segmento: str = Query('verificadas_publicas', pattern='^(verificadas_publicas|historicas_no_verificadas)$'),
+    ventana_horas: int = Query(24, ge=1, le=168),
+    umbral: int = Query(5, ge=2),
+    min_resenas: int = Query(3, ge=2),
+    min_comun: int = Query(3, ge=2),
+    _: Usuario = Depends(get_admin),
+    db: Session = Depends(get_db),
+    neo4j: Neo4jSession = Depends(get_neo4j),
+):
+    if regla not in {'bombardeo', 'sin_compra', 'reviewer_unico_vendedor', 'cluster'}:
+        raise HTTPException(404, 'Indicador de fraude desconocido.')
+    if regla == 'sin_compra':
+        result = fraud.listar_sin_compra_mysql(
+            db, pagina=pagina, tamano=tamano, buscar=buscar,
+        )
+        fraud.enriquecer_nombres_producto(neo4j, result['items'])
+        return result
+    return fraud.listar_indicador_paginado(
+        neo4j, regla, pagina=pagina, tamano=tamano, buscar=buscar,
+        segmento=segmento, ventana_horas=ventana_horas, umbral=umbral,
+        min_resenas=min_resenas, min_comun=min_comun,
+    )
 
 
 @router.get('/admin/fraude/bombardeo')
 def fraude_bombardeo(
     ventana_horas: int = Query(24, ge=1, le=168),
     umbral: int = Query(5, ge=2),
+    segmento: str = Query('verificadas_publicas', pattern='^(verificadas_publicas|historicas_no_verificadas)$'),
     _: Usuario = Depends(get_admin),
     neo4j: Neo4jSession = Depends(get_neo4j),
 ):
-    return fraud.detectar_bombardeo(neo4j, ventana_horas, umbral)
+    return fraud.detectar_bombardeo(neo4j, ventana_horas, umbral, segmento)
 
 
 @router.get('/admin/fraude/sin-compra')
@@ -261,28 +303,53 @@ def fraude_sin_compra(
 @router.get('/admin/fraude/reviewer-unico-vendedor')
 def fraude_unico_vendedor(
     min_resenas: int = Query(3, ge=2),
+    segmento: str = Query('verificadas_publicas', pattern='^(verificadas_publicas|historicas_no_verificadas)$'),
     _: Usuario = Depends(get_admin),
     neo4j: Neo4jSession = Depends(get_neo4j),
 ):
-    return fraud.detectar_reviewer_unico_vendedor(neo4j, min_resenas)
+    return fraud.detectar_reviewer_unico_vendedor(neo4j, min_resenas, segmento)
 
 
 @router.get('/admin/fraude/cluster')
 def fraude_cluster(
     min_comun: int = Query(3, ge=2),
+    segmento: str = Query('verificadas_publicas', pattern='^(verificadas_publicas|historicas_no_verificadas)$'),
     _: Usuario = Depends(get_admin),
     neo4j: Neo4jSession = Depends(get_neo4j),
 ):
-    return fraud.detectar_cluster_coordinado(neo4j, min_comun)
+    return fraud.detectar_cluster_coordinado(neo4j, min_comun, segmento)
+
+
+@router.get('/admin/fraude/autocompras')
+def fraude_autocompras(
+    ventana_dias: int = Query(30, ge=1, le=365),
+    historico: bool = Query(False),
+    _: Usuario = Depends(get_admin),
+    neo4j: Neo4jSession = Depends(get_neo4j),
+):
+    return fraud.detectar_autocompras(
+        neo4j, ventana_dias=ventana_dias, historico=historico,
+    )
 
 
 @router.post('/admin/fraude/recalcular')
 def fraude_recalcular(
     _: Usuario = Depends(get_admin),
-    db: Session = Depends(get_db),
-    neo4j: Neo4jSession = Depends(get_neo4j),
 ):
-    return fraud.recalcular_alertas(db, neo4j)
+    try:
+        return run_fraud_analysis_once('manual')
+    except FraudAnalysisBusy as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, 'El análisis no pudo completarse; no se inactivaron alertas.') from exc
+
+
+@router.get('/admin/fraude/estado-analisis')
+def fraude_estado_analisis(
+    _: Usuario = Depends(get_admin),
+    db: Session = Depends(get_db),
+):
+    return fraud_analysis_status(db)
 
 
 @router.get('/admin/fraude/alertas')
@@ -292,6 +359,25 @@ def fraude_alertas(
     db: Session = Depends(get_db),
 ):
     return fraud.listar_alertas(db, estado)
+
+
+@router.get('/admin/fraude/alertas-paginadas')
+def fraude_alertas_paginadas(
+    pagina: int = Query(1, ge=1),
+    tamano: int = Query(20, enum=[10, 20, 50]),
+    buscar: str | None = Query(None, max_length=120),
+    tipo: str | None = Query(None, pattern='^(autocompra|inventario_atipico|coincidencia_cantidad)$'),
+    prioridad: str | None = Query(None, pattern='^(informativa|baja|media|alta)$'),
+    estado: str | None = Query(None, pattern='^(pendiente|en_revision|descartada|revisada)$'),
+    activa: bool | None = Query(None),
+    orden: str = Query('fecha_desc', pattern='^(fecha_desc|prioridad_desc)$'),
+    _: Usuario = Depends(get_admin),
+    db: Session = Depends(get_db),
+):
+    return fraud.listar_alertas_paginadas(
+        db, pagina=pagina, tamano=tamano, buscar=buscar, tipo=tipo,
+        prioridad=prioridad, estado=estado, activa=activa, orden=orden,
+    )
 
 
 @router.patch('/admin/fraude/alertas/{alerta_id}')
