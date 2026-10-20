@@ -112,6 +112,25 @@ def resolve_offer_rows(offer_meta, variant_ids, offer_by_variant_seller):
     return rows
 
 
+def should_seed_order(existing_line_count: int) -> bool:
+    """Una ampliación de perfil no reescribe compras ya generadas y pagadas."""
+    return existing_line_count == 0
+
+
+def complete_paid_line_inventory_ids(inventory_ids, paid_lines, lookup):
+    """Incluye inventarios de ofertas pagadas de perfiles DEMO anteriores."""
+    missing = sorted({line['oferta_id'] for line in paid_lines} - inventory_ids.keys())
+    if not missing:
+        return inventory_ids
+    resolved = lookup(missing)
+    unresolved = set(missing) - resolved.keys()
+    if unresolved:
+        raise RuntimeError(
+            f'Ofertas DEMO pagadas sin inventario: {sorted(unresolved)}'
+        )
+    return {**inventory_ids, **resolved}
+
+
 class DemoSeeder:
     def __init__(self, cfg: dict[str, str], scale: Scale, *, seed: int,
                  run_id: str, batch_size: int):
@@ -462,7 +481,11 @@ class DemoSeeder:
             buyer = order_rows[i][0]
             paid = order_rows[i][2] != 'cancelado'
             grouped = {}
-            lines_already_present = int(existing_line_counts.get(order_id, 0)) == len(choices)
+            # Al ampliar small -> medium/full cambia la planificación de los
+            # primeros pedidos. Su importe y pago originales son históricos:
+            # nunca añadir líneas nuevas a un pedido que ya tiene líneas.
+            if not should_seed_order(int(existing_line_counts.get(order_id, 0))):
+                continue
             for offer_id, qty in choices:
                 grouped.setdefault(offer_by_id[offer_id][3], Decimal('0'))
                 grouped[offer_by_id[offer_id][3]] += offer_by_id[offer_id][5] * qty
@@ -478,10 +501,9 @@ class DemoSeeder:
             for offer_id, qty in choices:
                 meta = offer_by_id[offer_id]
                 seller_id, sku, price, product_index = meta[3], meta[4], meta[5], meta[6]
-                if not lines_already_present:
-                    line_rows.append((order_id, grouped[seller_id], offer_id, meta[1], sku,
-                                      f'Producto DEMO {product_index:04d}', f'DEMO Tienda {seller_ids.index(seller_id):03d}',
-                                      price, qty, price * qty))
+                line_rows.append((order_id, grouped[seller_id], offer_id, meta[1], sku,
+                                  f'Producto DEMO {product_index:04d}', f'DEMO Tienda {seller_ids.index(seller_id):03d}',
+                                  price, qty, price * qty))
                 line_context.append((buyer, meta[1], seller_id, order_id, offer_id, paid, order_rows[i][9]))
                 if paid:
                     inv_id = inventory_ids[offer_id]
@@ -499,22 +521,29 @@ class DemoSeeder:
               (pedido_id,metodo_pago_id,monto,estado,referencia_transaccion,clave_idempotencia,intentos,fecha)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
         """, payment_rows)
-        self.many("""
-            INSERT INTO movimientos_inventario
-              (inventario_id,tipo,cantidad,motivo,pedido_id,usuario_id,fecha)
-            SELECT %s,%s,%s,%s,%s,%s,%s
-            WHERE NOT EXISTS (
-              SELECT 1 FROM movimientos_inventario
-              WHERE inventario_id=%s AND pedido_id=%s AND tipo='salida'
-                AND motivo='Venta DEMO pagada'
-            )
-        """, movement_rows)
+        # Ajustar el saldo solo por movimientos realmente nuevos. Reponerlo a
+        # 5000 - ventas de esta corrida olvidaba las compras de perfiles previos.
         sold = {}
-        for inv_id, _, qty, *_ in movement_rows:
-            sold[inv_id] = sold.get(inv_id, 0) + qty
         with self.mysql.cursor() as cur:
+            for row in movement_rows:
+                inv_id, _, qty, _, order_id, *_ = row
+                cur.execute("""
+                    INSERT INTO movimientos_inventario
+                      (inventario_id,tipo,cantidad,motivo,pedido_id,usuario_id,fecha)
+                    SELECT %s,%s,%s,%s,%s,%s,%s
+                    WHERE NOT EXISTS (
+                      SELECT 1 FROM movimientos_inventario
+                      WHERE inventario_id=%s AND pedido_id=%s AND tipo='salida'
+                        AND motivo='Venta DEMO pagada'
+                    )
+                """, row)
+                if cur.rowcount:
+                    sold[inv_id] = sold.get(inv_id, 0) + qty
             for inv_id, qty in sold.items():
-                cur.execute('UPDATE inventario SET cantidad_disponible=GREATEST(0,5000-%s) WHERE id=%s', (qty, inv_id))
+                cur.execute('UPDATE inventario SET cantidad_disponible=cantidad_disponible-%s WHERE id=%s AND cantidad_disponible>=%s', (qty, inv_id, qty))
+                if cur.rowcount != 1:
+                    self.mysql.rollback()
+                    raise RuntimeError(f'Stock insuficiente en inventario DEMO {inv_id}')
         self.mysql.commit()
         return line_context
 
@@ -530,6 +559,13 @@ class DemoSeeder:
               WHERE pl.sku_snapshot LIKE %s ORDER BY pl.id
             """, (f'DEMO-{self.run_id[:5].upper()}-%',))
             paid_lines = cur.fetchall()
+        inventory_ids = complete_paid_line_inventory_ids(
+            inventory_ids, paid_lines,
+            lambda offer_ids: self.fetch_map(
+                'SELECT oferta_id k,id v FROM inventario WHERE oferta_id IN (' +
+                ','.join(['%s'] * len(offer_ids)) + ')', tuple(offer_ids),
+            ),
+        )
         product_id_by_ref = self.fetch_map(
             'SELECT producto_ref k,id v FROM producto_referencias WHERE producto_ref IN (' +
             ','.join(['%s'] * self.scale.products) + ')',
@@ -674,9 +710,7 @@ class DemoSeeder:
         """, f07_rows)
         with self.mysql.cursor() as cur:
             for inv_id, qty in stock_delta.items():
-                # seed_orders reconstruye primero el saldo base (5000 - ventas),
-                # por lo que aplicar el mismo delta en cada corrida mantiene el
-                # resultado idempotente aunque los movimientos ya existan.
+                # f07_rows contiene únicamente motivos aún no insertados.
                 cur.execute(
                     'UPDATE inventario SET cantidad_disponible=cantidad_disponible+%s WHERE id=%s',
                     (qty, inv_id),

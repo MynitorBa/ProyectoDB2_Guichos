@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from scripts.seed_demo_large import (
-    SCALES, load_demo_env, ref_for, resolve_offer_rows, uid_for,
+    SCALES, complete_paid_line_inventory_ids, load_demo_env, ref_for,
+    resolve_offer_rows, should_seed_order, uid_for,
 )
 
 
@@ -67,3 +68,30 @@ def test_offer_resolution_uses_variant_and_seller_when_sku_is_shared():
         meta, {'var-a': 96, 'var-b': 97}, {(96, 7): 149, (97, 8): 150},
     )
     assert [row[0] for row in resolved] == [149, 150]
+
+
+def test_incremental_seed_preserves_existing_order_lines():
+    assert should_seed_order(0)
+    assert not should_seed_order(1)
+    assert not should_seed_order(2)
+
+
+def test_incremental_seed_loads_inventory_for_paid_offer_from_small():
+    looked_up = []
+
+    def lookup(offer_ids):
+        looked_up.extend(offer_ids)
+        return {136: 74}
+
+    result = complete_paid_line_inventory_ids(
+        {149: 83}, [{'oferta_id': 136}, {'oferta_id': 149}], lookup,
+    )
+    assert looked_up == [136]
+    assert result == {136: 74, 149: 83}
+
+
+def test_incremental_seed_rejects_paid_offer_without_inventory():
+    with pytest.raises(RuntimeError, match='136'):
+        complete_paid_line_inventory_ids(
+            {149: 83}, [{'oferta_id': 136}], lambda offer_ids: {},
+        )

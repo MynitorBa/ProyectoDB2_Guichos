@@ -56,7 +56,8 @@ def test_tildes_sinonimos_prefijos_y_sku(consulta, esperado):
 def test_sinonimo_devuelve_solo_la_familia_correcta():
     resultado = buscar(q='telefono')
     assert resultado['total'] >= 3
-    assert all(sku.startswith('TECH-CEL-') for sku in skus(resultado))
+    # Las ofertas DEMO tienen otros SKU, pero pertenecen a la misma familia.
+    assert all(item['categoria']['slug'] == 'celulares' for item in resultado['items'])
 
 
 def test_resaltado_marca_lo_que_coincidio():
