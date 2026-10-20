@@ -5,6 +5,7 @@ import pytest
 from scripts.seed_demo_large import (
     SCALES, complete_paid_line_inventory_ids, load_demo_env, ref_for,
     resolve_offer_rows, should_seed_order, uid_for,
+    planned_fraud_order, demo_product_name,
 )
 
 
@@ -95,3 +96,33 @@ def test_incremental_seed_rejects_paid_offer_without_inventory():
         complete_paid_line_inventory_ids(
             {149: 83}, [{'oferta_id': 136}], lambda offer_ids: {},
         )
+
+
+def test_medium_fraud_scenarios_are_distinct_and_exclusive():
+    users = list(range(1000, 1650))
+    sellers = list(range(2000, 2030))
+    offers = []
+    by_seller = {seller: [] for seller in sellers}
+    for i in range(320):
+        seller = sellers[i % len(sellers)]
+        row = (3000 + i, f'product-{i}', None, seller)
+        offers.append(row)
+        by_seller[seller].append(row)
+    owner = {seller: users[i] for i, seller in enumerate(sellers)}
+    plans = [planned_fraud_order(i, users, sellers, offers, by_seller, owner)
+             for i in range(71)]
+    for product in range(5):
+        rows = plans[product * 5:(product + 1) * 5]
+        assert len({buyer for buyer, _ in rows}) == 5
+        assert {choices[0][0] for _, choices in rows} == {offers[product][0]}
+    for client in range(5):
+        rows = plans[25 + client * 3:28 + client * 3]
+        assert {buyer for buyer, _ in rows} == {users[len(sellers) + 30 + client]}
+        assert len({choices[0][0] for _, choices in rows}) == 3
+        assert {next(row[3] for row in offers if row[0] == choices[0][0])
+                for _, choices in rows} == {sellers[client]}
+    assert len({buyer for buyer, _ in plans[40:55]}) == 5
+    assert len({choices[0][0] for _, choices in plans[40:43]}) == 3
+    assert len({choices[0] for _, choices in plans[65:71]}) == 6
+    assert demo_product_name(0).startswith('Laptop DEMO')
+    assert demo_product_name(1).startswith('Teléfono DEMO')

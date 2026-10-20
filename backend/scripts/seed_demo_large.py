@@ -32,6 +32,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = BACKEND_DIR.parent
 PASSWORD_HASH = '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru'
 NAMESPACE = uuid.UUID('ba93f2bd-841e-4dfc-83fc-c7f9330c51fe')
+PRODUCT_KINDS = (
+    'Laptop', 'Teléfono', 'Audífonos', 'Camisa', 'Pantalón', 'Zapatos',
+    'Lámpara', 'Libro', 'Balón', 'Café', 'Juego', 'Taladro',
+)
+
+
+def demo_product_name(index: int) -> str:
+    return f'{PRODUCT_KINDS[index % len(PRODUCT_KINDS)]} DEMO modelo {index:04d}'
 
 
 @dataclass(frozen=True)
@@ -129,6 +137,28 @@ def complete_paid_line_inventory_ids(inventory_ids, paid_lines, lookup):
             f'Ofertas DEMO pagadas sin inventario: {sorted(unresolved)}'
         )
     return {**inventory_ids, **resolved}
+
+
+def planned_fraud_order(index, users, sellers, offers, offers_by_seller, owner_by_seller):
+    """Reserva compradores y compras verificables sin alterar los detectores."""
+    if index < 25:
+        return users[len(sellers) + index], [(offers[index // 5][0], 1)]
+    if index < 40:
+        offset = index - 25
+        seller = sellers[offset // 3]
+        seller_offers = offers_by_seller[seller]
+        if len({row[1] for row in seller_offers}) < 3:
+            raise RuntimeError(f'F02 requiere tres productos del vendedor {seller}')
+        return users[len(sellers) + 30 + offset // 3], [(seller_offers[offset % 3][0], 1)]
+    if index < 55:
+        offset = index - 40
+        return users[len(sellers) + 40 + offset // 3], [(offers_by_seller[sellers[0]][offset % 3][0], 1)]
+    if index < 65:
+        offer = offers[index % len(offers)]
+        return owner_by_seller[offer[3]], [(offer[0], 1 + (index * 3) % 7)]
+    if index < 71:
+        return None, [(offers[index - 65][0], 10 + index - 65)]
+    return None
 
 
 class DemoSeeder:
@@ -360,7 +390,7 @@ class DemoSeeder:
         for i, (ref, category_id, created) in enumerate(products):
             row = first_offer[ref]
             docs.append(ReplaceOne({'_id': ObjectId(ref)}, {
-                '_id': ObjectId(ref), 'sku': row[4], 'nombre': f'Producto DEMO {i:04d}',
+                '_id': ObjectId(ref), 'sku': row[4], 'nombre': demo_product_name(i),
                 'descripcion': 'Producto sintético generado para pruebas de volumen.',
                 'precio': float(row[5]), 'categoria': {'slug': category_slugs[category_id], 'nombre': category_names[category_id]},
                 'categorias': [{'slug': category_slugs[category_id], 'nombre': category_names[category_id]}],
@@ -407,40 +437,34 @@ class DemoSeeder:
             'SELECT id k,usuario_id v FROM vendedores WHERE id IN (' +
             ','.join(['%s'] * len(seller_ids)) + ')', tuple(seller_ids),
         )
-        first_seller_offers = offers_by_seller[seller_ids[0]]
+        exclusive_buyers = [user_ids[len(seller_ids) + 30 + n] for n in range(5)]
+        ordinary_buyers = [uid for uid in user_ids if uid not in exclusive_buyers]
         order_rows = []
         planned: list[list[tuple[int, int]]] = []
         extra_lines = max(0, self.scale.lines - self.scale.orders)
         for i in range(self.scale.orders):
-            buyer = user_ids[(i * 17 + 7) % len(user_ids)]
+            buyer = ordinary_buyers[(i * 17 + 7) % len(ordinary_buyers)]
             line_count = 2 if i < extra_lines else 1
             choices = []
-            if i < 6:
-                # F01: seis compradores distintos reseñarán el mismo producto en 24 h.
-                buyer = user_ids[min(len(user_ids) - 1, len(seller_ids) + i)]
-                choices = [(offers[0][0], 1)]
-            elif 6 <= i < 9 and len(first_seller_offers) >= 3:
-                # F02: un comprador concentra tres compras/reseñas en un vendedor.
-                buyer = user_ids[min(len(user_ids) - 1, len(seller_ids) + 10)]
-                choices = [(first_seller_offers[i - 6][0], 1)]
-            elif 9 <= i < 21 and len(first_seller_offers) >= 3:
-                # F03: cuatro compradores comparten tres productos reseñables.
-                offset = i - 9
-                buyer = user_ids[min(len(user_ids) - 1, len(seller_ids) + 20 + offset // 3)]
-                choices = [(first_seller_offers[offset % 3][0], 1)]
-            elif 21 <= i < 31:
-                # F05: el propietario compra una oferta de su propio vendedor.
-                offer = offers[i % len(offers)]
-                buyer = owner_by_seller[offer[3]]
-                choices = [(offer[0], 1 + (i * 3) % 7)]
+            scenario = planned_fraud_order(
+                i, user_ids, seller_ids, offers, offers_by_seller, owner_by_seller,
+            )
+            if scenario is not None:
+                special_buyer, choices = scenario
+                if special_buyer is not None:
+                    buyer = special_buyer
             else:
                 for j in range(line_count):
                     offer = offers[(i * 13 + j * 29) % len(offers)]
                     choices.append((offer[0], 1 + ((i + j) % 3 == 0)))
             planned.append(choices)
-            paid = i < 31 or i % 20 != 0
+            paid = i < 71 or i % 20 != 0
             state = 'entregado' if paid else 'cancelado'
-            created = self.now - timedelta(days=i % 180, minutes=i % 1440)
+            created = (
+                self.now - timedelta(hours=1 + i // 5, minutes=i % 5)
+                if i < 71 else
+                self.now - timedelta(days=i % 180, minutes=i % 1440)
+            )
             subtotal = sum(offer_by_id[x][5] * qty for x, qty in choices)
             order_rows.append((buyer, direction_by_user[buyer], state, subtotal, Decimal('0'), subtotal,
                                'Pedido sintético DEMO', uid_for(self.run_id, 'order', i),
@@ -502,7 +526,7 @@ class DemoSeeder:
                 meta = offer_by_id[offer_id]
                 seller_id, sku, price, product_index = meta[3], meta[4], meta[5], meta[6]
                 line_rows.append((order_id, grouped[seller_id], offer_id, meta[1], sku,
-                                  f'Producto DEMO {product_index:04d}', f'DEMO Tienda {seller_ids.index(seller_id):03d}',
+                                  demo_product_name(product_index), f'DEMO Tienda {seller_ids.index(seller_id):03d}',
                                   price, qty, price * qty))
                 line_context.append((buyer, meta[1], seller_id, order_id, offer_id, paid, order_rows[i][9]))
                 if paid:
@@ -574,6 +598,13 @@ class DemoSeeder:
         seen = set()
         verified = []
         verified_target = max(0, self.scale.reviews - max(10, self.scale.reviews // 10))
+        verified_comments = (
+            'Llegó completo y coincide con la descripción de la tienda.',
+            'La entrega fue puntual; funciona bien tras varios días de uso.',
+            'Buena calidad para el precio, aunque el empaque podría mejorar.',
+            'El vendedor respondió mis dudas y el artículo llegó en buen estado.',
+            'Cumple lo ofrecido; volvería a comprar esta variante.',
+        )
         for row in paid_lines:
             key = (row['usuario_id'], row['producto_ref'], row['vendedor_id'])
             if key in seen:
@@ -583,16 +614,22 @@ class DemoSeeder:
             date = self.now - timedelta(hours=idx % 12) if idx < 6 else row['fecha_creacion']
             verified.append((f'demo:{self.run_id}:v:{idx}', row['usuario_id'], product_id_by_ref[row['producto_ref']],
                              row['vendedor_id'], row['id'], 4 + idx % 2,
-                             'Reseña sintética verificada DEMO', 'aprobada', 1, None, 1, 1, date, date))
+                             f'DEMO: {verified_comments[idx % len(verified_comments)]}',
+                             'aprobada', 1, None, 1, 1, date, date))
             if len(verified) >= verified_target:
                 break
         historical = []
         remaining = self.scale.reviews - len(verified)
+        historical_comments = (
+            'DEMO histórica: no se encontró un pedido pagado que respalde esta opinión.',
+            'DEMO histórica: la compra original no se puede atribuir a este vendedor.',
+            'DEMO histórica: faltan evidencias de la línea comprada.',
+        )
         for i in range(remaining):
             product_ref = ref_for(self.run_id, 'product', (i * 19 + 3) % self.scale.products)
             historical.append((f'demo:{self.run_id}:h:{i}', user_ids[(i * 23 + 5) % len(user_ids)],
                                product_id_by_ref[product_ref], seller_ids[i % len(seller_ids)], None,
-                               2 + i % 4, 'Reseña histórica sintética DEMO', 'pendiente', 0,
+                               2 + i % 4, historical_comments[i % len(historical_comments)], 'pendiente', 0,
                                'Sin compra elegible en el dataset DEMO', 1, 0,
                                self.now - timedelta(days=40 + i % 120), self.now))
         self.many("""
@@ -622,15 +659,27 @@ class DemoSeeder:
                 adjustments.append((inv_id, movement_type, quantity,
                                     motive, None, responsible,
                                     self.now - timedelta(days=(i + j) % 19, hours=(i * 3 + j) % 20), inv_id, motive))
-        self.many("""
-            INSERT INTO movimientos_inventario
-              (inventario_id,tipo,cantidad,motivo,pedido_id,usuario_id,fecha)
-            SELECT %s,%s,%s,%s,%s,%s,%s
-            WHERE NOT EXISTS (
-              SELECT 1 FROM movimientos_inventario
-              WHERE inventario_id=%s AND motivo=%s
-            )
-        """, adjustments)
+        with self.mysql.cursor() as cur:
+            try:
+                for row in adjustments:
+                    cur.execute("""
+                        INSERT INTO movimientos_inventario
+                          (inventario_id,tipo,cantidad,motivo,pedido_id,usuario_id,fecha)
+                        SELECT %s,%s,%s,%s,%s,%s,%s
+                        WHERE NOT EXISTS (
+                          SELECT 1 FROM movimientos_inventario
+                          WHERE inventario_id=%s AND motivo=%s
+                        )
+                    """, row)
+                    if cur.rowcount:
+                        cur.execute(
+                            'UPDATE inventario SET cantidad_disponible=cantidad_disponible+%s WHERE id=%s',
+                            (row[2], row[0]),
+                        )
+                self.mysql.commit()
+            except Exception:
+                self.mysql.rollback()
+                raise
 
         # F07: escenarios deterministas. El positivo usa la primera compra de
         # cada combinación oferta/cantidad para evitar candidatos previos; el
@@ -643,7 +692,19 @@ class DemoSeeder:
             grouped.setdefault(key, []).append(line)
 
         f07_rows = []
-        positive = list(first_by_key.values())[:6]
+        positive_order_keys = {
+            uid_for(self.run_id, 'order', i) for i in range(65, 71)
+        }
+        positive_order_ids = set(self.fetch_map(
+            'SELECT clave_idempotencia k,id v FROM pedidos WHERE clave_idempotencia IN (' +
+            ','.join(['%s'] * len(positive_order_keys)) + ')',
+            tuple(positive_order_keys),
+        ).values())
+        positive = [
+            line for line in paid_lines
+            if line['pedido_id'] in positive_order_ids
+            and first_by_key[(line['oferta_id'], int(line['cantidad']))]['id'] == line['id']
+        ][:6]
         for line in positive:
             inv_id = inventory_ids[line['oferta_id']]
             reason = f'DEMO F07 positivo línea {line["id"]}'
@@ -658,7 +719,6 @@ class DemoSeeder:
                 ('cantidad distinta', int(line['cantidad']) + 7, line['fecha_creacion'] + timedelta(hours=1)),
                 ('antes de compra', int(line['cantidad']), line['fecha_creacion'] - timedelta(hours=1)),
                 ('fuera de ventana', int(line['cantidad']), line['fecha_creacion'] + timedelta(days=31)),
-                ('segunda entrada candidata', int(line['cantidad']), line['fecha_creacion'] + timedelta(hours=2)),
             ]:
                 reason = f'DEMO F07 negativo {label} línea {line["id"]}'
                 f07_rows.append((inv_id, 'entrada', qty, reason, None, None, date, inv_id, reason))

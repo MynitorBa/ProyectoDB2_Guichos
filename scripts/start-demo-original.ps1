@@ -5,7 +5,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $compose = Join-Path $root 'docker-compose.demo.yml'
 $envFile = Join-Path $root 'backend\.env.demo'
 $python = Join-Path $root 'backend\venv\Scripts\python.exe'
-$npm = 'C:\Program Files\nodejs\npm.cmd'
+$npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
+if (-not $npmCommand) { throw 'Falta npm.cmd en PATH. Instale Node.js antes de iniciar la presentación.' }
+$npm = $npmCommand.Source
 $ledger = Join-Path $root 'payment_simulator\ledger.demo.db'
 $runtime = Join-Path (Split-Path -Parent $root) '_runtime\tiendaya-demo'
 $services = @('mysql', 'mongo', 'redis', 'cassandra', 'neo4j', 'elasticsearch')
