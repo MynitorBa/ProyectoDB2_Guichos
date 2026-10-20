@@ -23,7 +23,7 @@ function FlashCountdown({ expiresAt }) {
 }
 
 export default function CartPage() {
-  const { cart, loading, fetchCart, remove, update } = useCart()
+  const { cart, loading, error, cargado, fetchCart, remove, update } = useCart()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function CartPage() {
   const itemsCambioPrecio = items.filter((i) => i.precio_cambio && !i.sin_stock)
   const hayAlertas = reservasVencidas.length > 0 || itemsSinStock.length > 0 || itemsCambioPrecio.length > 0
 
-  if (loading && items.length === 0) {
+  if (!cargado || (loading && items.length === 0)) {
     return (
       <div className="max-w-5xl mx-auto px-4 py-8">
         <Skeleton className="h-8 w-36 mb-6" />
@@ -50,6 +50,20 @@ export default function CartPage() {
             <Skeleton key={i} className="h-28 w-full" />
           ))}
         </div>
+      </div>
+    )
+  }
+
+  // El carrito no se pudo consultar (por ejemplo, Redis caído): no se finge que está vacío.
+  if (error && items.length === 0) {
+    return (
+      <div role="alert" className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+        <AlertTriangle size={56} className="text-[var(--color-warning)] mb-4" aria-hidden="true" />
+        <h2 className="font-display font-bold text-2xl text-[var(--color-text-primary)] mb-2">
+          No pudimos cargar tu carrito
+        </h2>
+        <p className="font-sans text-sm text-[var(--color-text-secondary)] mb-8 max-w-sm">{error}</p>
+        <Button size="lg" onClick={() => fetchCart()} disabled={loading}>Reintentar</Button>
       </div>
     )
   }

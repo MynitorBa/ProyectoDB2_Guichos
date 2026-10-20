@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { EstadoError, esNoEncontrado } from '../components/EstadoError'
 import {
   Store, Star, Package, ChevronLeft, ChevronRight, Search, X,
   Monitor, Smartphone, Headphones, Shirt, Layers,
@@ -49,7 +50,7 @@ export default function VendorStorePage() {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  const { data: vendor, isLoading: loadingVendor, isError: vendorError } = useQuery({
+  const { data: vendor, isLoading: loadingVendor, isError: vendorError, error: vendorErrorObj, refetch: refetchVendor } = useQuery({
     queryKey: ['store-profile', vendedorId],
     queryFn: () => api.get(`/stores/${vendedorId}`).then(r => r.data),
   })
@@ -117,6 +118,10 @@ export default function VendorStorePage() {
         </div>
       </div>
     )
+  }
+
+  if (vendorError && !esNoEncontrado(vendorErrorObj)) {
+    return <EstadoError error={vendorErrorObj} titulo="No pudimos cargar esta tienda" onReintentar={refetchVendor} />
   }
 
   if (vendorError || !vendor) {

@@ -293,7 +293,7 @@ export default function CheckoutPage() {
       if (tipo === 'rechazado' || tipo === 'no_disponible' || tipo === 'no_cumplible') {
         await fetchCart() // el carrito se conserva para reintentar con otro medio
       }
-      setError({ tipo, mensaje: msg, pedidoId: raw?.pedido_id })
+      setError({ tipo, mensaje: msg, pedidoId: err.response.data?.pedido_id ?? raw?.pedido_id })
       if (tipo === 'generico') toast.error(msg)
     } finally {
       setSubmitting(false)

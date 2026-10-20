@@ -15,6 +15,7 @@ import { Input } from '../components/ui/input'
 import { Sheet, SheetTrigger, SheetContent } from '../components/ui/sheet'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Separator } from '../components/ui/separator'
+import { EstadoError } from '../components/EstadoError'
 
 const ease = [0.23, 1, 0.32, 1]
 const PAGE_SIZE = 12
@@ -353,7 +354,7 @@ export default function CatalogPage() {
     acciones.setQ(localSearch.trim())
   }
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['search', searchParams.toString()],
     queryFn: () => searchProducts({
       q: filtros.q,
@@ -591,13 +592,11 @@ export default function CatalogPage() {
 
           {/* ── Grid ── */}
           <div className="flex-1 min-w-0">
-            {isError && (
-              <div className="rounded-2xl bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 px-4 py-3 mb-5">
-                <p className="text-sm font-sans text-[var(--color-error)]">Error al cargar los productos. Intenta de nuevo.</p>
-              </div>
-            )}
-
-            {isLoading ? (
+            {isError && !isLoading ? (
+              // La búsqueda falló (servicio caído, sin conexión): se explica el
+              // motivo en lugar de mostrar «Sin resultados».
+              <EstadoError compacto error={error} titulo="No pudimos cargar los productos" onReintentar={refetch} />
+            ) : isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-5">
                 {Array.from({ length: PAGE_SIZE }).map((_, i) => <ProductCardSkeleton key={i} />)}
               </div>

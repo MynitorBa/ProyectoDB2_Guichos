@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { ShoppingCart, Truck, ArrowLeft, Minus, Plus, Star, PackageSearch, Store, ShieldCheck, Zap } from 'lucide-react'
 import { motion, useInView } from 'motion/react'
 import { toast } from 'sonner'
+import { EstadoError, esNoEncontrado } from '../components/EstadoError'
+import { mensajeError } from '../lib/errors'
 import { getProduct, getProductRecommendations, getActiveFlashSales, reserveFlashSale } from '../api/products'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
@@ -74,7 +76,7 @@ export default function ProductDetailPage() {
   const [selectedOfferId, setSelectedOfferId] = useState(null)
   const [selectedVariantId, setSelectedVariantId] = useState(null)
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['product', id],
     queryFn: () => getProduct(id).then((r) => r.data),
   })
@@ -125,8 +127,8 @@ export default function ProductDetailPage() {
     try {
       await add(selectedOffer.oferta_id, cantidad)
       toast.success(`${product.nombre} agregado al carrito`)
-    } catch {
-      toast.error('No se pudo agregar al carrito')
+    } catch (err) {
+      toast.error(mensajeError(err, 'No se pudo agregar al carrito.'))
     }
   }
 
@@ -150,6 +152,11 @@ export default function ProductDetailPage() {
   }
 
   if (isLoading) return <DetailSkeleton />
+
+  // Una falla del servidor no es lo mismo que un producto inexistente.
+  if (isError && !esNoEncontrado(error)) {
+    return <EstadoError error={error} titulo="No pudimos cargar este producto" onReintentar={refetch} />
+  }
 
   if (isError || !product) {
     return (

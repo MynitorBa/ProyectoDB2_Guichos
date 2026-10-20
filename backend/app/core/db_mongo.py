@@ -9,9 +9,9 @@ _client: MongoClient | None = None
 def get_mongo_client() -> MongoClient:
     global _client
     if _client is None:
-        # 5 s en lugar de los 30 s por defecto: si MongoDB cae, las operaciones
+        # 3 s en lugar de los 30 s por defecto: si MongoDB cae, las operaciones
         # que no dependen de él (p. ej. el checkout) no quedan colgadas medio minuto.
-        _client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
+        _client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=3000)
     return _client
 
 

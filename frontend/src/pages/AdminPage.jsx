@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { SyncHealthSection } from '../components/admin/SyncHealthSection'
 import { toast } from 'sonner'
+import { mensajeError } from '../lib/errors'
 import { getCatalogStats, getAdminProducts, getProduct, getCategories, getCategorySchema, createProduct, updateProduct, deleteProduct } from '../api/products'
 import { getAdminUsers, updateUserRoles, getAdminCategories, createCategory, updateCategorySchema, deleteCategory, uploadAdminImage, deletePendingAdminImage, getAdminVendors, getAdminSalesStats, getAdminSales, exportAdminSalesExcel, getAdminOrders, updateAdminOrderStatus, setVendorProfile, setTiendayaVendor, getProductOffers, getProductVariants, addProductVariant, updateProductVariant, deleteProductVariant, addProductOffer, updateProductOffer } from '../api/admin'
 import { Badge } from '../components/ui/badge'
@@ -394,7 +395,8 @@ export function ProductFormModal({ open, onOpenChange, product, onDuplicateFound
       onOpenChange(false)
     },
     onError: (err) => {
-      const detail = err?.response?.data?.detail
+      // El interceptor deja detail como texto y copia los campos del objeto original a data.
+      const detail = err?.response?.data?.detalle ?? err?.response?.data?.detail
       if (err?.response?.status === 409 && detail?.existing_id) {
         toast.error(`Ya existe: "${detail.existing_nombre}". ¿Quieres editarlo?`, {
           action: {
@@ -407,7 +409,7 @@ export function ProductFormModal({ open, onOpenChange, product, onDuplicateFound
         })
         return
       }
-      toast.error(typeof detail === 'string' ? detail : 'Error al guardar el producto.')
+      toast.error(mensajeError(err, 'Error al guardar el producto.'))
     },
   })
 
@@ -1468,7 +1470,7 @@ function CategoriesSection() {
       setNewNombre(''); setNewSlug(''); setNewDesc(''); setNewPadreId(''); setNewSkuPrefix(''); setNewAttrs([])
     },
     onError: (err) => {
-      const detail = err?.response?.data?.detail
+      const detail = err?.response?.data?.detalle ?? err?.response?.data?.detail
       if (err?.response?.status === 409 && detail?.existing_slug) {
         const existingCat = cats.find((c) => c.slug === detail.existing_slug)
         toast.error(detail.message || `Ya existe la categoría "${detail.existing_nombre}".`, {
@@ -1479,7 +1481,7 @@ function CategoriesSection() {
         })
         return
       }
-      toast.error(typeof detail === 'string' ? detail : 'Error al crear categoría.')
+      toast.error(mensajeError(err, 'Error al crear categoría.'))
     },
   })
 
@@ -2404,7 +2406,7 @@ function FraudSection() {
   const [alertActive, setAlertActive] = useState('todas')
   const [alertOrder, setAlertOrder] = useState('fecha_desc')
 
-  const { data: fraudData, isLoading: fraudLoading } = useQuery({
+  const { data: fraudData, isLoading: fraudLoading, isError: fraudError, error: fraudErrorObj, refetch: refetchFraud } = useQuery({
     queryKey: ['fraud-summary'],
     queryFn: () => getFraudSummary().then(r => r.data),
   })
@@ -2512,6 +2514,13 @@ function FraudSection() {
           Hay un análisis en curso desde {formatDate(analysisStatus.en_curso.iniciada_en)}.
         </div>
       )}
+      {/* Si el resumen no se pudo calcular (p. ej. Neo4j caído), no se muestran ceros engañosos. */}
+      {fraudError && (
+        <div role="alert" className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-3">
+          <span>No se pudo calcular el resumen de fraude: {mensajeError(fraudErrorObj)}</span>
+          <button type="button" onClick={() => refetchFraud()} className="font-semibold underline">Reintentar</button>
+        </div>
+      )}
       {/* Tarjetas de resumen */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {FRAUD_CARDS.map((card) => {
@@ -2525,7 +2534,7 @@ function FraudSection() {
               </div>
               {fraudLoading
                 ? <Skeleton className="h-8 w-16 mt-1" />
-                : <p className="font-mono font-bold text-3xl">{item?.count ?? 0}</p>
+                : <p className="font-mono font-bold text-3xl">{fraudError && !item ? '—' : (item?.count ?? 0)}</p>
               }
               <p className="mt-2 text-[11px] font-semibold">Ver registros →</p>
             </button>

@@ -3,6 +3,17 @@ import { useEffect } from 'react'
 import Router from './router'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
+import { ErrorBoundary } from './components/ErrorBoundary'
+
+// Un error en una página no tumba la cabecera; al cambiar de ruta se reintenta solo.
+function ContenidoProtegido() {
+  const { pathname } = useLocation()
+  return (
+    <ErrorBoundary resetKey={pathname}>
+      <Router />
+    </ErrorBoundary>
+  )
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -16,9 +27,11 @@ export default function App() {
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <div className="min-h-screen flex flex-col bg-[var(--color-background)]">
-        <Header />
+        <ErrorBoundary>
+          <Header />
+        </ErrorBoundary>
         <main className="flex-1">
-          <Router />
+          <ContenidoProtegido />
         </main>
         <Footer />
       </div>

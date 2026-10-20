@@ -8,9 +8,19 @@ export const TIENDA_URL = import.meta.env.VITE_TIENDA_URL || 'http://localhost:5
 
 const CLAVE_TOKEN = 'laboratorio.token'
 
+// El mensaje siempre es texto legible, aunque el backend responda con un objeto o una lista.
+function textoDe(detalle, status) {
+  if (typeof detalle === 'string') return detalle
+  if (Array.isArray(detalle)) return detalle.map((d) => d?.msg || String(d)).join(' ')
+  const texto = detalle?.detail ?? detalle?.message
+  if (typeof texto === 'string') return texto
+  if (status >= 500) return 'El backend tuvo un problema o un servicio no está disponible. Intenta de nuevo.'
+  return `Error HTTP ${status}`
+}
+
 export class ErrorApi extends Error {
   constructor(status, detalle) {
-    super(typeof detalle === 'string' ? detalle : detalle?.detail || `HTTP ${status}`)
+    super(textoDe(detalle, status))
     this.status = status
     this.detalle = detalle
   }
@@ -41,7 +51,10 @@ async function pedir(metodo, ruta, { cuerpo, params } = {}) {
   } catch {
     throw new ErrorApi(0, 'No se pudo contactar al backend de TiendaYa.')
   }
-  const datos = respuesta.headers.get('content-type')?.includes('json') ? await respuesta.json() : null
+  let datos = null
+  if (respuesta.headers.get('content-type')?.includes('json')) {
+    try { datos = await respuesta.json() } catch { datos = null }
+  }
   if (!respuesta.ok) throw new ErrorApi(respuesta.status, datos?.detail ?? datos)
   return datos
 }

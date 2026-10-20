@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
+from app.core.errores import registrar_manejadores
 from app.core.db_mongo import close_mongo, ensure_indexes, get_mongo_db
 from app.core.db_cassandra import close_cassandra
 from app.core.db_neo4j import close_driver as close_neo4j
@@ -60,6 +61,11 @@ async def generic_error_handler(request: Request, exc: Exception):
     )
 
 
+# Fallas de infraestructura (motor caído, timeout, bloqueo): 503/409 con mensaje
+# claro en lugar de un 500 genérico.
+registrar_manejadores(app)
+
+
 # Archivos estáticos (imágenes de productos)
 os.makedirs('static/products', exist_ok=True)
 os.makedirs('static/reviews', exist_ok=True)
@@ -97,7 +103,12 @@ if settings.FAULT_INJECTION_ENABLED:
 # Al arrancar: crea índices en Mongo y lanza el worker del patrón Outbox
 @app.on_event('startup')
 def startup():
-    ensure_indexes(get_mongo_db())
+    # Si MongoDB no responde al arrancar, la API igual inicia: los índices se
+    # crean en el siguiente arranque y los endpoints de catálogo responden 503.
+    try:
+        ensure_indexes(get_mongo_db())
+    except Exception as exc:
+        logger.warning('No se pudieron asegurar los índices de MongoDB al iniciar: %s', exc)
     start_outbox_worker()
     start_flash_worker()
     start_checkout_recovery_worker()
