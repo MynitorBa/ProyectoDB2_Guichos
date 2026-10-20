@@ -196,3 +196,39 @@ descendió a 5.77 GB. Recomendación: **NO-GO para cerrar la fase como plenament
 consistente** hasta auditar y corregir por separado inventario, líneas de
 pedido, subtotales y proyecciones, y disponer de aislamiento para la suite
 completa. No se hizo commit ni push.
+
+## Presentación de evidencias F01–F07 (19 de octubre de 2026)
+
+El panel administrativo ahora abre fichas legibles en lugar de imprimir JSON:
+
+- F01 lista todas las reseñas de cada producto en una sección desplegable con
+  desplazamiento interno; F02 lista las reseñas concentradas en la tienda; F03
+  compara lado a lado las reseñas de cada par de usuarios y producto común.
+  Neo4j sigue seleccionando los patrones, mientras MySQL completa en lote
+  nombres, estrellas, fechas y comentarios autoritativos de la página visible.
+- F04 muestra comentario, calificación, moderación, evidencia disponible y
+  faltante. Se conserva la advertencia de que la falta de verificación no
+  demuestra que nunca existió una compra.
+- F05 recupera por IDs las líneas de pedido, estado de pago, importe de la
+  línea y reseñas vinculadas; la propiedad de la tienda se identifica
+  expresamente como **actual**, no histórica.
+- F06 presenta tabla de movimientos con responsable y una comparación
+  temporal de salidas pagadas y reposiciones, sin exigir cantidades iguales.
+- F07 muestra solo los pares 1:1 confirmados, con comprador, línea, pedido,
+  movimiento, cantidad, fechas y tiempo transcurrido. Los candidatos ambiguos
+  se mencionan únicamente como excluidos.
+
+Las etiquetas «Reseñas históricas no verificadas» de F01–F03 describen el
+segmento consultado; son distintas de la vigencia histórica de un expediente
+F05–F07. La vigencia y la decisión humana aparecen por separado. Los datos
+técnicos permanecen en la API, pero no ocupan la vista habitual. No cambiaron
+las reglas, umbrales, contadores, filtros de Neo4j, estados ni notas.
+
+Validación de esta mejora: `npm run build` correcto; 28 pruebas focalizadas
+aisladas aprobadas y una prueba de edición de reseñas excluida porque requiere
+MySQL en el puerto principal 3306. Se comprobó en el navegador de la DEMO
+original el login, F03, F04, F05, F06 y F07; F01 y F02 estaban vacíos en ese
+momento y su presentación quedó cubierta por pruebas de enriquecimiento. Las
+consultas HTTP fueron de lectura; no se recalcularon ni moderaron alertas y no
+se modificaron datos DEMO. Este resultado no certifica la integridad completa
+del dataset DEMO, cuyas limitaciones se documentan arriba.

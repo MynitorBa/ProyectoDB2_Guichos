@@ -233,12 +233,13 @@ def test_endpoints_del_laboratorio_solo_existen_con_la_bandera():
     from app.api.v1 import consistency
 
     rutas = {r.path for r in consistency.router_fallas.routes}
-    assert {'/admin/fallas', '/admin/fallas/pasarela', '/admin/checkout/recuperar'} <= rutas
-    # El diagnóstico de solo lectura no forma parte del control de fallas.
-    assert not {r.path for r in consistency.router.routes} & {'/admin/fallas', '/admin/checkout/recuperar'}
+    assert {'/admin/fallas/pasarela', '/admin/checkout/recuperar'} <= rutas
+    # Estado de solo lectura disponible aun con la inyección deshabilitada.
+    assert '/admin/fallas' in {r.path for r in consistency.router.routes}
+    assert all('GET' not in r.methods for r in consistency.router_fallas.routes if r.path == '/admin/fallas')
     sin_bandera = FastAPI()
     sin_bandera.include_router(consistency.router, prefix='/api/v1')
-    assert not [r for r in sin_bandera.routes if 'fallas' in getattr(r, 'path', '')]
+    assert {r.path for r in sin_bandera.routes if 'fallas' in getattr(r, 'path', '')} == {'/api/v1/admin/fallas'}
 
 def test_falla_de_un_destino_no_bloquea_a_los_demas_y_usa_backoff(eventos_creados, ref_dell):
     with SessionLocal() as db:

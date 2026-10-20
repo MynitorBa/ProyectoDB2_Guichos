@@ -131,19 +131,25 @@ export default function App() {
     <div className="min-h-screen">
       <Cabecera onSalir={salir} />
       <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+        {fallas.data && !fallas.data.habilitada && (
+          <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+            Modo seguro: la inyección de fallas está deshabilitada. Los diagnósticos siguen disponibles;
+            los controles que modifican el entorno están bloqueados.
+          </p>
+        )}
         <p className="text-sm text-[var(--color-text-secondary)] max-w-3xl">
           Provoca una falla, haz una compra en la tienda y observa aquí cómo responde el checkout distribuido: la saga compensa,
           los reintentos idempotentes evitan cobros dobles, el outbox retiene y reenvía los eventos, y los invariantes confirman
           que nada quedó inconsistente.
         </p>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <PanelPasarela estado={fallas.data} />
-          <PanelPuntosFalla estado={fallas.data} />
-          <PanelComponentes />
+          <PanelPasarela estado={fallas.data} habilitado={fallas.data?.habilitada} />
+          <PanelPuntosFalla estado={fallas.data} habilitado={fallas.data?.habilitada} />
+          <PanelComponentes habilitado={fallas.data?.habilitada} />
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <PanelOutbox />
-          <PanelRecuperacion />
+          <PanelOutbox habilitado={fallas.data?.habilitada} />
+          <PanelRecuperacion habilitado={fallas.data?.habilitada} />
           <PanelInvariantes />
         </div>
         <PanelBitacora />

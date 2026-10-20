@@ -25,7 +25,7 @@ export function cerrarSesion() {
 }
 
 async function pedir(metodo, ruta, { cuerpo, params } = {}) {
-  const url = new URL(`${API_URL}${ruta}`)
+  const url = new URL(`${API_URL}${ruta}`, window.location.origin)
   Object.entries(params || {}).forEach(([k, v]) => v != null && url.searchParams.set(k, v))
   const token = obtenerToken()
   let respuesta

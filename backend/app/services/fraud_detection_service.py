@@ -110,6 +110,7 @@ def listar_sin_compra_mysql(
         'vendedor_id': seller.id if seller else None,
         'vendedor_nombre': seller.nombre_comercial if seller else None,
         'calificacion': review.calificacion,
+        'comentario': review.comentario,
         'fecha': review.fecha.isoformat(),
         'estado': review.estado_moderacion,
         'verificada': bool(review.verificada_compra),
@@ -239,6 +240,48 @@ def listar_indicador_paginado(
         'items': items, 'total': total, 'pagina': pagina, 'tamano': tamano,
         'paginas': max(1, (total + tamano - 1) // tamano),
     }
+
+
+def enriquecer_resenas_indicador(db: MySQLSession, regla: str, items: list[dict]) -> None:
+    """Añade datos autoritativos a la página F01–F03 sin cambiar el patrón Neo4j.
+
+    Una sola consulta por página evita consultar MySQL por cada reseña. La
+    ausencia de una fila se deja explícita; nunca se fabrica un comentario.
+    """
+    ids: set[str] = set()
+    for item in items:
+        if regla in {'bombardeo', 'reviewer_unico_vendedor'}:
+            ids.update(str(r['resena_id']) for r in item.get('resenas', []) if r.get('resena_id'))
+        elif regla == 'cluster':
+            for product in item.get('productos', []):
+                for pair in product.get('resenas', []):
+                    ids.update(str(pair[key]) for key in ('resena1_id', 'resena2_id') if pair.get(key))
+    if not ids:
+        return
+    rows = db.query(Resena, Usuario).join(
+        Usuario, Usuario.id == Resena.usuario_id,
+    ).filter(Resena.public_id.in_(ids)).all()
+    by_id = {
+        review.public_id: {
+            'comentario': review.comentario,
+            'calificacion': review.calificacion,
+            'fecha': review.fecha.isoformat() if review.fecha else None,
+            'usuario_nombre': f'{user.nombre} {user.apellido}'.strip(),
+            'verificada': bool(review.verificada_compra),
+            'estado': review.estado_moderacion,
+        }
+        for review, user in rows
+    }
+    for item in items:
+        if regla in {'bombardeo', 'reviewer_unico_vendedor'}:
+            for review in item.get('resenas', []):
+                review.update(by_id.get(str(review.get('resena_id')), {}))
+        elif regla == 'cluster':
+            for product in item.get('productos', []):
+                for pair in product.get('resenas', []):
+                    for index in (1, 2):
+                        detail = by_id.get(str(pair.get(f'resena{index}_id')), {})
+                        pair[f'resena{index}_detalle'] = detail
 
 
 def detectar_reviewer_unico_vendedor(
@@ -1053,11 +1096,100 @@ def listar_alertas_paginadas(
             'origen': row.origen_ultima_deteccion,
             'notas_revision': row.notas_revision,
         })
+    enriquecer_expedientes(db, items)
     return {
         'items': items, 'total': int(total), 'pagina': pagina,
         'tamano': tamano,
         'paginas': max(1, (int(total) + tamano - 1) // tamano),
     }
+
+
+def enriquecer_expedientes(db: MySQLSession, items: list[dict]) -> None:
+    """Contexto de lectura F05–F07, obtenido en lote de MySQL.
+
+    Las evidencias originales quedan intactas para diagnóstico y compatibilidad.
+    No se recalculan señales ni se modifican decisiones administrativas.
+    """
+    line_ids = {
+        int(line_id)
+        for item in items if item['tipo'] == 'autocompra'
+        for line_id in (item.get('evidencias') or {}).get('lineas', [])
+        if str(line_id).isdigit()
+    }
+    review_ids = {
+        str(review_id)
+        for item in items if item['tipo'] == 'autocompra'
+        for review_id in (item.get('evidencias') or {}).get('resenas_ligadas', [])
+    }
+    responsible_ids = {
+        int(move['responsable_usuario_id'])
+        for item in items
+        for move in (
+            (item.get('evidencias') or {}).get('movimientos_detalle', [])
+            + (item.get('evidencias') or {}).get('salidas_pagadas_detalle', [])
+        )
+        if move.get('responsable_usuario_id') is not None
+    }
+    lines = {
+        line.id: line for line in db.query(PedidoLinea).filter(PedidoLinea.id.in_(line_ids)).all()
+    } if line_ids else {}
+    order_ids = {line.pedido_id for line in lines.values()}
+    orders = {
+        order.id: order for order in db.query(Pedido).filter(Pedido.id.in_(order_ids)).all()
+    } if order_ids else {}
+    payments: dict[int, list[Pago]] = {}
+    if order_ids:
+        for payment in db.query(Pago).filter(Pago.pedido_id.in_(order_ids)).order_by(Pago.fecha.desc()).all():
+            payments.setdefault(payment.pedido_id, []).append(payment)
+    reviews = {}
+    if review_ids:
+        for review, user in db.query(Resena, Usuario).join(
+            Usuario, Usuario.id == Resena.usuario_id,
+        ).filter(Resena.public_id.in_(review_ids)).all():
+            reviews[review.public_id] = {
+                'resena_id': review.public_id,
+                'cliente': f'{user.nombre} {user.apellido}'.strip(),
+                'calificacion': review.calificacion,
+                'comentario': review.comentario,
+                'fecha': review.fecha.isoformat() if review.fecha else None,
+                'verificada': bool(review.verificada_compra),
+            }
+    responsible_names = {
+        user.id: f'{user.nombre} {user.apellido}'.strip()
+        for user in db.query(Usuario).filter(Usuario.id.in_(responsible_ids)).all()
+    } if responsible_ids else {}
+    for item in items:
+        evidence = item.get('evidencias') or {}
+        detail = {}
+        if item['tipo'] == 'autocompra':
+            purchases = []
+            for line_id in evidence.get('lineas', []):
+                line = lines.get(int(line_id)) if str(line_id).isdigit() else None
+                if not line or line.oferta_id != item.get('oferta_id'):
+                    continue
+                order = orders.get(line.pedido_id)
+                paid = next((p for p in payments.get(line.pedido_id, []) if p.estado == 'aprobado'), None)
+                purchases.append({
+                    'linea_id': line.id, 'pedido_id': line.pedido_id,
+                    'producto_nombre': line.producto_nombre,
+                    'cantidad': line.cantidad,
+                    'importe': str(line.subtotal_linea) if line.subtotal_linea is not None else None,
+                    'fecha': (paid.fecha.isoformat() if paid and paid.fecha else None),
+                    'estado_pago': paid.estado if paid else None,
+                    'estado_pedido': order.estado if order else None,
+                })
+            detail['compras'] = purchases
+            detail['resenas'] = [reviews[rid] for rid in evidence.get('resenas_ligadas', []) if rid in reviews]
+        elif item['tipo'] == 'inventario_atipico':
+            detail['movimientos'] = [
+                {**move, 'responsable_nombre': responsible_names.get(move.get('responsable_usuario_id'))}
+                for move in evidence.get('movimientos_detalle', [])
+            ]
+            detail['salidas'] = [
+                {**move, 'responsable_nombre': responsible_names.get(move.get('responsable_usuario_id'))}
+                for move in evidence.get('salidas_pagadas_detalle', [])
+            ]
+        item['detalle_investigacion'] = detail
 
 
 def revisar_alerta(db: MySQLSession, alerta_id: int, *, estado: str,

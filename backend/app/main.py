@@ -37,8 +37,10 @@ app.add_middleware(
         settings.FRONTEND_URL,
         'http://localhost:5173',
         'http://127.0.0.1:5173',
-        # Laboratorio de consistencia (solo en desarrollo, con inyección de fallas)
-        *([settings.LAB_URL, 'http://127.0.0.1:5174'] if settings.FAULT_INJECTION_ENABLED else []),
+        # El laboratorio también consulta diagnósticos de solo lectura con la
+        # inyección de fallas deshabilitada; los controles siguen sin registrarse.
+        settings.LAB_URL,
+        'http://127.0.0.1:5174',
     ],
     allow_credentials=True,
     allow_methods=['*'],

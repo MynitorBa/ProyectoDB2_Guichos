@@ -12,16 +12,10 @@ function ScrollToTop() {
 
 // Shell principal: envuelve en BrowserRouter y compone Header + contenido de ruta + Footer
 export default function App() {
-  const demoMode = import.meta.env.VITE_DEMO_MODE === 'true'
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <div className="min-h-screen flex flex-col bg-[var(--color-background)]">
-        {demoMode && (
-          <div className="bg-amber-400 text-amber-950 text-center text-xs sm:text-sm font-bold tracking-wide px-4 py-2">
-            TiendaYa — DEMO / DATOS SINTÉTICOS
-          </div>
-        )}
         <Header />
         <main className="flex-1">
           <Router />

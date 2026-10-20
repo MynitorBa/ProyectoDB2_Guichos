@@ -274,11 +274,13 @@ def fraude_indicador_paginado(
         )
         fraud.enriquecer_nombres_producto(neo4j, result['items'])
         return result
-    return fraud.listar_indicador_paginado(
+    result = fraud.listar_indicador_paginado(
         neo4j, regla, pagina=pagina, tamano=tamano, buscar=buscar,
         segmento=segmento, ventana_horas=ventana_horas, umbral=umbral,
         min_resenas=min_resenas, min_comun=min_comun,
     )
+    fraud.enriquecer_resenas_indicador(db, regla, result['items'])
+    return result
 
 
 @router.get('/admin/fraude/bombardeo')

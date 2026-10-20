@@ -2243,6 +2243,78 @@ function SalesSection() {
   )
 }
 
+const fraudValue = value => value === null || value === undefined || value === '' ? 'No disponible' : value
+const fraudDate = value => value ? formatDate(value) : 'No disponible'
+
+const FRAUD_GUIDE = {
+  bombardeo: ['Cinco o más reseñas verificadas y aprobadas sobre un producto en 24 horas.', 'Neo4j identifica el patrón; MySQL aporta el texto y los datos autoritativos.', 'La concentración temporal no demuestra que las reseñas sean falsas.'],
+  reviewer_unico_vendedor: ['Un cliente concentra al menos tres reseñas verificadas en una sola tienda.', 'Neo4j identifica la concentración; MySQL aporta cada reseña.', 'No es una autocompra ni demuestra coordinación por sí sola.'],
+  cluster: ['Un par de clientes reseñó al menos tres productos en común.', 'Neo4j encuentra el par y los productos; MySQL aporta ambas reseñas.', 'No compara igualdad de textos o calificaciones ni identifica necesariamente un grupo independiente.'],
+  sin_compra: ['Una reseña no tiene respaldo suficiente de compra pagada válida.', 'MySQL conserva la reseña, su moderación y el motivo de verificación; Neo4j aporta el nombre del producto.', 'No demuestra que la compra nunca haya ocurrido.'],
+  autocompra: ['El comprador coincide con el propietario actual de la tienda receptora.', 'Neo4j identifica la relación; MySQL aporta pedidos, pagos y reseñas disponibles.', 'No existe historial temporal completo de propiedad de la tienda.'],
+  inventario_atipico: ['Entradas o ajustes positivos reiterados cerca de ventas pagadas.', 'MySQL aporta los movimientos, responsables y pedidos asociados.', 'La correlación de F06 es temporal; no exige cantidades iguales ni prueba fraude.'],
+  coincidencia_cantidad: ['Una compra pagada y una reposición posterior de la misma oferta y cantidad forman un par 1:1.', 'MySQL aporta las líneas pagadas y movimientos confirmados por la regla.', 'Los candidatos ambiguos se excluyen; la coincidencia no demuestra causalidad.'],
+}
+
+function FraudGuide({ type, segment }) {
+  const guide = FRAUD_GUIDE[type]
+  if (!guide) return null
+  const historical = segment === 'historicas_no_verificadas'
+  return <div className="rounded border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950 space-y-1">
+    <p><strong>Qué se detectó:</strong> {historical ? `El mismo patrón F01–F03 aplicado a reseñas históricas no verificadas. ${type === 'bombardeo' ? 'Ventana de 24 horas y umbral de cinco reseñas.' : ''}` : guide[0]}</p>
+    <p><strong>Registros y fuente:</strong> {guide[1]}</p>
+    <p><strong>Límite:</strong> {guide[2]}</p>
+  </div>
+}
+
+function FraudReviewCard({ review, productName }) {
+  return <article className="rounded border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-xs space-y-1">
+    <div className="flex flex-wrap justify-between gap-2"><strong>{fraudValue(review.usuario_nombre || review.cliente)}</strong><span>{fraudDate(review.fecha)}</span></div>
+    {productName && <p>Producto: {productName}</p>}
+    <p aria-label={`Calificación ${fraudValue(review.calificacion)} de 5`} className="text-amber-600 font-semibold">{'★'.repeat(Math.max(0, Math.min(5, Number(review.calificacion) || 0)))}{'☆'.repeat(Math.max(0, 5 - (Number(review.calificacion) || 0)))} <span className="text-[var(--color-text-secondary)]">{fraudValue(review.calificacion)}/5</span></p>
+    <p className="whitespace-pre-wrap">{review.comentario || 'Sin comentario escrito.'}</p>
+    <p>Compra verificada: {review.verificada ? 'Sí' : 'No'}{review.estado ? ` · Moderación: ${review.estado}` : ''}</p>
+    <p className="font-mono text-[11px] text-[var(--color-text-muted)]">Reseña {fraudValue(review.resena_id)}</p>
+  </article>
+}
+
+function FraudEvidence({ alert }) {
+  const e = alert.evidencias || {}
+  const d = alert.detalle_investigacion || {}
+  if (alert.tipo === 'autocompra') return <div className="space-y-3 text-xs">
+    <FraudGuide type="autocompra" />
+    <p><strong>Comprador:</strong> {fraudValue(alert.usuario_nombre || e.usuario_nombre)} · <strong>Tienda:</strong> {fraudValue(alert.vendedor_nombre || e.vendedor_nombre)} · <strong>Producto:</strong> {fraudValue(alert.producto_nombre || e.producto_nombre)} · <strong>Oferta:</strong> #{fraudValue(alert.oferta_id)}</p>
+    <p>El comprador coincide con el propietario <strong>actual</strong> registrado; la propiedad histórica no está verificada.</p>
+    <h4 className="font-semibold">Compras relacionadas ({d.compras?.length ?? 0})</h4>
+    {d.compras?.length ? <div className="overflow-x-auto"><table className="w-full text-left"><thead><tr>{['Pedido / línea', 'Producto', 'Cantidad', 'Pago', 'Fecha de pago', 'Importe'].map(h => <th key={h} className="p-2 border-b">{h}</th>)}</tr></thead><tbody>{d.compras.map(c => <tr key={c.linea_id}><td className="p-2 border-b">#{c.pedido_id} / #{c.linea_id}</td><td className="p-2 border-b">{fraudValue(c.producto_nombre)}</td><td className="p-2 border-b">{c.cantidad}</td><td className="p-2 border-b">{fraudValue(c.estado_pago)} · {fraudValue(c.estado_pedido)}</td><td className="p-2 border-b">{fraudDate(c.fecha)}</td><td className="p-2 border-b">{c.importe != null ? `Q${c.importe}` : 'No disponible'}</td></tr>)}</tbody></table></div> : <p>No se encontraron líneas autoritativas para los identificadores proyectados.</p>}
+    {!!d.resenas?.length && <><h4 className="font-semibold">Reseñas vinculadas</h4>{d.resenas.map(r => <FraudReviewCard key={r.resena_id} review={r} />)}</>}
+  </div>
+  if (alert.tipo === 'inventario_atipico') {
+    const exits = new Map((d.salidas || []).map(m => [m.movimiento_id, m]))
+    const entries = new Map((d.movimientos || []).map(m => [m.movimiento_id, m]))
+    return <div className="space-y-3 text-xs">
+      <FraudGuide type="inventario_atipico" />
+      <p><strong>Tienda:</strong> {fraudValue(alert.vendedor_nombre)} · <strong>Producto:</strong> {fraudValue(alert.producto_nombre || alert.producto_ref)} · <strong>Oferta:</strong> #{fraudValue(alert.oferta_id)}</p>
+      <div className="flex flex-wrap gap-3"><span>Movimientos positivos: <strong>{fraudValue(e.movimientos)}</strong></span><span>Unidades añadidas: <strong>{fraudValue(e.unidades_positivas)}</strong></span><span>Ajustes manuales: <strong>{e.ajustes_manuales?.length ?? 0}</strong></span><span>Por propietario: <strong>{e.movimientos_por_propietario?.length ?? 0}</strong></span></div>
+      <h4 className="font-semibold">Movimientos positivos</h4>
+      {d.movimientos?.length ? <div className="overflow-x-auto"><table className="w-full text-left"><thead><tr>{['Fecha', 'Tipo', 'Cantidad', 'Responsable', 'Motivo', 'Movimiento'].map(h => <th key={h} className="p-2 border-b">{h}</th>)}</tr></thead><tbody>{d.movimientos.map(m => <tr key={m.movimiento_id}><td className="p-2 border-b">{fraudDate(m.fecha)}</td><td className="p-2 border-b">{fraudValue(m.tipo)}</td><td className="p-2 border-b">{m.cantidad}</td><td className="p-2 border-b">{fraudValue(m.responsable_nombre)}</td><td className="p-2 border-b">{fraudValue(m.motivo)}</td><td className="p-2 border-b">#{m.movimiento_id}</td></tr>)}</tbody></table></div> : <p>No hay detalle de movimientos en esta evidencia.</p>}
+      {!!e.pares_salida_reposicion?.length && <><h4 className="font-semibold">Correlaciones temporales con ventas pagadas</h4>{e.pares_salida_reposicion.map(([exitId, entryId], i) => { const sale = exits.get(exitId); const entry = entries.get(entryId); return <p key={`${exitId}-${entryId}-${i}`} className="rounded border p-2">Pedido #{fraudValue(sale?.pedido_id)} · salida #{exitId}, {fraudValue(sale?.cantidad)} unidades ({fraudDate(sale?.fecha)}) → reposición #{entryId}, {fraudValue(entry?.cantidad)} unidades ({fraudDate(entry?.fecha)}). Correlación temporal, no coincidencia exacta exigida.</p> })}</>}
+    </div>
+  }
+  if (alert.tipo === 'coincidencia_cantidad') return <div className="space-y-3 text-xs">
+    <FraudGuide type="coincidencia_cantidad" />
+    <p><strong>Tienda:</strong> {fraudValue(alert.vendedor_nombre)} · <strong>Producto:</strong> {fraudValue(alert.producto_nombre || alert.producto_ref)} · <strong>Oferta:</strong> #{fraudValue(alert.oferta_id)}</p>
+    {(e.pares_confirmados || []).map((pair, i) => <div key={`${pair.linea_id}-${pair.movimiento_id}-${i}`} className="grid md:grid-cols-2 gap-3 rounded border p-3">
+      <div><h4 className="font-semibold">Compra pagada</h4><p>{fraudValue(pair.comprador_nombre)} · pedido #{pair.pedido_id} · línea #{pair.linea_id}</p><p>Oferta #{pair.oferta_id} · {pair.cantidad} unidades · {fraudDate(pair.fecha_compra)}</p></div>
+      <div><h4 className="font-semibold">Entrada posterior</h4><p>Movimiento #{pair.movimiento_id} · {fraudValue(pair.tipo_movimiento)} · {pair.cantidad} unidades</p><p>{fraudValue(pair.responsable_movimiento_nombre)} · {fraudDate(pair.fecha_reposicion)} · {fraudValue(pair.motivo_movimiento)}</p></div>
+      <p className="md:col-span-2 text-emerald-700 font-semibold">Misma oferta · cantidad idéntica · reposición posterior · {fraudValue(pair.dias_transcurridos)} días transcurridos</p>
+    </div>)}
+    {!e.pares_confirmados?.length && <p>Sin pares confirmados en esta evidencia.</p>}
+    {!!e.coincidencias_ambiguas_excluidas?.length && <p className="rounded border border-amber-200 bg-amber-50 p-2">{e.coincidencias_ambiguas_excluidas.length} candidatos excluidos por ambigüedad; no se muestran como coincidencias confirmadas.</p>}
+  </div>
+  return <p className="text-xs">No hay una ficha disponible para esta regla.</p>
+}
+
 function FraudAlertRow({ alert, onUpdate, loading }) {
   const [notes, setNotes] = useState(alert.notas_revision || '')
   const save = (estado = alert.estado) => onUpdate({
@@ -2279,9 +2351,10 @@ function FraudAlertRow({ alert, onUpdate, loading }) {
         </Select>
       </div>
       <details className="text-xs rounded border border-[var(--color-border)] p-3">
-        <summary className="cursor-pointer font-semibold">Evidencia detallada</summary>
-        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-[11px]">{JSON.stringify(alert.evidencias || {}, null, 2)}</pre>
+        <summary className="cursor-pointer font-semibold">Abrir expediente y evidencia</summary>
+        <div className="mt-3"><FraudEvidence alert={alert} /></div>
       </details>
+      <p className="text-[11px] text-[var(--color-text-muted)]">Vigencia: {alert.activa ? 'activa en el último análisis' : 'histórica, no activa en la última evaluación'} · Revisión humana: {alert.estado?.replaceAll('_', ' ')}. Las notas y decisiones se conservan por separado.</p>
       <div className="flex gap-2 items-end">
         <div className="flex-1">
           <Label className="text-xs">Notas de revisión</Label>
@@ -2291,6 +2364,28 @@ function FraudAlertRow({ alert, onUpdate, loading }) {
       </div>
     </div>
   )
+}
+
+function FraudIndicatorEvidence({ item, rule, onModerate, moderationPending }) {
+  if (rule === 'bombardeo' || rule === 'reviewer_unico_vendedor') return <article className="rounded border border-[var(--color-border)] p-3 text-sm space-y-2">
+    <h4 className="font-semibold">{rule === 'bombardeo' ? fraudValue(item.producto_nombre || item.producto_ref) : `${fraudValue(item.usuario_nombre)} → ${fraudValue(item.vendedor_nombre)}`}</h4>
+    <p className="text-xs">{fraudValue(item.total_resenas)} reseñas · {rule === 'bombardeo' ? 'últimas 24 horas' : 'una sola tienda'}</p>
+    <details><summary className="cursor-pointer text-xs font-semibold">Ver todas las reseñas ({item.resenas?.length ?? 0})</summary><div className="mt-2 max-h-96 overflow-y-auto space-y-2">{(item.resenas || []).map((r, i) => <FraudReviewCard key={`${r.resena_id}-${i}`} review={r} productName={rule === 'reviewer_unico_vendedor' ? fraudValue(r.producto_nombre || r.producto_ref) : undefined} />)}</div></details>
+  </article>
+  if (rule === 'cluster') return <article className="rounded border border-[var(--color-border)] p-3 text-sm space-y-2">
+    <h4 className="font-semibold">{fraudValue(item.usuario1_nombre)} ↔ {fraudValue(item.usuario2_nombre)}</h4>
+    <p className="text-xs">{fraudValue(item.productos_comunes)} productos reseñados en común · unidad de detección: par de usuarios</p>
+    <details><summary className="cursor-pointer text-xs font-semibold">Comparar reseñas por producto</summary><div className="mt-2 max-h-[28rem] overflow-y-auto space-y-3">{(item.productos || []).map(product => <section key={product.ref} className="rounded border p-2"><h5 className="font-semibold mb-2">{fraudValue(product.nombre || product.ref)}</h5>{(product.resenas || []).map((pair, i) => <div key={`${pair.resena1_id}-${pair.resena2_id}-${i}`} className="grid md:grid-cols-2 gap-2 mb-2"><FraudReviewCard review={{ ...pair.resena1_detalle, resena_id: pair.resena1_id, usuario_nombre: pair.resena1_detalle?.usuario_nombre || item.usuario1_nombre, fecha: pair.resena1_detalle?.fecha || pair.resena1_fecha }} /><FraudReviewCard review={{ ...pair.resena2_detalle, resena_id: pair.resena2_id, usuario_nombre: pair.resena2_detalle?.usuario_nombre || item.usuario2_nombre, fecha: pair.resena2_detalle?.fecha || pair.resena2_fecha }} /></div>)}</section>)}</div></details>
+  </article>
+  return <article className="rounded border border-[var(--color-border)] p-3 text-sm space-y-2">
+    <h4 className="font-semibold">{fraudValue(item.producto_nombre || item.producto_ref)}</h4>
+    <p><strong>Cliente:</strong> {fraudValue(item.usuario_nombre)} · <strong>Vendedor:</strong> {fraudValue(item.vendedor_nombre)}</p>
+    <FraudReviewCard review={{ ...item, usuario_nombre: item.usuario_nombre }} />
+    <p className="text-xs"><strong>Motivo:</strong> {fraudValue(item.motivo_no_verificada)}</p>
+    <p className="text-xs"><strong>Evidencia disponible:</strong> reseña #{fraudValue(item.resena_id)}{item.evidencia_disponible?.pedido_linea_id ? ` · línea #${item.evidencia_disponible.pedido_linea_id}` : ''}. <strong>Evidencia faltante:</strong> {fraudValue(item.evidencia_faltante)}</p>
+    <p className="rounded border border-amber-200 bg-amber-50 p-2 text-xs">No se encontró respaldo suficiente de una compra pagada válida. Esto no demuestra que la compra nunca haya ocurrido.</p>
+    <div className="flex gap-3"><button className="text-xs font-semibold text-emerald-600" disabled={moderationPending} onClick={() => onModerate(item.resena_id, 'aprobada')}><CheckCircle size={13} className="inline" /> Aprobar moderación</button><button className="text-xs font-semibold text-red-600" disabled={moderationPending} onClick={() => onModerate(item.resena_id, 'rechazada')}><XCircle size={13} className="inline" /> Rechazar</button></div>
+  </article>
 }
 
 // ── FraudSection ──
@@ -2317,7 +2412,7 @@ function FraudSection() {
   const indicatorRule = indicator?.rule || indicator?.key?.replace('_historico', '')
   const indicatorSegment = indicator?.key?.endsWith('_historico')
     ? 'historicas_no_verificadas' : 'verificadas_publicas'
-  const { data: indicatorData, isLoading: indicatorLoading, isError: indicatorError } = useQuery({
+  const { data: indicatorData, isLoading: indicatorLoading, isPlaceholderData: indicatorPlaceholder, isError: indicatorError } = useQuery({
     queryKey: ['fraud-indicator', indicatorRule, indicatorSegment, indicatorPage, indicatorSize, indicatorSearch],
     queryFn: () => getFraudIndicator(indicatorRule, {
       pagina: indicatorPage, tamano: indicatorSize, buscar: indicatorSearch || undefined,
@@ -2335,7 +2430,7 @@ function FraudSection() {
     activa: alertActive === 'todas' ? undefined : alertActive === 'activas',
     orden: alertOrder,
   }
-  const { data: alertsData, isLoading: alertsLoading, isError: alertsError } = useQuery({
+  const { data: alertsData, isLoading: alertsLoading, isPlaceholderData: alertsPlaceholder, isError: alertsError } = useQuery({
     queryKey: ['fraud-alerts', alertParams],
     queryFn: () => getFraudAlertsPaginated(alertParams).then(r => r.data),
     placeholderData: keepPreviousData,
@@ -2385,9 +2480,9 @@ function FraudSection() {
     { key: 'sin_compra_verificada', rule: 'sin_compra', label: 'F04 · Compra no verificable', color: 'text-amber-600 bg-amber-50 border-amber-200' },
     { key: 'reviewer_unico_vendedor', rule: 'reviewer_unico_vendedor', label: 'F02 · Un vendedor', color: 'text-orange-600 bg-orange-50 border-orange-200' },
     { key: 'cluster_coordinado',    rule: 'cluster', label: 'F03 · Cluster coordinado', color: 'text-purple-600 bg-purple-50 border-purple-200' },
-    { key: 'bombardeo_historico', rule: 'bombardeo', label: 'F01 · Histórico', color: 'text-slate-600 bg-slate-50 border-slate-200' },
-    { key: 'reviewer_unico_vendedor_historico', rule: 'reviewer_unico_vendedor', label: 'F02 · Histórico', color: 'text-slate-600 bg-slate-50 border-slate-200' },
-    { key: 'cluster_coordinado_historico', rule: 'cluster', label: 'F03 · Histórico', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+    { key: 'bombardeo_historico', rule: 'bombardeo', label: 'F01 · Reseñas históricas no verificadas', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+    { key: 'reviewer_unico_vendedor_historico', rule: 'reviewer_unico_vendedor', label: 'F02 · Reseñas históricas no verificadas', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+    { key: 'cluster_coordinado_historico', rule: 'cluster', label: 'F03 · Reseñas históricas no verificadas', color: 'text-slate-600 bg-slate-50 border-slate-200' },
     { key: 'autocompra', commercialType: 'autocompra', label: 'F05 · Autocompra', color: 'text-rose-600 bg-rose-50 border-rose-200' },
     { key: 'inventario_atipico', commercialType: 'inventario_atipico', label: 'F06 · Inventario', color: 'text-blue-600 bg-blue-50 border-blue-200' },
     { key: 'coincidencia_cantidad', commercialType: 'coincidencia_cantidad', label: 'F07 · Coincidencia', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
@@ -2467,7 +2562,7 @@ function FraudSection() {
           <Select value={alertOrder} onValueChange={v => { setAlertOrder(v); setAlertPage(1) }}><SelectTrigger><SelectValue placeholder="Orden" /></SelectTrigger><SelectContent><SelectItem value="fecha_desc">Más recientes</SelectItem><SelectItem value="prioridad_desc">Mayor prioridad</SelectItem></SelectContent></Select>
         </div>
         <div className="divide-y divide-[var(--color-border)]">
-          {alertsLoading
+          {alertsLoading || alertsPlaceholder
             ? <div className="p-5"><Skeleton className="h-16 w-full" /></div>
             : alertsError
               ? <p className="p-8 text-center text-sm text-red-600">No fue posible consultar los expedientes. Intenta nuevamente.</p>
@@ -2500,47 +2595,26 @@ function FraudSection() {
           <DialogDescription>
             {indicatorRule === 'sin_compra'
               ? 'Reseñas autoritativas consultadas en MySQL; Neo4j aporta únicamente el nombre proyectado del producto.'
-              : 'Registros reales consultados en Neo4j. El indicador es explicativo y no bloquea operaciones.'}
+              : 'Patrones consultados en Neo4j y reseñas completadas desde MySQL. Son señales para investigar; no bloquean operaciones.'}
           </DialogDescription>
-          {indicatorRule === 'cluster' && <p className="text-xs text-[var(--color-text-muted)]">Cada registro representa un par de usuarios; varios pares pueden pertenecer al mismo grupo conectado. Compartir productos reseñados requiere revisión y no demuestra coordinación fraudulenta.</p>}
+          <FraudGuide type={indicatorRule} segment={indicatorSegment} />
           {indicatorRule === 'bombardeo' && (
             <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-              Ventana analizada: últimas 24 horas · umbral: 5 reseñas verificadas por producto.
+              Ventana analizada: últimas 24 horas · umbral: 5 reseñas {indicatorSegment === 'historicas_no_verificadas' ? 'históricas no verificadas' : 'verificadas y aprobadas'} por producto.
             </p>
           )}
           <div className="flex gap-2">
             <Input value={indicatorSearch} onChange={e => { setIndicatorSearch(e.target.value); setIndicatorPage(1) }} placeholder="Buscar usuario, producto o vendedor" />
             <Select value={String(indicatorSize)} onValueChange={v => { setIndicatorSize(Number(v)); setIndicatorPage(1) }}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent>{[10,20,50].map(v => <SelectItem key={v} value={String(v)}>{v}</SelectItem>)}</SelectContent></Select>
           </div>
-          {indicatorLoading ? <Skeleton className="h-52 w-full" /> : indicatorError ? <p className="py-10 text-center text-sm text-red-600">No fue posible consultar este indicador.</p> : (
+          {indicatorLoading || indicatorPlaceholder ? <Skeleton className="h-52 w-full" /> : indicatorError ? <p className="py-10 text-center text-sm text-red-600">No fue posible consultar este indicador.</p> : (
             <div className="space-y-2">
-              {(indicatorData?.items || []).map((item, index) => (
-                <div key={item.resena_id || `${item.usuario_id || item.usuario1_id || item.producto_ref}-${index}`} className="rounded border border-[var(--color-border)] p-3 text-sm">
-                  <p className="font-semibold">{item.producto_nombre || item.vendedor_nombre || `${item.usuario1_nombre || item.usuario_nombre || 'Registro'}${item.usuario2_nombre ? ` ↔ ${item.usuario2_nombre}` : ''}`}</p>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                    {item.total_resenas != null && `${item.total_resenas} reseñas`}
-                    {item.productos_comunes != null && `${item.productos_comunes} productos comunes`}
-                    {item.calificacion != null && `Calificación ${item.calificacion}/5 · ${formatDate(item.fecha)}`}
-                  </p>
-                  {item.resena_id && <p className="font-mono text-[11px] mt-1">Reseña {item.resena_id} · producto {item.producto_ref}</p>}
-                  {indicatorRule === 'sin_compra' && <div className="mt-2 rounded bg-amber-50 border border-amber-200 p-2 text-xs text-amber-900"><p>Vendedor: {item.vendedor_nombre || 'sin vendedor proyectado'} · Moderación: {item.estado} · Compra verificada: {item.verificada ? 'sí' : 'no'}</p><p className="mt-1">Motivo: {item.motivo_no_verificada}</p><p className="mt-1">Evidencia faltante: {item.evidencia_faltante}</p></div>}
-                  {(item.resenas || item.productos) && <details className="mt-2 text-xs rounded border border-[var(--color-border)] p-2"><summary className="cursor-pointer font-semibold">Abrir reseñas y evidencia</summary>
-                    <div className="mt-2 space-y-2">
-                      {(item.resenas || []).map((review) => <div key={review.resena_id} className="rounded bg-[var(--color-background)] p-2">
-                        <p className="font-mono">Reseña {review.resena_id} · {formatDate(review.fecha)}</p>
-                        <p>{review.usuario_nombre && `${review.usuario_nombre} · `}{review.producto_nombre || review.producto_ref || ''} · compra {review.verificada ? 'verificada' : 'no verificada'}{review.estado ? ` · ${review.estado}` : ''}</p>
-                      </div>)}
-                      {(item.productos || []).map((product) => <div key={product.ref} className="rounded bg-[var(--color-background)] p-2">
-                        <p className="font-semibold">{product.nombre || product.ref} <span className="font-mono font-normal">({product.ref})</span></p>
-                        {(product.resenas || []).map((pair, idx) => <p key={`${pair.resena1_id}-${pair.resena2_id}-${idx}`} className="font-mono mt-1">{pair.resena1_id} ({formatDate(pair.resena1_fecha)}) ↔ {pair.resena2_id} ({formatDate(pair.resena2_fecha)})</p>)}
-                      </div>)}
-                    </div>
-                    <details className="mt-2"><summary className="cursor-pointer text-[var(--color-text-muted)]">Ver evidencia técnica</summary><pre className="mt-1 whitespace-pre-wrap overflow-x-auto">{JSON.stringify(item.resenas || item.productos, null, 2)}</pre></details>
-                  </details>}
-                  {indicatorRule === 'sin_compra' && <div className="flex gap-3 mt-2"><button className="text-xs font-semibold text-emerald-600" disabled={moderateMutation.isPending} onClick={() => moderateMutation.mutate({ resenaId: item.resena_id, estado: 'aprobada' })}><CheckCircle size={13} className="inline" /> Aprobar moderación</button><button className="text-xs font-semibold text-red-600" disabled={moderateMutation.isPending} onClick={() => moderateMutation.mutate({ resenaId: item.resena_id, estado: 'rechazada' })}><XCircle size={13} className="inline" /> Rechazar</button></div>}
-                </div>
-              ))}
-              {!indicatorData?.items?.length && <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">No se detectaron casos para estos filtros.</p>}
+              {(indicatorData?.items || []).map((item, index) => <FraudIndicatorEvidence
+                key={item.resena_id || `${item.usuario_id || item.usuario1_id || item.producto_ref}-${index}`}
+                item={item} rule={indicatorRule} moderationPending={moderateMutation.isPending}
+                onModerate={(resenaId, estado) => moderateMutation.mutate({ resenaId, estado })}
+              />)}
+              {!indicatorData?.items?.length && <p className="py-10 text-center text-sm text-[var(--color-text-muted)]">{indicatorRule === 'reviewer_unico_vendedor' ? 'No se detectaron usuarios que cumplan este patrón.' : 'No se detectaron casos para estos filtros.'}</p>}
             </div>
           )}
           <div className="flex justify-between items-center"><span className="text-xs text-[var(--color-text-muted)]">{indicatorData?.total || 0} registros · página {indicatorData?.pagina || 1} de {indicatorData?.paginas || 1}</span><div className="flex gap-2"><Button variant="secondary" size="sm" disabled={indicatorPage <= 1} onClick={() => setIndicatorPage(p => p - 1)}>Anterior</Button><Button variant="secondary" size="sm" disabled={indicatorPage >= (indicatorData?.paginas || 1)} onClick={() => setIndicatorPage(p => p + 1)}>Siguiente</Button><DialogClose asChild><Button variant="secondary" size="sm">Cerrar</Button></DialogClose></div></div>

@@ -58,7 +58,7 @@ def verificar_consistencia(
     return consistency_service.verificar(db, mongo, es)
 
 
-@router_fallas.get('/fallas')
+@router.get('/fallas')
 def estado_fallas(_: Usuario = Depends(get_admin_user)):
     try:
         pasarela = httpx.get(f'{settings.PAYMENT_GATEWAY_URL}/control', timeout=2).json()

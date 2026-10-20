@@ -11,7 +11,7 @@ de pruebas de resiliencia.
 | Carpeta | `frontend/` | `laboratorio/` |
 | Puerto | 5173 | 5174 |
 | Público | Clientes, vendedores y administradores | Equipo de desarrollo |
-| En producción | Sí | No (el backend ni siquiera registra sus endpoints) |
+| En producción | Sí | No; los controles de inyección no se registran si la bandera está deshabilitada |
 
 ## Qué permite hacer
 
@@ -26,6 +26,15 @@ de pruebas de resiliencia.
   saga** de cada compra.
 
 ## Cómo ejecutarlo
+
+En la presentación de Entrega 3, `scripts/start-presentation.ps1` inicia el
+laboratorio original en `http://localhost:5174` sobre la API DEMO en `:8000`.
+Con `FAULT_INJECTION_ENABLED=false`, el login, Outbox, invariantes y bitácora
+son de solo lectura; los controles de fallas se muestran deshabilitados. No
+activar la inyección sobre la DEMO original solo para hacer una prueba.
+
+Para ejercitar los controles de fallas se requiere un entorno aislado con
+respaldo y `FAULT_INJECTION_ENABLED=true`:
 
 Requiere el backend con la inyección de fallas habilitada (`backend/.env`):
 

@@ -22,7 +22,8 @@ const MODOS_PASARELA = [
   { modo: 'error_antes', label: 'Error 503', detalle: 'No cobra ni responde: verificación y luego compensación.' },
 ]
 
-export function PanelPasarela({ estado }) {
+export function PanelPasarela({ estado, habilitado = true }) {
+  const puerto = 8001
   const queryClient = useQueryClient()
   const cambiar = useMutation({
     mutationFn: api.modoPasarela,
@@ -32,13 +33,13 @@ export function PanelPasarela({ estado }) {
   const actual = estado?.pasarela?.modo
   return (
     <Panel icono={CreditCard} titulo="Pasarela de pagos simulada"
-      descripcion="Sistema externo, independiente de MySQL (:8001). Su comportamiento decide el desenlace de cada compra.">
+      descripcion={`Sistema externo, independiente de MySQL (:${puerto}). Su comportamiento decide el desenlace de cada compra.`}>
       {!estado ? <Cargando className="h-48" /> : !estado.pasarela ? (
-        <p className="text-sm text-[var(--color-error)]">La pasarela no responde en :8001. Inicia el sistema con <code>start-dev.ps1</code>.</p>
+        <p className="text-sm text-[var(--color-error)]">La pasarela no responde en :{puerto}. Revisa el arranque del entorno.</p>
       ) : (
         <div className="space-y-1.5">
           {MODOS_PASARELA.map((m) => (
-            <button key={m.modo} type="button" onClick={() => cambiar.mutate(m.modo)} disabled={cambiar.isPending}
+            <button key={m.modo} type="button" onClick={() => cambiar.mutate(m.modo)} disabled={!habilitado || cambiar.isPending}
               aria-pressed={actual === m.modo}
               className={cn('w-full flex items-center gap-3 text-left px-3 py-2 rounded-lg border transition-colors',
                 actual === m.modo ? 'border-[var(--color-action)] bg-[var(--color-action)]/5' : 'border-[var(--color-border)] hover:border-[var(--color-action)]/40')}>
@@ -57,7 +58,7 @@ export function PanelPasarela({ estado }) {
 
 // ── Puntos de falla ───────────────────────────────────────────────────────────
 
-export function PanelPuntosFalla({ estado }) {
+export function PanelPuntosFalla({ estado, habilitado = true }) {
   const queryClient = useQueryClient()
   const refrescar = () => queryClient.invalidateQueries({ queryKey: ['fallas'] })
   const cambiar = useMutation({
@@ -69,7 +70,7 @@ export function PanelPuntosFalla({ estado }) {
   return (
     <Panel icono={FlaskConical} titulo="Puntos de falla"
       descripcion="Simulan que el proceso del backend cae en un punto exacto del flujo. «Una vez» se desactiva tras dispararse."
-      acciones={<Boton variante="secondary" onClick={() => limpiar.mutate()}>Desactivar todos</Boton>}>
+      acciones={<Boton variante="secondary" disabled={!habilitado} onClick={() => limpiar.mutate()}>Desactivar todos</Boton>}>
       {!estado ? <Cargando className="h-48" /> : (
         <ul className="space-y-1.5">
           {estado.puntos.map((p) => (
@@ -82,7 +83,7 @@ export function PanelPuntosFalla({ estado }) {
                 {[['off', 'Off'], ['una_vez', 'Una vez'], ['siempre', 'Siempre']].map(([modo, label]) => {
                   const activo = (p.modo || 'off') === modo
                   return (
-                    <button key={modo} type="button" aria-pressed={activo}
+                    <button key={modo} type="button" aria-pressed={activo} disabled={!habilitado}
                       onClick={() => cambiar.mutate({ punto: p.punto, modo })}
                       className={cn('px-2 py-1 text-[11px]', activo
                         ? (modo === 'off' ? 'bg-[var(--color-border)] font-semibold' : 'bg-[var(--color-error)] text-white font-semibold')
@@ -110,9 +111,9 @@ const CONTENEDORES = [
   { nombre: 'Redis', contenedor: 'tiendaya_redis', efecto: 'El checkout responde 503: el carrito no está disponible.', pausa: true },
 ]
 
-function Comando({ texto }) {
+function Comando({ texto, habilitado = true }) {
   return (
-    <button type="button" title="Copiar"
+    <button type="button" title="Copiar" disabled={!habilitado}
       onClick={() => navigator.clipboard?.writeText(texto).then(() => toast.success('Comando copiado'))}
       className="group flex items-center gap-1.5 rounded bg-[var(--color-lab)] text-gray-100 px-2 py-1 font-mono text-[11px] hover:bg-black">
       {texto}<Copy size={11} className="opacity-50 group-hover:opacity-100" />
@@ -120,7 +121,8 @@ function Comando({ texto }) {
   )
 }
 
-export function PanelComponentes() {
+export function PanelComponentes({ habilitado = true }) {
+  const prefijo = import.meta.env.VITE_DEMO_MODE === 'true' ? 'tiendaya_demo_' : 'tiendaya_'
   return (
     <Panel icono={Container} titulo="Tumbar componentes"
       descripcion="Para simular la caída de una base de datos, ejecuta estos comandos en una terminal. El laboratorio no ejecuta nada en tu máquina; observa el efecto en «Outbox en vivo».">
@@ -129,8 +131,8 @@ export function PanelComponentes() {
           <li key={c.contenedor} className="rounded-lg border border-[var(--color-border)] px-3 py-2 space-y-1.5">
             <p className="text-sm"><span className="font-semibold">{c.nombre}</span> <span className="text-xs text-[var(--color-text-muted)]">· {c.efecto}</span></p>
             <div className="flex flex-wrap gap-1.5">
-              <Comando texto={`docker ${c.pausa ? 'pause' : 'stop'} ${c.contenedor}`} />
-              <Comando texto={`docker ${c.pausa ? 'unpause' : 'start'} ${c.contenedor}`} />
+              <Comando habilitado={habilitado} texto={`docker ${c.pausa ? 'pause' : 'stop'} ${c.contenedor.replace('tiendaya_', prefijo)}`} />
+              <Comando habilitado={habilitado} texto={`docker ${c.pausa ? 'unpause' : 'start'} ${c.contenedor.replace('tiendaya_', prefijo)}`} />
             </div>
           </li>
         ))}
@@ -156,7 +158,7 @@ function estadoDestino(d) {
   return ['Al día', 'success']
 }
 
-export function PanelOutbox() {
+export function PanelOutbox({ habilitado = true }) {
   const queryClient = useQueryClient()
   const outbox = useQuery({ queryKey: ['outbox'], queryFn: api.outbox, refetchInterval: 2000 })
   const reintentar = useMutation({
@@ -168,7 +170,7 @@ export function PanelOutbox() {
   return (
     <Panel icono={Network} titulo="Outbox en vivo"
       descripcion="Eventos pendientes de proyectar desde MySQL hacia cada componente (cada 2 s). Con un componente caído, sus eventos quedan retenidos con backoff y los demás siguen al día."
-      acciones={problemas.length > 0 && <Boton variante="secondary" onClick={() => reintentar.mutate({})}><RotateCw size={13} /> Reintentar ya</Boton>}>
+      acciones={problemas.length > 0 && <Boton variante="secondary" disabled={!habilitado} onClick={() => reintentar.mutate({})}><RotateCw size={13} /> Reintentar ya</Boton>}>
       {outbox.isLoading ? <Cargando className="h-28" /> : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -206,7 +208,7 @@ export function PanelOutbox() {
 
 // ── Recuperación ──────────────────────────────────────────────────────────────
 
-export function PanelRecuperacion() {
+export function PanelRecuperacion({ habilitado = true }) {
   const queryClient = useQueryClient()
   const [ultima, setUltima] = useState(null)
   const recuperar = useMutation({
@@ -221,7 +223,7 @@ export function PanelRecuperacion() {
   return (
     <Panel icono={PlayCircle} titulo="Recuperación del checkout"
       descripcion="El backend la ejecuta solo cada 5 s: el reconciliador resuelve pagos en verificación consultando la pasarela y el recolector atiende pedidos cuya reserva venció a mitad de la saga."
-      acciones={<Boton cargando={recuperar.isPending} onClick={() => recuperar.mutate()}>Ejecutar ahora</Boton>}>
+      acciones={<Boton cargando={recuperar.isPending} disabled={!habilitado} onClick={() => recuperar.mutate()}>Ejecutar ahora</Boton>}>
       {ultima ? (
         <div className="text-sm space-y-0.5">
           <p className="text-xs text-[var(--color-text-muted)]">{horaLocal(ultima.en)}</p>

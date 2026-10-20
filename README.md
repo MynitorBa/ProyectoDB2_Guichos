@@ -29,6 +29,14 @@ Diagrama completo en [`docs/05-diagrama-arquitectura.md`](docs/05-diagrama-arqui
 
 ## URLs del sistema
 
+Para la presentación de Entrega 3 con los **datos sintéticos de la DEMO original**,
+usar [`scripts/start-presentation.ps1`](scripts/start-presentation.ps1). La tienda
+queda en `:5173`, el laboratorio original en `:5174`, la API en `:8000` y la
+pasarela simulada en `:8001`. El procedimiento, el apagado seguro y sus límites
+están en [la guía de presentación](docs/42-presentacion-entrega3.md). Los puertos
+de motores y herramientas indicados abajo corresponden al entorno de desarrollo
+PRINCIPAL; no identifican por sí solos la DEMO.
+
 | Servicio | URL |
 |---|---|
 | Frontend | http://localhost:5173 |
