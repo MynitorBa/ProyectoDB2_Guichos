@@ -9,11 +9,11 @@ import redis as redis_lib
 from app.core.db_mysql import SessionLocal
 from app.core.db_redis import get_redis
 from app.core.time import utc_now
-from app.models.inventario import Inventario, MovimientoInventario
+from app.models.inventario import MovimientoInventario
 from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.services import flash_sale_service as flash
 from app.services.offer_history_service import registrar_saldo_inventario
-from app.services.offer_service import enqueue_primary_offer_projection
+from app.services.offer_service import enqueue_primary_offer_projection, inventario_promocion
 from app.services.outbox_service import enqueue_outbox
 from app.models.oferta import Oferta
 
@@ -75,9 +75,7 @@ def reconcile_once() -> int:
             promotion = db.query(PromocionFlash).filter_by(id=row.id).with_for_update().one()
             if promotion.estado not in {'programada', 'activa'}:
                 continue
-            inventory = db.query(Inventario).filter_by(
-                oferta_id=promotion.oferta_id, bodega='principal'
-            ).with_for_update().one()
+            inventory = inventario_promocion(db, promotion, bloquear=True)
             remaining = max(0, promotion.unidades_totales - promotion.unidades_vendidas)
             release = min(remaining, inventory.cantidad_reservada)
             inventory.cantidad_reservada -= release

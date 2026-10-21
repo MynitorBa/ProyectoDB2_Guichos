@@ -56,7 +56,10 @@ from app.models.vendedor import Vendedor
 from app.schemas.checkout import CheckoutItem
 from app.services import payment_gateway_client as pg
 from app.services.offer_history_service import registrar_saldo_inventario
-from app.services.offer_service import resolver_oferta_comprable
+from app.services.offer_service import (
+    BODEGAS_COMPRABLES, inventario_id_promocion, resolver_oferta_comprable, seleccionar_inventario,
+    stock_comprable,
+)
 from app.services.outbox_service import enqueue_outbox
 
 logger = logging.getLogger(__name__)
@@ -145,14 +148,44 @@ def _bloquear_recursos(db: Session, pedido: Pedido, offer_ids: list[int]):
             select(PromocionFlash).where(PromocionFlash.id == reserva.promocion_id).with_for_update()
         ).scalar_one()
         flash[promocion.oferta_id] = (promocion, reserva)
-    inventarios = {
-        i.oferta_id: i for i in db.execute(
-            select(Inventario)
-            .where(Inventario.oferta_id.in_(offer_ids), Inventario.bodega == 'principal')
-            .order_by(Inventario.oferta_id)
-            .with_for_update()
-        ).scalars()
-    }
+    rows = db.execute(
+        select(Inventario)
+        .where(Inventario.oferta_id.in_(offer_ids), Inventario.bodega.in_(BODEGAS_COMPRABLES))
+        .order_by(Inventario.oferta_id, Inventario.id)
+        .with_for_update()
+    ).scalars().all()
+    by_id = {row.id: row for row in rows}
+    # La reserva ordinaria registró el id de inventario en T1, dentro de la
+    # misma transacción. Nunca volver a elegir según stock en T2: pudo cambiar.
+    movements = db.execute(
+        select(MovimientoInventario)
+        .where(MovimientoInventario.pedido_id == pedido.id,
+               MovimientoInventario.tipo == 'reserva')
+        .order_by(MovimientoInventario.id)
+    ).scalars().all()
+    by_offer = defaultdict(list)
+    for movement in movements:
+        row = by_id.get(movement.inventario_id)
+        if row is not None:
+            by_offer[row.oferta_id].append(row)
+    inventarios = {}
+    for offer_id in offer_ids:
+        if offer_id in flash:
+            try:
+                flash_inventory_id = inventario_id_promocion(db, flash[offer_id][0].id)
+            except LookupError as exc:
+                db.rollback()
+                raise PedidoNoCumplible(str(exc)) from exc
+            matches = [row for row in rows if row.oferta_id == offer_id and row.id == flash_inventory_id]
+        else:
+            matches = by_offer[offer_id]
+        if len(matches) != 1:
+            db.rollback()
+            raise PedidoNoCumplible(
+                f'No se pudo identificar inequívocamente el inventario reservado '
+                f'para la oferta {offer_id} del pedido {pedido.id}.'
+            )
+        inventarios[offer_id] = matches[0]
     return offers, flash, inventarios
 
 
@@ -334,39 +367,44 @@ def reservar_pedido(
                     'PRICE_CHANGED',
                 )
 
-    inventories = (
-        db.execute(
-            select(Inventario)
-            .where(Inventario.oferta_id.in_(offer_ids))
-            .where(Inventario.bodega == 'principal')
-            .order_by(Inventario.oferta_id)
-            .with_for_update()
-        )
-        .scalars()
-        .all()
-    )
-    inventory_by_offer = {row.oferta_id: row for row in inventories}
+    inventories = db.execute(
+        select(Inventario)
+        .where(Inventario.oferta_id.in_(offer_ids), Inventario.bodega.in_(BODEGAS_COMPRABLES))
+        .order_by(Inventario.oferta_id, Inventario.id)
+        .with_for_update()
+    ).scalars().all()
+    by_offer = defaultdict(list)
+    for row in inventories:
+        by_offer[row.oferta_id].append(row)
+    inventory_by_offer = {}
     for offer_id, quantity in quantities.items():
-        inventory = inventory_by_offer.get(offer_id)
-        if inventory is None:
+        candidates = by_offer[offer_id]
+        if not candidates:
             raise CheckoutError(
                 f'Oferta id={offer_id} no tiene inventario registrado.',
                 'NO_INVENTORY',
             )
         if offer_id in flash_context:
             promotion, _ = flash_context[offer_id]
+            try:
+                flash_inventory_id = inventario_id_promocion(db, promotion.id)
+            except LookupError as exc:
+                raise CheckoutError(str(exc), 'FLASH_RESERVATION_INVALID') from exc
+            inventory = next((row for row in candidates if row.id == flash_inventory_id), None)
             available = min(
                 inventory.cantidad_reservada,
                 promotion.unidades_totales - promotion.unidades_vendidas,
-            )
+            ) if inventory else 0
         else:
-            available = inventory.cantidad_disponible - inventory.cantidad_reservada
+            inventory = seleccionar_inventario(candidates, quantity)
+            available = stock_comprable(candidates)
         if available < quantity:
             raise CheckoutError(
                 f'Stock insuficiente para oferta id={offer_id}. '
                 f'Disponible: {available}, solicitado: {quantity}',
                 'INSUFFICIENT_STOCK',
             )
+        inventory_by_offer[offer_id] = inventory
 
     # Se agrupa el subtotal por vendedor para crear un PedidoVendedor independiente por cada uno
     vendors = {

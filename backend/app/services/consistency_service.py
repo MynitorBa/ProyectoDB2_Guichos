@@ -59,22 +59,28 @@ def inventario_coherente(db: Session) -> dict:
 def reservas_explicadas(db: Session) -> dict:
     """I2: cada unidad reservada pertenece a una promoción vigente o a un pedido pendiente."""
     violaciones = _filas(db, """
-        SELECT i.oferta_id, i.cantidad_reservada AS reservado,
+        SELECT i.oferta_id, i.bodega, i.cantidad_reservada AS reservado,
                COALESCE(f.flash, 0) AS cupo_flash, COALESCE(p.pendiente, 0) AS pedidos_pendientes
         FROM inventario i
         LEFT JOIN (
-            SELECT oferta_id, SUM(unidades_totales - unidades_vendidas) AS flash
-            FROM promociones_flash WHERE estado IN ('programada', 'activa') GROUP BY oferta_id
-        ) f ON f.oferta_id = i.oferta_id
+            SELECT m.inventario_id, SUM(pf.unidades_totales - pf.unidades_vendidas) AS flash
+            FROM promociones_flash pf
+            JOIN movimientos_inventario m ON m.tipo = 'reserva' AND m.pedido_id IS NULL
+                 AND m.motivo = CONCAT('Promoción flash #', pf.id)
+            WHERE pf.estado IN ('programada', 'activa')
+            GROUP BY m.inventario_id
+        ) f ON f.inventario_id = i.id
         LEFT JOIN (
-            SELECT pl.oferta_id, SUM(pl.cantidad) AS pendiente
-            FROM pedido_lineas pl JOIN pedidos pe ON pe.id = pl.pedido_id
+            SELECT m.inventario_id, SUM(m.cantidad) AS pendiente
+            FROM movimientos_inventario m JOIN pedidos pe ON pe.id = m.pedido_id
             WHERE pe.estado = 'pendiente' AND pe.clave_idempotencia IS NOT NULL
+              AND m.tipo = 'reserva'
               AND NOT EXISTS (SELECT 1 FROM reservas_flash rf JOIN promociones_flash pf ON pf.id = rf.promocion_id
-                              WHERE rf.pedido_id = pe.id AND pf.oferta_id = pl.oferta_id)
-            GROUP BY pl.oferta_id
-        ) p ON p.oferta_id = i.oferta_id
-        WHERE i.bodega = 'principal'
+                              JOIN inventario ri ON ri.oferta_id = pf.oferta_id
+                              WHERE rf.pedido_id = pe.id AND ri.id = m.inventario_id)
+            GROUP BY m.inventario_id
+        ) p ON p.inventario_id = i.id
+        WHERE i.bodega IN ('principal', 'demo-principal')
           AND i.cantidad_reservada <> COALESCE(f.flash, 0) + COALESCE(p.pendiente, 0)
     """)
     return _resultado('I2', 'Toda reserva está explicada (flash vigente o pedido pendiente)', violaciones,

@@ -21,7 +21,10 @@ from app.models.vendedor import Vendedor
 from app.services import flash_sale_service as flash
 from app.services import redis_cart_service as carts
 from app.services.offer_history_service import registrar_saldo_inventario
-from app.services.offer_service import enqueue_primary_offer_projection
+from app.services.offer_service import (
+    BODEGAS_COMPRABLES, enqueue_primary_offer_projection, inventario_promocion,
+    seleccionar_inventario, stock_comprable,
+)
 from app.services.flash_sale_worker import encolar_cambio_flash
 
 router = APIRouter(prefix='/flash-sales', tags=['Ventas flash'])
@@ -77,9 +80,11 @@ def _finish_if_needed(db: Session, r: redis_lib.Redis, promotion: PromocionFlash
         db.rollback()
         return
     remaining = max(0, promotion.unidades_totales - promotion.unidades_vendidas)
-    inventory = db.query(Inventario).filter_by(
-        oferta_id=promotion.oferta_id, bodega='principal'
-    ).with_for_update().one()
+    try:
+        inventory = inventario_promocion(db, promotion, bloquear=True)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
     release = min(remaining, inventory.cantidad_reservada)
     inventory.cantidad_reservada -= release
     promotion.estado = 'finalizada'
@@ -182,13 +187,13 @@ def create_flash_sale(
         raise HTTPException(404, 'No existe una oferta activa propia con ese id.')
     if payload.precio_promocional >= offer.precio_actual:
         raise HTTPException(422, 'El precio flash debe ser menor que el precio normal.')
-    inventory = db.query(Inventario).filter_by(
-        oferta_id=offer.id, bodega='principal'
-    ).with_for_update().first()
-    available = (
-        inventory.cantidad_disponible - inventory.cantidad_reservada if inventory else 0
-    )
-    if available < payload.unidades:
+    inventories = db.query(Inventario).filter(
+        Inventario.oferta_id == offer.id,
+        Inventario.bodega.in_(BODEGAS_COMPRABLES),
+    ).order_by(Inventario.id).with_for_update().all()
+    inventory = seleccionar_inventario(inventories, payload.unidades)
+    if inventory is None:
+        available = stock_comprable(inventories)
         raise HTTPException(409, f'Solo hay {available} unidades libres para apartar.')
     if payload.max_por_usuario > payload.unidades:
         raise HTTPException(422, 'El máximo por usuario no puede ser mayor que las unidades totales de la promoción.')
@@ -383,9 +388,11 @@ def cancel_flash_sale(
         raise HTTPException(404, 'Promoción no encontrada o sin permiso.')
     if promotion.estado not in {'programada', 'activa'}:
         raise HTTPException(409, 'La promoción ya no se puede cancelar.')
-    inventory = db.query(Inventario).filter_by(
-        oferta_id=promotion.oferta_id, bodega='principal'
-    ).with_for_update().one()
+    try:
+        inventory = inventario_promocion(db, promotion, bloquear=True)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
     remaining = max(0, promotion.unidades_totales - promotion.unidades_vendidas)
     release = min(remaining, inventory.cantidad_reservada)
     inventory.cantidad_reservada -= release
