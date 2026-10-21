@@ -350,11 +350,19 @@ class DemoSeeder:
         )
         self.many("""
             INSERT IGNORE INTO inventario(oferta_id,cantidad_disponible,cantidad_reservada,punto_reorden,bodega)
-            VALUES (%s,5000,0,20,'demo-principal')
-        """, [(row[0],) for row in offer_rows])
+            SELECT %s,5000,0,20,'principal'
+            WHERE NOT EXISTS (
+              SELECT 1 FROM inventario
+              WHERE oferta_id=%s AND bodega IN ('principal','demo-principal')
+            )
+        """, [(row[0], row[0]) for row in offer_rows])
         inventory_ids = self.fetch_map(
-            'SELECT oferta_id k,id v FROM inventario WHERE oferta_id IN (' +
-            ','.join(['%s'] * len(offer_rows)) + ')', tuple(row[0] for row in offer_rows),
+            'SELECT oferta_id k,id v FROM inventario WHERE bodega IN '
+            "('principal','demo-principal') AND oferta_id IN (" +
+            ','.join(['%s'] * len(offer_rows)) + ') '
+            "ORDER BY (cantidad_disponible > cantidad_reservada), "
+            "FIELD(bodega,'demo-principal','principal')",
+            tuple(row[0] for row in offer_rows),
         )
         self.many("""
             INSERT INTO oferta_precios_historial

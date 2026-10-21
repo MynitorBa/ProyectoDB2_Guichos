@@ -176,7 +176,17 @@ def admin_status(db, order_id, user, target):
         lines = db.query(PedidoLinea).filter_by(pedido_id=order.id).order_by(PedidoLinea.oferta_id).all()
         for line in lines:
             offer = db.query(Oferta).filter_by(id=line.oferta_id).populate_existing().with_for_update().one()
-            inventory = db.query(Inventario).filter_by(oferta_id=offer.id, bodega='principal').populate_existing().with_for_update().one()
+            # Reponer en la misma fila que registró la salida de esta venta.
+            sale_ids = db.query(MovimientoInventario.inventario_id).join(
+                Inventario, Inventario.id == MovimientoInventario.inventario_id
+            ).filter(
+                Inventario.oferta_id == offer.id,
+                MovimientoInventario.pedido_id == order.id,
+                MovimientoInventario.tipo == 'salida',
+            ).distinct().all()
+            if len(sale_ids) != 1:
+                raise HTTPException(409, 'No se puede identificar el inventario original de esta venta.')
+            inventory = db.query(Inventario).filter_by(id=sale_ids[0][0]).populate_existing().with_for_update().one()
             inventory.cantidad_disponible += line.cantidad
             offer.version += 1
             db.add(MovimientoInventario(inventario_id=inventory.id, tipo='entrada',

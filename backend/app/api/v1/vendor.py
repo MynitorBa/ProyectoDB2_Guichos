@@ -8,7 +8,9 @@ from pymongo.database import Database
 from app.core.db_mongo import get_mongo_db
 from app.models.oferta import Oferta
 from app.models.inventario import Inventario
-from app.services.offer_service import editar_oferta
+from app.services.offer_service import (
+    BODEGAS_COMPRABLES, editar_oferta, inventario_operativo, stock_comprable,
+)
 from app.services.variant_service import list_variants
 from app.services.fulfillment_service import prepare_part
 from sqlalchemy import func
@@ -226,7 +228,11 @@ def own_offers(q: str = '', estado: str | None = None, oferta_id: int | None = N
         product = mongo.productos.find_one({'_id': ObjectId(offer.producto_ref)}) or {}
         variant = next((v for v in list_variants(mongo, db, offer.producto_ref)
             if v['variante_id'] == offer.producto_variante_id), {})
-        inventory = db.query(Inventario).filter_by(oferta_id=offer.id, bodega='principal').first()
+        inventories = db.query(Inventario).filter(
+            Inventario.oferta_id == offer.id,
+            Inventario.bodega.in_(BODEGAS_COMPRABLES),
+        ).all()
+        inventory = inventario_operativo(inventories)
         physical = inventory.cantidad_disponible if inventory else 0
         reserved = inventory.cantidad_reservada if inventory else 0
         images = product.get('imagenes', [])
@@ -236,7 +242,7 @@ def own_offers(q: str = '', estado: str | None = None, oferta_id: int | None = N
             'producto_nombre': product.get('nombre', offer.sku), 'imagen': images[0] if images else None,
             'producto_estado': product.get('estado'), 'atributos': variant.get('atributos', {}),
             'sku': offer.sku, 'precio': float(offer.precio_actual), 'estado': offer.estado,
-            'stock': max(0, physical-reserved), 'existencias': physical, 'reservado': reserved,
+            'stock': stock_comprable(inventories), 'existencias': physical, 'reservado': reserved,
             'version': offer.version})
     return {'items': result, 'total': total, 'page': page, 'total_pages': max(1, -(-total//page_size))}
 

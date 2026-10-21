@@ -135,9 +135,12 @@ def reconstruir_ofertas_en_fecha(
         OfertaEstadoHistorial.vigente_desde <= instante,
     ).all()
     inventories = db.query(Inventario).filter(
-        Inventario.oferta_id.in_(offer_ids), Inventario.bodega == 'principal'
+        Inventario.oferta_id.in_(offer_ids),
+        Inventario.bodega.in_(('principal', 'demo-principal')),
     ).all()
-    inventory_by_offer = {row.oferta_id: row for row in inventories}
+    inventories_by_offer = defaultdict(list)
+    for row in inventories:
+        inventories_by_offer[row.oferta_id].append(row)
     inventory_ids = [row.id for row in inventories]
     balances = (
         db.query(InventarioSaldoHistorial).filter(
@@ -171,11 +174,20 @@ def reconstruir_ofertas_en_fecha(
     for offer in offers:
         price = _vigente_en(prices_by_offer[offer.id], instante)
         state = _vigente_en(states_by_offer[offer.id], instante)
-        inventory = inventory_by_offer.get(offer.id)
-        balance = (
-            _vigente_en(balances_by_inventory[inventory.id], instante)
-            if inventory else None
+        historical_rows = [
+            (inventory, _vigente_en(balances_by_inventory[inventory.id], instante))
+            for inventory in inventories_by_offer[offer.id]
+        ]
+        historical_rows = [(inventory, row) for inventory, row in historical_rows if row]
+        chosen = max(
+            historical_rows,
+            key=lambda pair: (
+                pair[1].cantidad_disponible - pair[1].cantidad_reservada,
+                pair[0].bodega == 'principal',
+            ),
+            default=None,
         )
+        balance = chosen[1] if chosen else None
         vendor_id = state.vendedor_id if state else offer.vendedor_id
         estado = state.estado if state else offer.estado
         disponible = balance.cantidad_disponible if balance else 0
@@ -286,7 +298,8 @@ def historial_operativo_unificado(
     }
     offer_by_id = {offer.id: offer for offer in offers}
     inventories = db.query(Inventario).filter(
-        Inventario.oferta_id.in_(offer_ids), Inventario.bodega == 'principal'
+        Inventario.oferta_id.in_(offer_ids),
+        Inventario.bodega.in_(('principal', 'demo-principal')),
     ).all()
     inventory_by_id = {inventory.id: inventory for inventory in inventories}
 
@@ -385,6 +398,7 @@ def historial_operativo_unificado(
             } if before else {}),
             'datos_nuevos': {
                 'oferta_id': offer.id,
+                'bodega': inventory.bodega,
                 'vendedor': vendors.get(offer.vendedor_id),
                 'stock_disponible': row.cantidad_disponible,
                 'stock_reservado': row.cantidad_reservada,

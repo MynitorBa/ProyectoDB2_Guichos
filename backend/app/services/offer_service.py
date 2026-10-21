@@ -4,7 +4,6 @@ from collections import defaultdict
 from datetime import timedelta
 from decimal import Decimal
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.inventario import Inventario
@@ -18,6 +17,59 @@ from app.services.offer_history_service import registrar_estado_oferta, registra
 from fastapi import HTTPException
 
 
+BODEGAS_COMPRABLES = ('principal', 'demo-principal')
+
+
+def stock_comprable(inventarios) -> int:
+    """Mayor cantidad que una sola bodega puede entregar, sin sumar saldos."""
+    return max((max(0, row.cantidad_disponible - row.cantidad_reservada)
+                for row in inventarios if row.bodega in BODEGAS_COMPRABLES), default=0)
+
+
+def seleccionar_inventario(inventarios, cantidad: int):
+    """Prioriza principal si cubre toda la línea; de lo contrario usa DEMO."""
+    for bodega in BODEGAS_COMPRABLES:
+        for row in inventarios:
+            if (row.bodega == bodega
+                    and row.cantidad_disponible - row.cantidad_reservada >= cantidad):
+                return row
+    return None
+
+
+def inventario_operativo(inventarios):
+    """Fila que se edita o presenta cuando no se solicitó cantidad concreta."""
+    candidates = [row for row in inventarios if row.bodega in BODEGAS_COMPRABLES]
+    return max(
+        candidates,
+        key=lambda row: (row.cantidad_disponible - row.cantidad_reservada,
+                         row.bodega == 'principal'),
+        default=None,
+    )
+
+
+def inventario_id_promocion(db: Session, promocion_id: int) -> int:
+    """Identidad durable del cupo flash, registrada al crear la promoción."""
+    rows = db.query(MovimientoInventario.inventario_id).filter(
+        MovimientoInventario.tipo == 'reserva',
+        MovimientoInventario.pedido_id.is_(None),
+        MovimientoInventario.motivo == f'Promoción flash #{promocion_id}',
+    ).all()
+    if len(rows) != 1:
+        raise LookupError(f'No se identificó el inventario de la promoción flash {promocion_id}.')
+    return rows[0][0]
+
+
+def inventario_promocion(db: Session, promocion, *, bloquear: bool = False):
+    inventory_id = inventario_id_promocion(db, promocion.id)
+    query = db.query(Inventario).filter_by(id=inventory_id, oferta_id=promocion.oferta_id)
+    if bloquear:
+        query = query.with_for_update()
+    row = query.one_or_none()
+    if row is None:
+        raise LookupError(f'No existe el inventario reservado de la promoción flash {promocion.id}.')
+    return row
+
+
 def editar_oferta(db, *, oferta, usuario_id, precio=None, stock=None, estado=None,
                   version=None, motivo='Edición de oferta'):
     """El llamador bloquea Oferta antes de invocar. No hace commit."""
@@ -25,9 +77,18 @@ def editar_oferta(db, *, oferta, usuario_id, precio=None, stock=None, estado=Non
         raise HTTPException(409, 'La oferta cambió. Recarga antes de guardar.')
     if estado is not None and estado not in {'activa', 'pausada', 'descontinuada', 'borrador'}:
         raise HTTPException(422, 'Estado de oferta inválido.')
-    inventory = db.query(Inventario).filter_by(oferta_id=oferta.id, bodega='principal').with_for_update().first()
+    inventories = db.query(Inventario).filter(
+        Inventario.oferta_id == oferta.id,
+        Inventario.bodega.in_(BODEGAS_COMPRABLES),
+    ).order_by(Inventario.id).with_for_update().all()
+    # Para una oferta histórica con solo demo-principal, editar esa misma fila.
+    # Si hay dos bodegas, editar la que sustenta el stock anunciado; en empate
+    # se conserva la prioridad de principal.
+    inventory = inventario_operativo(inventories)
     if stock is not None:
-        reserved = inventory.cantidad_reservada if inventory else 0
+        # Una edición del stock de la oferta no debe ocultar reservas que
+        # sigan vivas en la bodega alternativa.
+        reserved = max((row.cantidad_reservada for row in inventories), default=0)
         if stock < reserved:
             raise HTTPException(409, 'Las existencias no pueden ser menores que las unidades reservadas.')
     initial_version = oferta.version
@@ -102,21 +163,18 @@ def actualizar_precio_oferta(
 
 
 def stock_by_offer(db: Session, offer_ids: list[int]) -> dict[int, int]:
-    """Stock neto (disponible - reservado) por oferta_id."""
+    """Stock comprable por una sola bodega para cada oferta."""
     if not offer_ids:
         return {}
-    rows = (
-        db.query(
-            Inventario.oferta_id,
-            func.sum(
-                Inventario.cantidad_disponible - Inventario.cantidad_reservada
-            ),
-        )
-        .filter(Inventario.oferta_id.in_(offer_ids))
-        .group_by(Inventario.oferta_id)
-        .all()
-    )
-    return {offer_id: max(0, int(stock or 0)) for offer_id, stock in rows}
+    rows = db.query(Inventario).filter(
+        Inventario.oferta_id.in_(offer_ids),
+        Inventario.bodega.in_(BODEGAS_COMPRABLES),
+    ).all()
+    by_offer = defaultdict(list)
+    for row in rows:
+        by_offer[row.oferta_id].append(row)
+    return {offer_id: stock_comprable(inventories)
+            for offer_id, inventories in by_offer.items()}
 
 
 # Carga en una sola query todas las ofertas de una lista de producto_refs y calcula el stock neto
