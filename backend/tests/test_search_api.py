@@ -188,8 +188,30 @@ def test_busqueda_en_tienda_sin_coincidencias_no_sugiere_productos_ajenos():
         from app.models.vendedor import Vendedor
         sin_macbook = next(v for v in db.query(Vendedor).all() if v.id not in con_macbook)
     resultado = buscar(q='macbok', vendedor_id=sin_macbook.id)
-    assert resultado['total'] == 0
     assert resultado['sugerencia'] is None
+    # Sin coincidencias se muestran productos populares, pero solo de esa tienda.
+    assert resultado['sin_coincidencias'] is True
+    assert all(item['vendedor_id'] == sin_macbook.id for item in resultado['items'])
+
+
+def test_texto_sin_sentido_muestra_productos_populares_marcados():
+    resultado = buscar(q='hefkjdshafh')
+    assert resultado['sin_coincidencias'] is True
+    assert resultado['consulta'] == 'hefkjdshafh'
+    assert resultado['items'] and resultado['total'] > 0
+
+
+def test_texto_con_coincidencias_no_activa_la_alternativa():
+    resultado = buscar(q='Laptop')
+    assert resultado['sin_coincidencias'] is False
+    assert resultado['items']
+
+
+def test_sin_coincidencias_con_filtros_imposibles_tambien_muestra_algo():
+    resultado = buscar(q='hefkjdshafh', precio_min=999999999)
+    assert resultado['sin_coincidencias'] is True
+    assert resultado['alternativa'] == 'populares'
+    assert resultado['items']
 
 
 def test_busqueda_en_tienda_degradada_conserva_el_alcance(elasticsearch_caido):

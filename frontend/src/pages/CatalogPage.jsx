@@ -374,6 +374,9 @@ export default function CatalogPage() {
   })
 
   const products = data?.items || []
+  // Sin coincidencias el backend devuelve productos populares: no son resultados de la búsqueda.
+  const sinCoincidencias = Boolean(data?.sin_coincidencias)
+  const totalEncontrados = sinCoincidencias ? 0 : data?.total
   const totalPages = data?.total_pages || 1
   const page = filtros.page
   const facetas = data?.facetas
@@ -428,9 +431,9 @@ export default function CatalogPage() {
             <h1 className="font-display font-bold text-white leading-tight" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', letterSpacing: '-0.02em' }}>
               {titulo}
             </h1>
-            {data?.total !== undefined && (
+            {totalEncontrados !== undefined && (
               <p className="font-sans text-sm text-white/65 mt-1">
-                <span className="font-mono tabular-nums font-semibold text-white">{data.total}</span> producto{data.total !== 1 ? 's' : ''} encontrado{data.total !== 1 ? 's' : ''}
+                <span className="font-mono tabular-nums font-semibold text-white">{totalEncontrados}</span> producto{totalEncontrados !== 1 ? 's' : ''} encontrado{totalEncontrados !== 1 ? 's' : ''}
                 {filtros.q && activeCategory && <> en <span className="font-semibold text-white">{activeCategory.etiqueta}</span></>}
               </p>
             )}
@@ -558,6 +561,18 @@ export default function CatalogPage() {
               {data.sugerencia}
             </button>
             ?
+          </div>
+        )}
+        {sinCoincidencias && (
+          <div role="status" className="mb-4 flex items-start gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2.5 font-sans text-sm text-[var(--color-text-secondary)]">
+            <Search size={15} className="mt-0.5 shrink-0 text-[#29B6F6]" />
+            <span>
+              No encontramos resultados para{' '}
+              <span className="font-semibold text-[var(--color-text-primary)]">«{data.consulta}»</span>.
+              {data.alternativa === 'populares_con_filtros'
+                ? ' Te mostramos productos populares con los filtros que elegiste.'
+                : ' Te mostramos productos populares que podrían interesarte.'}
+            </span>
           </div>
         )}
         {data?.degradado && (

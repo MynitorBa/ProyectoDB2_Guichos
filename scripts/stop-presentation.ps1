@@ -48,10 +48,11 @@ foreach ($entry in $manifest.app) {
         $process.CreationDate.ToUniversalTime().Ticks -ne ([datetime]$entry.created).ToUniversalTime().Ticks) {
         throw "El proceso del puerto $port no coincide con el registrado; no se detendrá nada."
     }
-    if ($port -eq 5173 -and $process.CommandLine -notlike '*ProyectoDB2_Guichos\frontend*') {
+    # Ruta real del repositorio: el clon puede no llamarse ProyectoDB2_Guichos.
+    if ($port -eq 5173 -and $process.CommandLine -notlike "*$(Join-Path $root 'frontend')*") {
         throw 'Frontend no reconocido; no se detendrá nada.'
     }
-    if ($port -eq 5174 -and $process.CommandLine -notlike '*ProyectoDB2_Guichos\laboratorio*') {
+    if ($port -eq 5174 -and $process.CommandLine -notlike "*$(Join-Path $root 'laboratorio')*") {
         throw 'Laboratorio no reconocido; no se detendrá nada.'
     }
 }
@@ -65,6 +66,13 @@ $outboxChildren = @(Get-CimInstance Win32_Process | Where-Object {
 })
 foreach ($process in $outboxChildren) { Stop-Process -Id $process.ProcessId -ErrorAction SilentlyContinue }
 Stop-Process -Id $outbox.ProcessId -ErrorAction SilentlyContinue
+# Recuperación del checkout (solo en registros de presentaciones que la incluyen).
+if ($manifest.recovery_launcher) {
+    $recovery = Get-CimInstance Win32_Process -Filter "ProcessId=$($manifest.recovery_launcher)"
+    if ($recovery -and $recovery.CommandLine -match 'scripts[\\/]run_demo_recovery\.py') {
+        Stop-Process -Id $recovery.ProcessId -ErrorAction SilentlyContinue
+    }
+}
 foreach ($entry in $manifest.app) { Stop-Process -Id $entry.pid -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 2
 foreach ($port in $expectedPorts) {

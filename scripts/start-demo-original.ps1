@@ -182,6 +182,11 @@ New-Item -ItemType Directory -Force -Path $runtime | Out-Null
 Start-Process -FilePath $python -ArgumentList '-m','uvicorn','payment_simulator.app:app','--host','127.0.0.1','--port','8001' -WorkingDirectory $root -RedirectStandardOutput (Join-Path $runtime 'gateway.out.log') -RedirectStandardError (Join-Path $runtime 'gateway.err.log') -WindowStyle Hidden
 Start-Process -FilePath $python -ArgumentList '-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8000','--lifespan','off' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'backend.out.log') -RedirectStandardError (Join-Path $runtime 'backend.err.log') -WindowStyle Hidden
 $outboxProcess = Start-Process -FilePath $python -ArgumentList 'scripts\run_demo_outbox.py' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'outbox.out.log') -RedirectStandardError (Join-Path $runtime 'outbox.err.log') -WindowStyle Hidden -PassThru
+# La API corre con --lifespan off, así que su arranque no lanza el reconciliador.
+# Va en su propio proceso para que los pagos «en verificación» (Timeout / Error 503)
+# se resuelvan solos; la gracia corta es solo para que la demostración no tarde.
+$env:RECONCILIADOR_GRACIA_S = '20'
+$recoveryProcess = Start-Process -FilePath $python -ArgumentList 'scripts\run_demo_recovery.py' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'recovery.out.log') -RedirectStandardError (Join-Path $runtime 'recovery.err.log') -WindowStyle Hidden -PassThru
 Start-Process -FilePath $npm -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5173' -WorkingDirectory (Join-Path $root 'frontend') -RedirectStandardOutput (Join-Path $runtime 'frontend.out.log') -RedirectStandardError (Join-Path $runtime 'frontend.err.log') -WindowStyle Hidden
 $env:VITE_API_URL = 'http://localhost:8000/api/v1'
 Start-Process -FilePath $npm -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5174' -WorkingDirectory (Join-Path $root 'laboratorio') -RedirectStandardOutput (Join-Path $runtime 'laboratorio.out.log') -RedirectStandardError (Join-Path $runtime 'laboratorio.err.log') -WindowStyle Hidden
@@ -195,9 +200,9 @@ foreach ($port in @(5173, 5174, 8000, 8001)) {
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
     $owned += @{ port = $port; pid = $process.ProcessId; created = $process.CreationDate.ToString('o') }
 }
-@{ app = $owned; outbox_launcher = $outboxProcess.Id } | ConvertTo-Json -Depth 4 |
+@{ app = $owned; outbox_launcher = $outboxProcess.Id; recovery_launcher = $recoveryProcess.Id } | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $runtime 'presentation-processes.json') -Encoding UTF8
 Write-Host 'TiendaYa con DEMO original: http://localhost:5173' -ForegroundColor Green
 Write-Host 'Laboratorio original: http://localhost:5174'
 Write-Host 'API: http://localhost:8000/docs | Pasarela: http://localhost:8001/docs'
-Write-Host 'Outbox activo. No se ejecutaron seeds, migraciones, backfills ni otros workers.'
+Write-Host 'Outbox y recuperación del checkout activos. No se ejecutaron seeds, migraciones, backfills ni otros workers.'

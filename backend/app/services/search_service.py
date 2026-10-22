@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from bson import ObjectId
 from elastic_transport import TransportError
@@ -417,19 +417,7 @@ def _hidratar(
     return items
 
 
-def buscar(
-    es: Elasticsearch,
-    mysql_db: Session,
-    mongo: Database,
-    p: ParametrosBusqueda,
-    redis_db=None,
-) -> dict:
-    try:
-        respuesta = es.search(index=settings.ES_INDEX_ALIAS, **como_argumentos(construir_consulta(p)))
-    except ERRORES_MOTOR as exc:
-        logger.warning('Elasticsearch no disponible; búsqueda degradada a MongoDB: %s', exc)
-        return buscar_en_mongo(mysql_db, mongo, p, redis_db)
-
+def _armar_respuesta(respuesta: dict, p: ParametrosBusqueda, mysql_db: Session, mongo: Database, redis_db) -> dict:
     hits = respuesta['hits']['hits']
     ids = [hit['_id'] for hit in hits]
     resaltados = {
@@ -453,7 +441,85 @@ def buscar(
         'degradado': False,
         'motor': 'elasticsearch',
         'tiempo_ms': respuesta.get('took'),
+        'sin_coincidencias': False,
     }
+
+
+def _sin_texto(p: ParametrosBusqueda, *, conservar_filtros: bool) -> ParametrosBusqueda:
+    """La misma búsqueda sin el texto (y opcionalmente sin los filtros del usuario).
+
+    El alcance de tienda (``vendedor_id``) se conserva siempre: dentro de una
+    tienda nunca se muestran productos de otros vendedores.
+    """
+    alternativa = replace(p, q='')
+    if not conservar_filtros:
+        alternativa = replace(
+            alternativa, categoria=None, vendedores=[], precio_min=None, precio_max=None,
+            atributos={}, solo_stock=False, solo_flash=False, solo_tiendaya=False,
+        )
+    return alternativa
+
+
+def _tiene_filtros(p: ParametrosBusqueda) -> bool:
+    return bool(
+        p.categoria or p.vendedores or p.precio_min is not None or p.precio_max is not None
+        or p.atributos or p.solo_stock or p.solo_flash or p.solo_tiendaya
+    )
+
+
+def _alternativa_sin_coincidencias(
+    es: Elasticsearch, mysql_db: Session, mongo: Database, p: ParametrosBusqueda, redis_db,
+) -> dict | None:
+    """Productos populares cuando el texto no coincide con nada.
+
+    Primero respeta los filtros elegidos; si con ellos tampoco hay productos,
+    los quita. El usuario siempre ve algo, y la respuesta dice que no son
+    coincidencias de su búsqueda.
+    """
+    intentos = [True, False] if _tiene_filtros(p) else [True]
+    for conservar in intentos:
+        alternativa = _sin_texto(p, conservar_filtros=conservar)
+        try:
+            respuesta = es.search(index=settings.ES_INDEX_ALIAS, **como_argumentos(construir_consulta(alternativa)))
+        except ERRORES_MOTOR as exc:
+            logger.warning('No se pudo calcular la alternativa sin coincidencias: %s', exc)
+            return None
+        if respuesta['hits']['total']['value']:
+            resultado = _armar_respuesta(respuesta, alternativa, mysql_db, mongo, redis_db)
+            resultado['alternativa'] = 'populares_con_filtros' if conservar and _tiene_filtros(p) else 'populares'
+            return resultado
+    return None
+
+
+def buscar(
+    es: Elasticsearch,
+    mysql_db: Session,
+    mongo: Database,
+    p: ParametrosBusqueda,
+    redis_db=None,
+) -> dict:
+    try:
+        respuesta = es.search(index=settings.ES_INDEX_ALIAS, **como_argumentos(construir_consulta(p)))
+    except ERRORES_MOTOR as exc:
+        logger.warning('Elasticsearch no disponible; búsqueda degradada a MongoDB: %s', exc)
+        return buscar_en_mongo(mysql_db, mongo, p, redis_db)
+
+    resultado = _armar_respuesta(respuesta, p, mysql_db, mongo, redis_db)
+    if resultado['total'] or not p.texto:
+        return resultado
+    # El texto no coincide con ningún producto: en lugar de una página vacía se
+    # muestran productos populares, marcados como tales (no son coincidencias).
+    alternativa = _alternativa_sin_coincidencias(es, mysql_db, mongo, p, redis_db)
+    if alternativa is None:
+        return resultado
+    alternativa.update({
+        'sin_coincidencias': True,
+        'consulta': p.texto,
+        'orden': p.orden_efectivo,
+        'sugerencia': resultado['sugerencia'],
+        'tiempo_ms': (respuesta.get('took') or 0) + (alternativa.get('tiempo_ms') or 0),
+    })
+    return alternativa
 
 
 # ── Respaldo sobre MongoDB ────────────────────────────────────────────────────
@@ -471,6 +537,7 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
     Solo admite filtros de categoría, precio, stock y flash; las facetas se
     limitan a conteos por categoría.
     """
+    sin_coincidencias = False
     resultado = catalog_service.listar_productos(
         mongo, mysql_db,
         categoria_slug=p.categoria,
@@ -485,8 +552,15 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
         solo_flash=p.solo_flash,
         redis_db=redis_db,
     )
+    if p.texto and not resultado.get('items'):
+        # Igual que con Elasticsearch: sin coincidencias se muestran populares.
+        sin_coincidencias = True
+        resultado = catalog_service.listar_productos(
+            mongo, mysql_db, page=p.page, page_size=p.page_size, orden='mas_vendidos',
+            vendedor_id=p.vendedor_id, redis_db=redis_db,
+        )
     filtro = {'estado': 'activo'}
-    if p.texto:
+    if p.texto and not sin_coincidencias:
         patron = re.escape(p.texto)
         filtro['$or'] = [
             {'nombre': {'$regex': patron, '$options': 'i'}},
@@ -517,6 +591,8 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
         'degradado': True,
         'motor': 'mongodb',
         'tiempo_ms': None,
+        'sin_coincidencias': sin_coincidencias,
+        **({'consulta': p.texto, 'alternativa': 'populares'} if sin_coincidencias else {}),
     })
     return resultado
 

@@ -258,6 +258,12 @@ export function ProductsSection({ config = {}, tema = {}, vendedorId }) {
           </p>
         )}
 
+        {q && data?.sin_coincidencias && (
+          <p role="status" style={{ fontFamily: bodyFont, fontSize: '0.875rem', textAlign: 'center', marginTop: data?.sugerencia ? '-0.75rem' : '-1.25rem', marginBottom: '1.5rem', color: '#6b7280' }}>
+            No encontramos resultados para <strong>«{data.consulta}»</strong> en esta tienda. Te mostramos sus productos más populares.
+          </p>
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {Array.from({ length: Math.min(cantidad, 4) }).map((_, i) => <ProductCardSkeleton key={i} />)}
