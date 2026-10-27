@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 const MENSAJES = {
   mysql: 'La base de datos principal no responde: algunas funciones no están disponibles por ahora.',
   redis: 'El carrito y las ofertas flash funcionan en modo de respaldo: puedes seguir comprando, un poco más lento.',
-  mongo: 'El catálogo de productos puede no cargar temporalmente.',
+  mongo: 'El catálogo se muestra desde una copia de respaldo: la información puede estar desactualizada y por ahora no se pueden editar productos.',
   elasticsearch: 'La búsqueda funciona en modo básico: sin corrección de errores ni filtros.',
   neo4j: 'Las recomendaciones y reseñas no están disponibles temporalmente.',
   cassandra: 'Los paneles de tendencias de ventas no están disponibles temporalmente.',

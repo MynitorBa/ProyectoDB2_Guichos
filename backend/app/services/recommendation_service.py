@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 
 from bson import ObjectId
-from bson.errors import InvalidId
 from sqlalchemy.orm import Session
 from pymongo.database import Database
 
 from app.services import catalog_service
+from app.services import catalogo_respaldo_service as catalogo_respaldo
 
 
 logger = logging.getLogger(__name__)
@@ -35,12 +35,10 @@ def refs_misma_categoria(mongo: Database, producto_ref: str) -> list[str]:
     categoría pertenece cada producto. Sin categoría no hay con qué comparar y
     se devuelve una lista vacía.
     """
-    try:
-        base = mongo.productos.find_one(
-            {'_id': ObjectId(producto_ref)}, {'categoria': 1, 'categorias': 1},
-        )
-    except InvalidId:
+    if not ObjectId.is_valid(producto_ref):
         return []
+    # Con MongoDB caído, el catálogo se lee de su copia en MySQL.
+    base, _ = catalogo_respaldo.producto(mongo, producto_ref)
     slug = categoria_principal(base)
     if not slug:
         return []
@@ -52,7 +50,11 @@ def refs_misma_categoria(mongo: Database, producto_ref: str) -> list[str]:
             {'categoria': {'$exists': False}, 'categorias.0.slug': slug},
         ],
     }
-    return [str(doc['_id']) for doc in mongo.productos.find(filtro, {'_id': 1})]
+    docs, _ = catalogo_respaldo.productos(mongo, filtro, estado='activo', categoria_slug=slug, q=None)
+    return [
+        str(doc['_id']) for doc in docs
+        if doc['_id'] != base['_id'] and categoria_principal(doc) == slug
+    ]
 
 
 def referencias_relacionadas(

@@ -30,6 +30,7 @@ from app.core import salud
 from app.core.config import settings
 from app.models.categoria import Categoria
 from app.services import catalog_service
+from app.services import catalogo_respaldo_service as catalogo_respaldo
 
 logger = logging.getLogger(__name__)
 
@@ -317,9 +318,15 @@ def _etiquetas_categorias(mysql_db: Session) -> dict[str, str]:
 
 def _etiquetas_atributos(mongo: Database) -> dict[str, str]:
     etiquetas = {}
-    for esquema in mongo.categoria_esquemas.find({}, {'atributos.nombre': 1, 'atributos.etiqueta': 1}):
-        for atributo in esquema.get('atributos', []):
-            etiquetas.setdefault(atributo['nombre'], atributo.get('etiqueta') or atributo['nombre'])
+    if not salud.disponible('mongo'):
+        return etiquetas
+    try:
+        for esquema in mongo.categoria_esquemas.find({}, {'atributos.nombre': 1, 'atributos.etiqueta': 1}):
+            for atributo in esquema.get('atributos', []):
+                etiquetas.setdefault(atributo['nombre'], atributo.get('etiqueta') or atributo['nombre'])
+    except catalogo_respaldo.ERRORES_MONGO as exc:
+        # Sin MongoDB las facetas de atributos muestran el nombre técnico.
+        salud.registrar_falla('mongo', exc)
     return etiquetas
 
 
@@ -421,10 +428,7 @@ def _hidratar(
     vendedor_id: int | None = None,
 ) -> list[dict]:
     """Página de resultados con precio, stock y flash autoritativos de MySQL/Redis."""
-    docs = {
-        str(doc['_id']): doc
-        for doc in mongo.productos.find({'_id': {'$in': [ObjectId(i) for i in ids]}})
-    }
+    docs, _ = catalogo_respaldo.productos_por_ids(mongo, ids)
     ordenados = [docs[i] for i in ids if i in docs]
     items, _ = catalog_service.enriquecer_productos(
         ordenados, mysql_db, redis_db, vendedor_id=vendedor_id
@@ -584,13 +588,18 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
             {'nombre': {'$regex': patron, '$options': 'i'}},
             {'sku': {'$regex': patron, '$options': 'i'}},
         ]
-    conteos = mongo.productos.aggregate([
-        {'$match': filtro},
-        {'$project': {'cats': {'$ifNull': ['$categorias', ['$categoria']]}}},
-        {'$unwind': '$cats'},
-        {'$group': {'_id': '$cats.slug', 'conteo': {'$sum': 1}}},
-        {'$sort': {'conteo': -1}},
-    ])
+    try:
+        conteos = list(mongo.productos.aggregate([
+            {'$match': filtro},
+            {'$project': {'cats': {'$ifNull': ['$categorias', ['$categoria']]}}},
+            {'$unwind': '$cats'},
+            {'$group': {'_id': '$cats.slug', 'conteo': {'$sum': 1}}},
+            {'$sort': {'conteo': -1}},
+        ])) if salud.disponible('mongo') else []
+    except catalogo_respaldo.ERRORES_MONGO as exc:
+        # Sin MongoDB los productos vienen de su copia; solo se pierden estos conteos.
+        salud.registrar_falla('mongo', exc)
+        conteos = []
     etiquetas = _etiquetas_categorias(mysql_db)
     resultado.pop('dual_read', None)
     resultado.update({

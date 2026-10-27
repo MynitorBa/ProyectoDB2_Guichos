@@ -249,6 +249,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de automatización de f
 & $python scripts\apply_respaldo_redis.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del respaldo de Redis en MySQL.' }
 
+& $python scripts\apply_respaldo_catalogo.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de la copia del catálogo en MySQL.' }
+
+& $python scripts\sync_catalogo_respaldo.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la copia inicial del catálogo en MySQL.' }
+
 & $python scripts\backfill_cassandra_analytics.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
 

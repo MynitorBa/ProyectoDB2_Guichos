@@ -18,6 +18,7 @@ from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.services.offer_service import resolver_oferta_comprable, stock_by_offer
 from app.services import redis_cart_service as rcs
 from app.services import flash_sale_service as flash
+from app.services import catalogo_respaldo_service as catalogo_respaldo
 
 router = APIRouter(prefix='/cart', tags=['Carrito'])
 
@@ -104,12 +105,8 @@ def ver_carrito(
 
         product_doc = None
         if producto_ref:
-            try:
-                product_doc = mongo_db.productos.find_one(
-                    {'_id': ObjectId(producto_ref)}, {'nombre': 1}
-                )
-            except Exception:
-                product_doc = None
+            # Con MongoDB caído, el nombre sale de la copia del catálogo en MySQL.
+            product_doc = catalogo_respaldo.productos_por_ids(mongo_db, [producto_ref])[0].get(producto_ref)
 
         subtotal = current_price * cantidad
         if not sin_stock:

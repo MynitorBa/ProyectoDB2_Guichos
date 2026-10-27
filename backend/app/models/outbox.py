@@ -7,7 +7,7 @@ from app.core.db_mysql import Base
 from app.core.time import utc_now
 
 
-DESTINOS_OUTBOX = ('mongo', 'busqueda', 'cassandra', 'neo4j', 'redis')
+DESTINOS_OUTBOX = ('mongo', 'busqueda', 'cassandra', 'neo4j', 'redis', 'catalogo')
 
 
 # Implementa el patrón Transactional Outbox: cada evento de negocio se guarda en la

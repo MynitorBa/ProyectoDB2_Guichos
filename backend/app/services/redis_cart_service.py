@@ -142,7 +142,9 @@ def _ejecutar(en_redis, en_respaldo):
             salud.registrar_exito('redis')
             return resultado
         except redis.RedisError as exc:
-            salud.registrar_falla('redis', exc)
+            # Sin conexión el circuito se abre de una vez: las siguientes operaciones
+            # van directo a MySQL en lugar de esperar el timeout.
+            salud.registrar_falla('redis', exc, confirmada=isinstance(exc, (redis.ConnectionError, redis.TimeoutError)))
             logger.warning('Redis no respondió; el carrito usa su respaldo en MySQL: %s', exc)
     try:
         return en_respaldo()

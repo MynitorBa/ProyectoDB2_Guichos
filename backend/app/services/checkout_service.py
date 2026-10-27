@@ -55,6 +55,7 @@ from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
 from app.schemas.checkout import CheckoutItem
 from app.services import carrito_respaldo_service as carrito_respaldo
+from app.services import catalogo_respaldo_service as catalogo_respaldo
 from app.services import payment_gateway_client as pg
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.offer_service import (
@@ -467,21 +468,22 @@ def reservar_pedido(
         codigo_postal=direccion.codigo_postal,
     ))
 
+    # Nombres para el snapshot de cada línea; con MongoDB caído salen de la copia
+    # del catálogo en MySQL, sin esperar su timeout mientras se tienen los bloqueos.
+    productos_doc = {}
+    if mongo_db is not None:
+        refs = [offers[o].producto_ref for o in quantities if offers[o].producto_ref]
+        try:
+            productos_doc, _ = catalogo_respaldo.productos_por_ids(mongo_db, refs)
+        except Exception:
+            productos_doc = {}
+
     for offer_id, quantity in quantities.items():
         offer = offers[offer_id]
         inventory = inventory_by_offer[offer_id]
         vendor = vendors[offer.vendedor_id]
         line_subtotal = applied_prices[offer_id] * quantity
-        product_name = offer.sku
-        if mongo_db is not None and offer.producto_ref:
-            try:
-                mongo_product = mongo_db.productos.find_one(
-                    {'_id': ObjectId(offer.producto_ref)}, {'nombre': 1}
-                )
-                if mongo_product and mongo_product.get('nombre'):
-                    product_name = mongo_product['nombre']
-            except Exception:
-                pass
+        product_name = (productos_doc.get(offer.producto_ref) or {}).get('nombre') or offer.sku
 
         db.add(PedidoLinea(
             pedido_id=pedido.id,

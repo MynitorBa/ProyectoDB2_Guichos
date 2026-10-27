@@ -50,7 +50,7 @@ RUTAS: dict[str, tuple[str, ...]] = {
     'oferta.estado_actualizado': ('mongo', 'busqueda', 'neo4j'),
     'oferta.vendedor_actualizado': ('mongo', 'busqueda', 'neo4j'),
     'producto.oferta_principal_actualizada': ('mongo', 'busqueda', 'neo4j'),
-    'producto.catalogo_actualizado': ('busqueda',),
+    'producto.catalogo_actualizado': ('busqueda', 'catalogo'),
     'flash.estado_cambiado': ('busqueda',),
     'analytics.pedido_actualizado': ('cassandra', 'busqueda'),
     'grafo.compra_registrada': ('neo4j',),
@@ -214,6 +214,16 @@ def _proyectar_busqueda(event: OutboxEvento, db: Session) -> None:
     indexar_productos(get_es(), db, get_mongo_db(), refs, _neo4j_opcional())
 
 
+def _proyectar_catalogo(event: OutboxEvento, db: Session) -> None:
+    """Copia del catálogo en MySQL (plan B de MongoDB), recalculada desde MongoDB."""
+    from app.services.catalogo_respaldo_service import copiar_producto
+
+    mongo = get_mongo_db()
+    for ref in _refs_del_evento(event, db):
+        copiar_producto(mongo, db, ref)
+    db.commit()
+
+
 def _proyectar_cassandra(event: OutboxEvento, db: Session) -> None:
     from app.services.analytics_service import project_order
 
@@ -356,6 +366,7 @@ def _proyectar_redis(event: OutboxEvento, db: Session) -> None:
 MANEJADORES = {
     'mongo': _proyectar_mongo,
     'busqueda': _proyectar_busqueda,
+    'catalogo': _proyectar_catalogo,
     'cassandra': _proyectar_cassandra,
     'neo4j': _proyectar_neo4j,
     'redis': _proyectar_redis,
@@ -507,6 +518,20 @@ def _reconciliar_busqueda() -> None:
         logger.info('Reconciliación del índice de búsqueda: %s', resumen)
 
 
+def _reconciliar_catalogo() -> None:
+    """Red de seguridad periódica de la copia del catálogo en MySQL."""
+    from app.services.catalogo_respaldo_service import reconciliar
+
+    with SessionLocal() as db:
+        resumen = reconciliar(get_mongo_db(), db)
+        db.commit()
+    if resumen['copiados'] or resumen['retirados']:
+        logger.info('Reconciliación de la copia del catálogo: %s', resumen)
+
+
+RECONCILIACIONES = {'busqueda': _reconciliar_busqueda, 'catalogo': _reconciliar_catalogo}
+
+
 def _worker_loop(destino: str) -> None:
     """Consumidor de un único destino.
 
@@ -514,20 +539,22 @@ def _worker_loop(destino: str) -> None:
     esperan su timeout y su backoff sin retrasar a los demás destinos.
     SKIP LOCKED garantiza que dos consumidores nunca tomen el mismo evento.
     """
-    reconcilia = destino == 'busqueda'
-    proxima_reconciliacion = time.monotonic() + RECONCILIAR_BUSQUEDA_SEGUNDOS
+    reconciliar = RECONCILIACIONES.get(destino)
+    # La copia del catálogo se completa al arrancar: así existe desde el primer
+    # minuto en cualquier instalación. El índice de búsqueda espera su turno.
+    proxima_reconciliacion = time.monotonic() + (0 if destino == 'catalogo' else RECONCILIAR_BUSQUEDA_SEGUNDOS)
     while not _stop_event.is_set():
         try:
             processed = process_batch(destino=destino)
         except Exception:  # p. ej. MySQL momentáneamente caído
             logger.exception('Error en el consumidor del outbox (%s)', destino)
             processed = 0
-        if reconcilia and time.monotonic() >= proxima_reconciliacion:
+        if reconciliar and time.monotonic() >= proxima_reconciliacion:
             proxima_reconciliacion = time.monotonic() + RECONCILIAR_BUSQUEDA_SEGUNDOS
             try:
-                _reconciliar_busqueda()
+                reconciliar()
             except Exception as exc:
-                logger.warning('No se pudo reconciliar el índice de búsqueda: %s', exc)
+                logger.warning('No se pudo reconciliar el destino %s: %s', destino, exc)
         if not processed:
             _stop_event.wait(POLL_SECONDS)
 

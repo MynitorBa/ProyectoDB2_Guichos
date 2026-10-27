@@ -198,11 +198,10 @@ def list_variants(mongo: Database, db: Session, producto_ref: str) -> list[dict]
     rows = db.query(ProductoVarianteReferencia).filter_by(
         producto_referencia_id=reference.id
     ).order_by(ProductoVarianteReferencia.id).all()
-    documents = {
-        str(doc['_id']): doc for doc in mongo.producto_variantes.find({
-            '_id': {'$in': [ObjectId(row.variante_ref) for row in rows]}
-        })
-    }
+    from app.services import catalogo_respaldo_service as catalogo_respaldo
+
+    # Con MongoDB caído, las variantes salen de su copia en MySQL.
+    documents = catalogo_respaldo.variantes(mongo, [row.variante_ref for row in rows])
     result = []
     for row in rows:
         doc = documents.get(row.variante_ref)

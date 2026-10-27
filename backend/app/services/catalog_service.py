@@ -18,6 +18,7 @@ from app.services.offer_service import listar_ofertas_por_referencias, oferta_pr
 from app.models.promocion_flash import PromocionFlash
 from app.models.pedido import Pedido, PedidoLinea
 from app.services import flash_sale_service as flash_sales
+from app.services import catalogo_respaldo_service as catalogo_respaldo
 
 
 def _active_flash_by_offer(mysql_db: Session, redis_db, offer_ids: list[int]) -> dict[int, dict]:
@@ -243,7 +244,10 @@ def listar_productos(
         filtro['$and'] = clauses
 
     if mysql_db is not None:
-        docs = list(db.productos.find(filtro))
+        # Si MongoDB no responde, los documentos salen de su copia en MySQL.
+        docs, desde_respaldo = catalogo_respaldo.productos(
+            db, filtro, estado=estado, categoria_slug=categoria_slug, q=q,
+        )
         items, mismatches = enriquecer_productos(
             docs, mysql_db, redis_db,
             vendedor_id=vendedor_id,
@@ -278,10 +282,11 @@ def listar_productos(
             'page_size': page_size,
             'total_pages': max(1, -(-total // page_size)),
             'dual_read': {
-                'source': 'mongodb+mysql',
+                'source': 'respaldo_mysql+mysql' if desde_respaldo else 'mongodb+mysql',
                 'checked': len(docs),
                 'legacy_mismatches': mismatches,
             },
+            'catalogo_respaldo': desde_respaldo,
         }
 
     if disponible is not None:
@@ -326,10 +331,7 @@ def obtener_producto(
     producto_id: str,
     mysql_db: Session | None = None,
 ) -> dict | None:
-    try:
-        doc = db.productos.find_one({'_id': ObjectId(producto_id)})
-    except Exception:
-        doc = db.productos.find_one({'sku': producto_id})
+    doc, desde_respaldo = catalogo_respaldo.producto(db, producto_id)
     if not doc:
         return None
     item = _serialize(doc)
@@ -374,7 +376,8 @@ def obtener_producto(
             })
         else:
             item.update({'oferta_id': None, 'stock': 0, 'disponible': False})
-        item['dual_read'] = {'source': 'mongodb+mysql'}
+        item['dual_read'] = {'source': 'respaldo_mysql+mysql' if desde_respaldo else 'mongodb+mysql'}
+    item['catalogo_respaldo'] = desde_respaldo
     return item
 
 
