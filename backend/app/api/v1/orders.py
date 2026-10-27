@@ -11,6 +11,7 @@ from pymongo.database import Database
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import salud
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
@@ -194,7 +195,7 @@ def checkout(
                 status_code=409,
                 detail={'detail': 'La reserva flash del carrito es inválida.', 'code': 'FLASH_RESERVATION_INVALID'},
             )
-        reservation = flash.obtener_reserva(r, int(promotion_id), current_user.id)
+        reservation = flash.reserva_vigente(r, db, int(promotion_id), current_user.id)
         if (
             not reservation
             or reservation.get('token') != token
@@ -269,6 +270,9 @@ def checkout(
     # MySQL ya confirmó el pedido. Consumir la reserva no devuelve la unidad al
     # cupo flash; la venta durable ya quedó registrada en MySQL.
     for offer_id, context in flash_context.items():
+        if not salud.disponible('redis'):
+            # El evento flash.consumir del outbox lo aplicará cuando Redis vuelva.
+            continue
         try:
             consumed = flash.consumir(
                 r, context['promocion_id'], current_user.id, context['token']

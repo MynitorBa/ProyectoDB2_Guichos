@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 // paneles de tendencias, así que se avisa únicamente a administradores y vendedores.
 const MENSAJES = {
   mysql: 'La base de datos principal no responde: algunas funciones no están disponibles por ahora.',
-  redis: 'El carrito y las ofertas flash pueden fallar temporalmente.',
+  redis: 'El carrito y las ofertas flash funcionan en modo de respaldo: puedes seguir comprando, un poco más lento.',
   mongo: 'El catálogo de productos puede no cargar temporalmente.',
   elasticsearch: 'La búsqueda funciona en modo básico: sin corrección de errores ni filtros.',
   neo4j: 'Las recomendaciones y reseñas no están disponibles temporalmente.',

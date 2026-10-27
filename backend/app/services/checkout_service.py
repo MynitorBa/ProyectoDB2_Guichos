@@ -54,6 +54,7 @@ from app.models.promocion_flash import PromocionFlash, ReservaFlash
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
 from app.schemas.checkout import CheckoutItem
+from app.services import carrito_respaldo_service as carrito_respaldo
 from app.services import payment_gateway_client as pg
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.offer_service import (
@@ -628,6 +629,9 @@ def confirmar_pedido(db: Session, pedido_id: int, *, referencia: str | None = No
                    agregado_id=pedido.id, producto_ref=None, payload={'usuario_id': pedido.usuario_id})
     enqueue_outbox(db, tipo_evento='carrito.limpiar', agregado_tipo='pedido', agregado_id=pedido.id,
                    producto_ref=None, payload={'usuario_id': pedido.usuario_id, 'oferta_ids': offer_ids})
+    # La copia del carrito en MySQL (plan B de Redis) se limpia en esta misma
+    # transacción: si Redis está caído, lo comprado no reaparece en el carrito.
+    carrito_respaldo.quitar_ofertas(db, pedido.usuario_id, offer_ids)
     for promocion, reserva in flash.values():
         enqueue_outbox(db, tipo_evento='flash.consumir', agregado_tipo='pedido', agregado_id=pedido.id,
                        producto_ref=None, payload={

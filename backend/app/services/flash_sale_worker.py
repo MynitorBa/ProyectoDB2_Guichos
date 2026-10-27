@@ -5,7 +5,9 @@ import threading
 import time
 
 import redis as redis_lib
+from sqlalchemy import text
 
+from app.core import salud
 from app.core.db_mysql import SessionLocal
 from app.core.db_redis import get_redis
 from app.core.time import utc_now
@@ -36,12 +38,35 @@ def encolar_cambio_flash(db, promotion: PromocionFlash) -> None:
         )
 
 
+def resincronizar_pendientes(db, r) -> int:
+    """Promociones que cambiaron solo en MySQL mientras Redis no respondía (plan B).
+
+    Se borra su estado en Redis; el ciclo de reconciliación lo reconstruye
+    enseguida desde MySQL con ``rehidratar_si_falta``.
+    """
+    ids = [fila[0] for fila in db.execute(text('SELECT promocion_id FROM flash_resincronizar')).all()]
+    for promocion_id in ids:
+        flash.eliminar(r, promocion_id)
+        db.execute(text('DELETE FROM flash_resincronizar WHERE promocion_id = :p'), {'p': promocion_id})
+        logger.info('Promoción flash %s se reconstruye en Redis desde MySQL.', promocion_id)
+    db.commit()
+    return len(ids)
+
+
 def reconcile_once() -> int:
     now = utc_now()
     now_ts = int(time.time())
     processed = 0
     r = get_redis()
     with SessionLocal() as db:
+        usar_redis = salud.disponible('redis')
+        if usar_redis:
+            try:
+                processed += resincronizar_pendientes(db, r)
+            except redis_lib.RedisError as exc:
+                db.rollback()
+                salud.registrar_falla('redis', exc)
+                usar_redis = False
         promotions = db.query(PromocionFlash).filter(
             PromocionFlash.estado.in_(['programada', 'activa'])
         ).all()
@@ -57,12 +82,15 @@ def reconcile_once() -> int:
                 ReservaFlash.estado == 'reservada',
                 ReservaFlash.expira_en > now,
             ).all()
-            try:
-                flash.rehidratar_si_falta(r, row, active_reservations)
-                flash.limpiar_expiradas(r, row.id, now_ts)
-            except redis_lib.RedisError:
-                # MySQL debe poder cerrar la promoción aunque Redis esté caído.
-                logger.warning('Redis no disponible al reconciliar promoción flash %s', row.id)
+            if usar_redis:
+                try:
+                    flash.rehidratar_si_falta(r, row, active_reservations)
+                    flash.limpiar_expiradas(r, row.id, now_ts)
+                except redis_lib.RedisError as exc:
+                    # MySQL debe poder cerrar la promoción aunque Redis esté caído.
+                    salud.registrar_falla('redis', exc)
+                    usar_redis = False
+                    logger.warning('Redis no disponible al reconciliar promoción flash %s', row.id)
             expired = db.query(ReservaFlash).filter(
                 ReservaFlash.promocion_id == row.id,
                 ReservaFlash.estado == 'reservada',
@@ -98,8 +126,13 @@ def reconcile_once() -> int:
             if offer:
                 enqueue_primary_offer_projection(db, offer.producto_ref, offer.id)
             try:
+                if not usar_redis:
+                    raise redis_lib.ConnectionError('Redis marcado como no disponible')
                 flash.cerrar(r, promotion.id)
             except redis_lib.RedisError:
+                # Al volver Redis, su estado viejo se borra (ya no está vigente
+                # en MySQL, así que no se rehidrata).
+                flash.marcar_resincronizar(db, promotion.id)
                 logger.warning('Redis no disponible al cerrar promoción flash %s', promotion.id)
             processed += 1
         db.commit()

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core import salud
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
 from app.core.deps import get_current_user, require_role
@@ -112,6 +113,7 @@ def _finish_if_needed(db: Session, r: redis_lib.Redis, promotion: PromocionFlash
 
 
 def _ensure_redis_state(db: Session, r: redis_lib.Redis, promotion: PromocionFlash) -> None:
+    """Reconstruye la promoción en Redis si falta. Deja pasar ``RedisError``."""
     if promotion.estado not in {'programada', 'activa'}:
         return
     reservations = db.query(ReservaFlash).filter(
@@ -119,31 +121,37 @@ def _ensure_redis_state(db: Session, r: redis_lib.Redis, promotion: PromocionFla
         ReservaFlash.estado == 'reservada',
         ReservaFlash.expira_en > utc_now(),
     ).all()
+    flash.rehidratar_si_falta(r, promotion, reservations)
+
+
+def _estado_redis(db: Session, r: redis_lib.Redis, promotion: PromocionFlash) -> dict | None:
+    """Estado vivo de la promoción en Redis, o None si hay que usar el de MySQL (plan B)."""
+    if not salud.disponible('redis') or flash.pendiente_resincronizar(db, promotion.id):
+        return None
     try:
-        flash.rehidratar_si_falta(r, promotion, reservations)
+        _ensure_redis_state(db, r, promotion)
+        if promotion.estado in {'programada', 'activa'}:
+            flash.limpiar_expiradas(r, promotion.id, int(time.time()))
+        state = flash.obtener_estado(r, promotion.id)
     except redis_lib.RedisError as exc:
-        raise HTTPException(503, 'Las ventas flash no están disponibles temporalmente.') from exc
+        salud.registrar_falla('redis', exc)
+        return None
+    salud.registrar_exito('redis')
+    return state
 
 
 def _serialize(db: Session, r: redis_lib.Redis, promotion: PromocionFlash) -> dict:
     _finish_if_needed(db, r, promotion)
-    _ensure_redis_state(db, r, promotion)
-    now_ts = int(time.time())
+    state = _estado_redis(db, r, promotion)
     if promotion.estado in {'programada', 'activa'}:
-        try:
-            flash.limpiar_expiradas(r, promotion.id, now_ts)
-        except redis_lib.RedisError as exc:
-            raise HTTPException(503, 'Las ventas flash no están disponibles temporalmente.') from exc
         db.query(ReservaFlash).filter(
             ReservaFlash.promocion_id == promotion.id,
             ReservaFlash.estado == 'reservada',
             ReservaFlash.expira_en <= utc_now(),
         ).update({'estado': 'expirada'}, synchronize_session=False)
         db.commit()
-    try:
-        state = flash.obtener_estado(r, promotion.id)
-    except redis_lib.RedisError as exc:
-        raise HTTPException(503, 'Las ventas flash no están disponibles temporalmente.') from exc
+    if state is None:
+        state = {'disponibles': flash.disponibles_mysql(db, promotion)}
     offer = db.get(Oferta, promotion.oferta_id)
     vendor = db.get(Vendedor, offer.vendedor_id) if offer else None
     return {
@@ -300,21 +308,33 @@ def reserve_flash_sale(
         promotion.inicia_en <= now < promotion.finaliza_en
     ):
         raise HTTPException(409, 'La promoción no está activa.')
-    _ensure_redis_state(db, r, promotion)
     offer = db.get(Oferta, promotion.oferta_id)
     token = str(uuid4())
-    try:
-        result = flash.reservar(
-            r,
-            promocion_id=promotion.id,
-            usuario_id=user.id,
-            cantidad=payload.cantidad,
-            token=token,
-            ahora_ts=int(time.time()),
-            segundos_reserva=promotion.segundos_reserva,
+    # Redis resuelve la competencia por el cupo; si no responde (o la promoción
+    # cambió solo en MySQL y aún no se reconstruye), se reserva en MySQL.
+    result = None
+    if salud.disponible('redis') and not flash.pendiente_resincronizar(db, promotion.id):
+        try:
+            _ensure_redis_state(db, r, promotion)
+            result = flash.reservar(
+                r,
+                promocion_id=promotion.id,
+                usuario_id=user.id,
+                cantidad=payload.cantidad,
+                token=token,
+                ahora_ts=int(time.time()),
+                segundos_reserva=promotion.segundos_reserva,
+            )
+            salud.registrar_exito('redis')
+        except redis_lib.RedisError as exc:
+            salud.registrar_falla('redis', exc)
+            result = None
+    en_mysql = result is None
+    if en_mysql:
+        result = flash.reservar_en_mysql(
+            db, promocion_id=promotion.id, usuario_id=user.id,
+            cantidad=payload.cantidad, token=token,
         )
-    except redis_lib.RedisError as exc:
-        raise HTTPException(503, 'Las ventas flash no están disponibles temporalmente.') from exc
     if result['codigo'] == 0:
         raise HTTPException(409, 'Las unidades promocionales se agotaron.')
     if result['codigo'] == -1:
@@ -322,12 +342,15 @@ def reserve_flash_sale(
     if result['codigo'] == -2:
         raise HTTPException(422, 'Solo puedes reservar una unidad promocional.')
 
-    if result['codigo'] == 2:
+    if en_mysql:
+        reservation = result['reserva']
+    elif result['codigo'] == 2:
         reservation = db.query(ReservaFlash).filter_by(
             promocion_id=promotion.id, usuario_id=user.id, estado='reservada'
         ).first()
         if not reservation:
-            flash.liberar(r, promotion.id, user.id, result['token'])
+            flash.liberar_seguro(r, db, promotion.id, user.id, result['token'])
+            db.commit()
             raise HTTPException(409, 'La reserva anterior no pudo recuperarse; intenta nuevamente.')
     else:
         db.query(ReservaFlash).filter(
@@ -346,7 +369,8 @@ def reserve_flash_sale(
             db.commit()
         except Exception:
             db.rollback()
-            flash.liberar(r, promotion.id, user.id, result['token'])
+            flash.liberar_seguro(r, db, promotion.id, user.id, result['token'])
+            db.commit()
             raise
 
     try:
@@ -356,7 +380,8 @@ def reserve_flash_sale(
             promotion.id, reservation.token,
         )
     except redis_lib.RedisError as exc:
-        flash.liberar(r, promotion.id, user.id, reservation.token)
+        # Ni Redis ni el respaldo del carrito responden: se deshace la reserva.
+        flash.liberar_seguro(r, db, promotion.id, user.id, reservation.token)
         reservation.estado = 'cancelada'
         db.commit()
         raise HTTPException(503, 'No se pudo agregar la reserva al carrito.') from exc

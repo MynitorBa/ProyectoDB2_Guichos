@@ -2,9 +2,14 @@
 
 import json
 from decimal import Decimal
-from datetime import timezone
+from datetime import timedelta, timezone
 
 import redis
+from sqlalchemy import func, text
+
+from app.core import salud
+from app.core.time import utc_now
+from app.models.promocion_flash import PromocionFlash, ReservaFlash
 
 
 _RESERVE_LUA = """
@@ -235,3 +240,121 @@ def cerrar(r: redis.Redis, promocion_id: int) -> None:
 
 def eliminar(r: redis.Redis, promocion_id: int) -> None:
     r.delete(*_keys(promocion_id))
+
+
+# ── Plan B: reservas en MySQL cuando Redis no responde ───────────────────────
+#
+# MySQL ya guarda el estado durable de cada promoción (unidades totales y
+# vendidas) y cada reserva. Sin Redis, la competencia por el cupo se resuelve
+# con un bloqueo de fila sobre la promoción: más lento que el script Lua, igual
+# de correcto. La promoción queda marcada en flash_resincronizar y el worker
+# reconstruye su estado en Redis desde MySQL cuando Redis vuelve.
+
+def _ts(fecha) -> int:
+    return int(fecha.replace(tzinfo=timezone.utc).timestamp())
+
+
+def marcar_resincronizar(db, promocion_id: int) -> None:
+    db.execute(text(
+        'INSERT IGNORE INTO flash_resincronizar (promocion_id, creado_en) VALUES (:p, :a)'
+    ), {'p': promocion_id, 'a': utc_now()})
+
+
+def pendiente_resincronizar(db, promocion_id: int) -> bool:
+    return db.execute(text(
+        'SELECT 1 FROM flash_resincronizar WHERE promocion_id = :p'
+    ), {'p': promocion_id}).first() is not None
+
+
+def _reserva_mysql(db, promocion_id: int, usuario_id: int) -> dict | None:
+    fila = db.query(ReservaFlash).filter(
+        ReservaFlash.promocion_id == promocion_id,
+        ReservaFlash.usuario_id == usuario_id,
+        ReservaFlash.estado == 'reservada',
+        ReservaFlash.expira_en > utc_now(),
+    ).first()
+    if not fila:
+        return None
+    return {'token': fila.token, 'cantidad': fila.cantidad, 'expira_ts': _ts(fila.expira_en)}
+
+
+def reserva_vigente(r: redis.Redis, db, promocion_id: int, usuario_id: int) -> dict | None:
+    """La reserva del usuario: de Redis si responde; si no, o si la promoción
+    cambió solo en MySQL y aún no se reconstruye en Redis, desde MySQL."""
+    if salud.disponible('redis'):
+        try:
+            reserva = obtener_reserva(r, promocion_id, usuario_id)
+            salud.registrar_exito('redis')
+            if reserva or not pendiente_resincronizar(db, promocion_id):
+                return reserva
+        except redis.RedisError as exc:
+            salud.registrar_falla('redis', exc)
+    return _reserva_mysql(db, promocion_id, usuario_id)
+
+
+def liberar_seguro(r: redis.Redis, db, promocion_id: int, usuario_id: int, token: str) -> bool:
+    """Libera la unidad en Redis; si no responde, la promoción queda por reconstruir.
+
+    El llamador marca la reserva como cancelada en MySQL, que es lo durable.
+    """
+    if salud.disponible('redis'):
+        try:
+            resultado = liberar(r, promocion_id, usuario_id, token)
+            salud.registrar_exito('redis')
+            return resultado
+        except redis.RedisError as exc:
+            salud.registrar_falla('redis', exc)
+    marcar_resincronizar(db, promocion_id)
+    return False
+
+
+def disponibles_mysql(db, promotion) -> int:
+    """Cupo restante calculado solo con MySQL: totales − vendidas − reservas vigentes."""
+    reservadas = db.query(func.coalesce(func.sum(ReservaFlash.cantidad), 0)).filter(
+        ReservaFlash.promocion_id == promotion.id,
+        ReservaFlash.estado == 'reservada',
+        ReservaFlash.expira_en > utc_now(),
+    ).scalar()
+    return max(0, promotion.unidades_totales - promotion.unidades_vendidas - int(reservadas))
+
+
+def reservar_en_mysql(db, *, promocion_id: int, usuario_id: int, cantidad: int, token: str) -> dict:
+    """Mismo contrato que ``reservar`` (códigos 1, 2, 0, -1, -2), resuelto en MySQL.
+
+    Con código 1 o 2 devuelve además ``reserva`` (el ReservaFlash). Confirma la
+    transacción; el bloqueo de la fila de la promoción serializa a los compradores.
+    """
+    promotion = db.query(PromocionFlash).filter_by(id=promocion_id).with_for_update().one()
+    ahora = utc_now()
+    if promotion.estado not in {'programada', 'activa'} or not (promotion.inicia_en <= ahora < promotion.finaliza_en):
+        db.rollback()
+        return {'codigo': -1, 'token': '', 'disponibles': 0, 'expira_ts': 0}
+    db.query(ReservaFlash).filter(
+        ReservaFlash.promocion_id == promocion_id,
+        ReservaFlash.estado == 'reservada',
+        ReservaFlash.expira_en <= ahora,
+    ).update({'estado': 'expirada'}, synchronize_session=False)
+    existente = db.query(ReservaFlash).filter_by(
+        promocion_id=promocion_id, usuario_id=usuario_id, estado='reservada'
+    ).first()
+    disponibles = disponibles_mysql(db, promotion)
+    if existente:
+        db.commit()
+        return {'codigo': 2, 'token': existente.token, 'disponibles': disponibles,
+                'expira_ts': _ts(existente.expira_en), 'reserva': existente}
+    if cantidad < 1 or cantidad > promotion.max_por_usuario:
+        db.rollback()
+        return {'codigo': -2, 'token': '', 'disponibles': disponibles, 'expira_ts': 0}
+    if disponibles < cantidad:
+        db.rollback()
+        return {'codigo': 0, 'token': '', 'disponibles': disponibles, 'expira_ts': 0}
+    expira = min(ahora + timedelta(seconds=promotion.segundos_reserva), promotion.finaliza_en)
+    reserva = ReservaFlash(
+        token=token, promocion_id=promocion_id, usuario_id=usuario_id, cantidad=cantidad,
+        precio_unitario=promotion.precio_promocional, expira_en=expira,
+    )
+    db.add(reserva)
+    marcar_resincronizar(db, promocion_id)
+    db.commit()
+    return {'codigo': 1, 'token': token, 'disponibles': disponibles - cantidad,
+            'expira_ts': _ts(expira), 'reserva': reserva}

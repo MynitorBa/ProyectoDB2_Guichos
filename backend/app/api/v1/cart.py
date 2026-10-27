@@ -78,7 +78,7 @@ def ver_carrito(
         if promotion_id and reservation_token and offer:
             promotion = db.get(PromocionFlash, int(promotion_id))
             reservation = db.get(ReservaFlash, reservation_token)
-            redis_reservation = flash.obtener_reserva(r, int(promotion_id), current_user.id)
+            redis_reservation = flash.reserva_vigente(r, db, int(promotion_id), current_user.id)
             flash_valid = bool(
                 promotion and reservation and redis_reservation
                 and promotion.oferta_id == offer.id
@@ -250,11 +250,11 @@ def eliminar_item(
         if current and current.get('promocion_flash_id'):
             promotion_id = int(current['promocion_flash_id'])
             token = current.get('reserva_flash_token')
-            flash.liberar(r, promotion_id, current_user.id, token)
+            flash.liberar_seguro(r, db, promotion_id, current_user.id, token)
             reservation = db.get(ReservaFlash, token)
             if reservation and reservation.estado == 'reservada':
                 reservation.estado = 'cancelada'
-                db.commit()
+            db.commit()
         ok = rcs.eliminar_item(r, current_user.id, oferta_id)
     except redis_lib.RedisError as exc:
         raise _cart_unavailable(exc) from exc
@@ -276,7 +276,7 @@ def vaciar_carrito(
             if item.get('promocion_flash_id') and item.get('reserva_flash_token'):
                 promotion_id = int(item['promocion_flash_id'])
                 token = item['reserva_flash_token']
-                flash.liberar(r, promotion_id, current_user.id, token)
+                flash.liberar_seguro(r, db, promotion_id, current_user.id, token)
                 reservation = db.get(ReservaFlash, token)
                 if reservation and reservation.estado == 'reservada':
                     reservation.estado = 'cancelada'
