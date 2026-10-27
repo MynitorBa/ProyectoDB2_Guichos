@@ -626,10 +626,16 @@ export default function ProductDetailPage() {
               <Reveal>
                 <section>
                   <h2 className="font-display font-bold text-xl text-[var(--color-text-primary)] mb-1">
-                    Quienes compraron este producto también compraron
+                    {recommendationData.origen === 'mas_vendidos'
+                      ? 'Más vendidos de esta categoría'
+                      : 'Quienes compraron este producto también compraron'}
                   </h2>
                   <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
-                    Productos de la misma categoría con compradores en común; precio y existencia se validan en tiempo real.
+                    {{
+                      cache: 'Productos de la misma categoría con compradores en común, según el último cálculo guardado; precio y existencia se validan en tiempo real.',
+                      mas_vendidos: 'Mientras las recomendaciones personalizadas no están disponibles, te mostramos los más vendidos; precio y existencia se validan en tiempo real.',
+                    }[recommendationData.origen]
+                      || 'Productos de la misma categoría con compradores en común; precio y existencia se validan en tiempo real.'}
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {recommendationData.items.map(item => (

@@ -2515,6 +2515,12 @@ function FraudSection() {
         </div>
       )}
       {/* Si el resumen no se pudo calcular (p. ej. Neo4j caído), no se muestran ceros engañosos. */}
+      {fraudData?.grafo_disponible === false && (
+        <div role="status" className="rounded-[var(--radius-lg)] border border-amber-300 bg-amber-50 px-4 py-3 font-sans text-sm text-amber-900">
+          Neo4j no responde: F01–F03 quedan pendientes y se recalcularán cuando vuelva el grafo.
+          F04 y los expedientes F05–F07 se muestran con lo guardado en MySQL.
+        </div>
+      )}
       {fraudError && (
         <div role="alert" className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-3">
           <span>No se pudo calcular el resumen de fraude: {mensajeError(fraudErrorObj)}</span>
@@ -2534,7 +2540,9 @@ function FraudSection() {
               </div>
               {fraudLoading
                 ? <Skeleton className="h-8 w-16 mt-1" />
-                : <p className="font-mono font-bold text-3xl">{fraudError && !item ? '—' : (item?.count ?? 0)}</p>
+                : item?.pendiente
+                  ? <p className="font-sans font-bold text-lg mt-2">Pendiente</p>
+                  : <p className="font-mono font-bold text-3xl">{fraudError && !item ? '—' : (item?.count ?? 0)}</p>
               }
               <p className="mt-2 text-[11px] font-semibold">Ver registros →</p>
             </button>

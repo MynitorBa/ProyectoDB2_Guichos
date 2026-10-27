@@ -12,11 +12,13 @@ from app.core.db_mysql import SessionLocal
 from app.core.time import utc_now
 from app.models.fraud_analysis_run import FraudAnalysisRun
 from app.services.fraud_analysis_service import (
-    FraudAnalysisBusy, run_fraud_analysis_once,
+    FraudAnalysisBusy, grafo_no_disponible, run_fraud_analysis_once,
 )
 
 
 logger = logging.getLogger(__name__)
+# Con Neo4j caído el análisis queda pendiente y se reintenta antes de la hora.
+REINTENTO_SIN_GRAFO_SEGUNDOS = 300
 
 
 def seconds_until_due(
@@ -51,7 +53,12 @@ def serve(
             logger.info('Análisis automático de fraude: %s', result)
         except FraudAnalysisBusy:
             logger.info('Análisis automático omitido: existe otra ejecución en curso.')
-        except Exception:
+        except Exception as exc:
+            if grafo_no_disponible(exc):
+                logger.warning('Neo4j no disponible: análisis de fraude pendiente; '
+                               'se reintentará en %s s.', REINTENTO_SIN_GRAFO_SEGUNDOS)
+                next_delay = lambda: float(min(interval, REINTENTO_SIN_GRAFO_SEGUNDOS))
+                continue
             logger.exception('Falló el análisis automático de fraude; se reintentará.')
         # Después del intento se espera un intervalo completo. En un reinicio,
         # seconds_until_due consulta el último éxito persistido.

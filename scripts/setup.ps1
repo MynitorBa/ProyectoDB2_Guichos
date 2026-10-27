@@ -255,6 +255,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de la copia del catálo
 & $python scripts\sync_catalogo_respaldo.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la copia inicial del catálogo en MySQL.' }
 
+& $python scripts\apply_recomendaciones_cache.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de la caché de recomendaciones.' }
+
 & $python scripts\backfill_cassandra_analytics.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
 

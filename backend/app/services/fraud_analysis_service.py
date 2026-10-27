@@ -38,6 +38,12 @@ def _serialize_run(row: FraudAnalysisRun | None) -> dict | None:
     }
 
 
+def grafo_no_disponible(exc: BaseException) -> bool:
+    """True si la falla es que Neo4j no responde (no un error del análisis)."""
+    from neo4j.exceptions import ServiceUnavailable, SessionExpired
+    return isinstance(exc, (ServiceUnavailable, SessionExpired, ConnectionError))
+
+
 def run_fraud_analysis_once(
     origen: str, *, ahora: datetime | None = None,
     engine_override=None, driver_override=None,
@@ -120,7 +126,12 @@ def run_fraud_analysis_once(
                 run.estado = 'fallida'
                 run.finalizada_en = utc_now()
                 run.duracion_ms = max(0, int((monotonic_fn() - started) * 1000))
-                run.error = str(exc)[:2000]
+                run.error = (
+                    # Plan B de Neo4j: los expedientes conservan su vigencia anterior
+                    # y el análisis queda pendiente hasta que vuelva el grafo.
+                    'Neo4j no disponible: análisis pendiente; se reintentará cuando vuelva el grafo. '
+                    if grafo_no_disponible(exc) else ''
+                ) + str(exc)[:1900]
                 db.commit()
         raise
     finally:

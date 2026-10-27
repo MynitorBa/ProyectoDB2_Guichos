@@ -39,6 +39,7 @@ BACKOFF_MAXIMO_SEGUNDOS = 300
 PAUSA_MAXIMA_DESTINO_SEGUNDOS = 30
 POLL_SECONDS = 1.0
 RECONCILIAR_BUSQUEDA_SEGUNDOS = 600
+RECALCULAR_RECOMENDACIONES_SEGUNDOS = 3600
 _stop_event = threading.Event()
 
 # Destinos que deben recibir cada tipo de evento. Un tipo no listado se
@@ -535,7 +536,24 @@ def _reconciliar_catalogo() -> None:
         logger.warning('No se reconstruyó el autocompletado de respaldo: %s', exc)
 
 
-RECONCILIACIONES = {'busqueda': _reconciliar_busqueda, 'catalogo': _reconciliar_catalogo}
+def _recalcular_recomendaciones() -> None:
+    """Copia horaria de las recomendaciones de Neo4j a MySQL (plan B de Neo4j)."""
+    from app.core.db_neo4j import get_driver
+    from app.services.recommendation_service import recalcular_cache
+
+    with SessionLocal() as db, get_driver().session() as neo4j:
+        filas = recalcular_cache(neo4j, db)
+    logger.info('Caché de recomendaciones recalculada: %s pares.', filas)
+
+
+# Tareas periódicas de cada consumidor: (función, cada cuántos segundos, ¿al arrancar?).
+# La copia del catálogo y la caché de recomendaciones se llenan al arrancar para
+# existir desde el primer minuto; el índice de búsqueda espera su turno.
+RECONCILIACIONES = {
+    'busqueda': (_reconciliar_busqueda, RECONCILIAR_BUSQUEDA_SEGUNDOS, False),
+    'catalogo': (_reconciliar_catalogo, RECONCILIAR_BUSQUEDA_SEGUNDOS, True),
+    'neo4j': (_recalcular_recomendaciones, RECALCULAR_RECOMENDACIONES_SEGUNDOS, True),
+}
 
 
 def _worker_loop(destino: str) -> None:
@@ -545,10 +563,8 @@ def _worker_loop(destino: str) -> None:
     esperan su timeout y su backoff sin retrasar a los demás destinos.
     SKIP LOCKED garantiza que dos consumidores nunca tomen el mismo evento.
     """
-    reconciliar = RECONCILIACIONES.get(destino)
-    # La copia del catálogo se completa al arrancar: así existe desde el primer
-    # minuto en cualquier instalación. El índice de búsqueda espera su turno.
-    proxima_reconciliacion = time.monotonic() + (0 if destino == 'catalogo' else RECONCILIAR_BUSQUEDA_SEGUNDOS)
+    reconciliar, cada, al_arrancar = RECONCILIACIONES.get(destino, (None, 0, False))
+    proxima_reconciliacion = time.monotonic() + (0 if al_arrancar else cada)
     while not _stop_event.is_set():
         try:
             processed = process_batch(destino=destino)
@@ -556,7 +572,7 @@ def _worker_loop(destino: str) -> None:
             logger.exception('Error en el consumidor del outbox (%s)', destino)
             processed = 0
         if reconciliar and time.monotonic() >= proxima_reconciliacion:
-            proxima_reconciliacion = time.monotonic() + RECONCILIAR_BUSQUEDA_SEGUNDOS
+            proxima_reconciliacion = time.monotonic() + cada
             try:
                 reconciliar()
             except Exception as exc:

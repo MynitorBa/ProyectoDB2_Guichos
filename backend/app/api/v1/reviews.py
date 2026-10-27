@@ -14,7 +14,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[3]
 STATIC_REVIEWS_DIR = BACKEND_DIR / "static" / "reviews"
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
-from app.core.deps import get_current_user, get_optional_user, require_role, get_db, get_neo4j
+from app.core.deps import get_current_user, get_optional_user, require_role, get_db, get_neo4j, get_neo4j_opcional
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
 from app.models.resena import Resena
@@ -239,11 +239,21 @@ def moderar(
 def fraude_resumen(
     _: Usuario = Depends(get_admin),
     db: Session = Depends(get_db),
-    neo4j: Neo4jSession = Depends(get_neo4j),
+    neo4j: Neo4jSession | None = Depends(get_neo4j_opcional),
 ):
-    summary = fraud.resumen_fraude(neo4j)
+    # Plan B de Neo4j: sin el grafo, F01–F03 quedan pendientes y el resto
+    # (F04 y los expedientes F05–F07 guardados en MySQL) se sigue mostrando.
+    if neo4j is None:
+        summary = {clave: {'count': None, 'items': [], 'pendiente': True} for clave in (
+            'bombardeo', 'bombardeo_historico', 'reviewer_unico_vendedor',
+            'reviewer_unico_vendedor_historico', 'cluster_coordinado', 'cluster_coordinado_historico',
+        )}
+    else:
+        summary = fraud.resumen_fraude(neo4j)
+    summary['grafo_disponible'] = neo4j is not None
     f04 = fraud.listar_sin_compra_mysql(db, pagina=1, tamano=5)
-    fraud.enriquecer_nombres_producto(neo4j, f04['items'])
+    if neo4j is not None:
+        fraud.enriquecer_nombres_producto(neo4j, f04['items'])
     summary['sin_compra_verificada'] = {
         'count': f04['total'], 'items': f04['items'],
     }

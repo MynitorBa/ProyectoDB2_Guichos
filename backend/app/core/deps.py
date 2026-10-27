@@ -72,6 +72,31 @@ def get_neo4j() -> Neo4jSession:
     yield from _get_neo4j_session()
 
 
+def get_neo4j_opcional():
+    """Sesión de Neo4j o ``None`` si el grafo no responde (plan B de Neo4j).
+
+    Para endpoints que pueden responder con lo que guarda MySQL y marcar el resto
+    como pendiente, en lugar de devolver un 503 completo.
+    """
+    from app.core import salud
+    if not salud.disponible('neo4j'):
+        yield None
+        return
+    try:
+        from app.core.db_neo4j import get_driver
+        sesion = get_driver().session()
+        sesion.run('RETURN 1').consume()
+    except Exception as exc:  # noqa: BLE001 - cualquier falla del grafo activa el respaldo
+        salud.registrar_falla('neo4j', exc, confirmada=True)
+        yield None
+        return
+    salud.registrar_exito('neo4j')
+    try:
+        yield sesion
+    finally:
+        sesion.close()
+
+
 from app.core.db_elastic import get_es as _get_es_client
 from elasticsearch import Elasticsearch
 

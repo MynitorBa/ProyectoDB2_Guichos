@@ -10,7 +10,7 @@ const MENSAJES = {
   redis: 'El carrito y las ofertas flash funcionan en modo de respaldo: puedes seguir comprando, un poco más lento.',
   mongo: 'El catálogo se muestra desde una copia de respaldo: la información puede estar desactualizada y por ahora no se pueden editar productos.',
   elasticsearch: 'La búsqueda funciona en modo básico: sin corrección de errores ni filtros.',
-  neo4j: 'Las recomendaciones y reseñas no están disponibles temporalmente.',
+  neo4j: 'Las recomendaciones se muestran desde su último cálculo guardado.',
   cassandra: 'Los paneles de tendencias de ventas no están disponibles temporalmente.',
 }
 const SOLO_GESTION = new Set(['cassandra'])

@@ -73,12 +73,12 @@ def recomendaciones_producto(
     db: Database = Depends(get_mongo_db),
     mysql_db: Session = Depends(get_db),
 ):
-    return {
-        'items': recommendation_service.recomendar(
-            mysql_db, db, producto_ref=producto_id,
-            usuario_id=user.id if user else None, limite=limite,
-        )
-    }
+    items, origen = recommendation_service.recomendar_con_origen(
+        mysql_db, db, producto_ref=producto_id,
+        usuario_id=user.id if user else None, limite=limite,
+    )
+    # origen: 'grafo' (Neo4j), 'cache' (copia horaria en MySQL) o 'mas_vendidos'.
+    return {'items': items, 'origen': origen}
 
 
 # Detalle de un producto por su _id de MongoDB enriquecido con todas las ofertas activas de MySQL
