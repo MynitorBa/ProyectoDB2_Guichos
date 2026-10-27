@@ -20,6 +20,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field, replace
 
+import redis as redis_lib
 from bson import ObjectId
 from elastic_transport import TransportError
 from elasticsearch import ApiError, Elasticsearch
@@ -616,7 +617,8 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
         },
         'sugerencia': None,
         'degradado': True,
-        'motor': 'mongodb',
+        # Si MongoDB tampoco respondió, los productos salieron de su copia en MySQL.
+        'motor': 'mysql' if resultado.get('catalogo_respaldo') else 'mongodb',
         'tiempo_ms': None,
         'sin_coincidencias': sin_coincidencias,
         **({'consulta': p.texto, 'alternativa': 'populares'} if sin_coincidencias else {}),
@@ -625,6 +627,31 @@ def buscar_en_mongo(mysql_db: Session, mongo: Database, p: ParametrosBusqueda, r
 
 
 # ── Autocompletado ────────────────────────────────────────────────────────────
+
+def _sugerir_sin_elasticsearch(mongo: Database, texto: str, limite: int) -> tuple[list[dict], str]:
+    """Respaldo del autocompletado: Redis (prefijos), luego MongoDB y luego la copia en MySQL."""
+    if salud.disponible('redis'):
+        try:
+            from app.core.db_redis import get_redis
+            from app.services import autocompletado_respaldo_service as autocompletado
+            r = get_redis()
+            if autocompletado.disponible(r):
+                productos = autocompletado.sugerir(r, texto, limite)
+                salud.registrar_exito('redis')
+                return productos, 'redis'
+        except redis_lib.RedisError as exc:
+            salud.registrar_falla('redis', exc, confirmada=isinstance(exc, redis_lib.ConnectionError))
+    filtro = {'estado': 'activo', 'nombre': {'$regex': re.escape(texto), '$options': 'i'}}
+    docs, desde_respaldo = catalogo_respaldo.productos(
+        mongo, filtro, estado='activo', categoria_slug=None, q=texto,
+    )
+    productos = [
+        {'producto_id': str(d['_id']), 'nombre': d.get('nombre'),
+         'imagen': (d.get('imagenes') or [None])[0], 'precio': None}
+        for d in docs[:limite]
+    ]
+    return productos, 'mysql' if desde_respaldo else 'mongodb'
+
 
 def sugerir(es: Elasticsearch, mysql_db: Session, mongo: Database, q: str, limite: int = 6) -> dict:
     texto = (q or '').strip()
@@ -648,19 +675,9 @@ def sugerir(es: Elasticsearch, mysql_db: Session, mongo: Database, q: str, limit
             source=['producto_id', 'nombre', 'imagen', 'precio', 'categorias'],
         )
     except ERRORES_MOTOR as exc:
-        logger.warning('Autocompletado degradado a MongoDB: %s', exc)
-        docs = mongo.productos.find(
-            {'estado': 'activo', 'nombre': {'$regex': re.escape(texto), '$options': 'i'}},
-            {'nombre': 1, 'imagenes': 1},
-        ).limit(limite)
-        return {
-            'productos': [
-                {'producto_id': str(d['_id']), 'nombre': d.get('nombre'), 'imagen': None, 'precio': None}
-                for d in docs
-            ],
-            'categorias': categorias,
-            'degradado': True,
-        }
+        logger.warning('Autocompletado sin Elasticsearch: %s', exc)
+        productos, motor = _sugerir_sin_elasticsearch(mongo, texto, limite)
+        return {'productos': productos, 'categorias': categorias, 'degradado': True, 'motor': motor}
 
     productos, vistos = [], set()
     for opcion in respuesta['suggest']['productos'][0]['options']:
@@ -677,4 +694,4 @@ def sugerir(es: Elasticsearch, mysql_db: Session, mongo: Database, q: str, limit
         })
         if len(productos) == limite:
             break
-    return {'productos': productos, 'categorias': categorias, 'degradado': False}
+    return {'productos': productos, 'categorias': categorias, 'degradado': False, 'motor': 'elasticsearch'}

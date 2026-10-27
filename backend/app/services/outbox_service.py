@@ -527,6 +527,12 @@ def _reconciliar_catalogo() -> None:
         db.commit()
     if resumen['copiados'] or resumen['retirados']:
         logger.info('Reconciliación de la copia del catálogo: %s', resumen)
+    # El autocompletado de respaldo (plan B de Elasticsearch) se rehace con la copia.
+    from app.services.catalogo_respaldo_service import reconstruir_autocompletado
+    try:
+        reconstruir_autocompletado()
+    except Exception as exc:  # noqa: BLE001 - Redis caído: se reintenta en la próxima vuelta
+        logger.warning('No se reconstruyó el autocompletado de respaldo: %s', exc)
 
 
 RECONCILIACIONES = {'busqueda': _reconciliar_busqueda, 'catalogo': _reconciliar_catalogo}

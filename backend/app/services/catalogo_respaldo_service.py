@@ -73,6 +73,7 @@ def copiar_producto(mongo: Database, db: Session, producto_ref: str) -> None:
         _guardar(db, 'productos', doc)
     else:
         _borrar(db, 'productos', producto_ref)
+    _actualizar_autocompletado(producto_ref, doc)
     variantes = list(mongo.producto_variantes.find({'producto_ref': producto_ref}))
     vigentes = {str(v['_id']) for v in variantes}
     for variante in variantes:
@@ -82,6 +83,37 @@ def copiar_producto(mongo: Database, db: Session, producto_ref: str) -> None:
     """), {'p': producto_ref}).scalars().all()
     for ref in set(copiadas) - vigentes:
         _borrar(db, 'producto_variantes', ref)
+
+
+def _actualizar_autocompletado(producto_ref: str, doc: dict | None) -> None:
+    """Refleja el producto en el autocompletado de respaldo de Redis (sin fallar).
+
+    Si Redis no responde, la reconstrucción periódica lo pone al día después.
+    """
+    if not salud.disponible('redis'):
+        return
+    try:
+        from app.core.db_redis import get_redis
+        from app.services import autocompletado_respaldo_service as autocompletado
+        autocompletado.actualizar(get_redis(), producto_ref, doc)
+    except Exception as exc:  # noqa: BLE001 - el autocompletado de respaldo es opcional
+        logger.warning('No se actualizó el autocompletado de respaldo de %s: %s', producto_ref, exc)
+
+
+def reconstruir_autocompletado() -> int:
+    """Rehace el autocompletado de respaldo de Redis con los productos activos de la copia."""
+    from app.core.db_redis import get_redis
+    from app.services import autocompletado_respaldo_service as autocompletado
+    return autocompletado.reconstruir(get_redis(), productos_copiados(estado='activo'))
+
+
+def productos_copiados(*, estado: str | None = None) -> list[dict]:
+    """Documentos de productos tal como están en la copia de MySQL."""
+    with SessionLocal() as db:
+        sql = "SELECT documento FROM catalogo_respaldo WHERE coleccion = 'productos'"
+        if estado:
+            sql += ' AND estado = :estado'
+        return [_cargar(d) for d in db.execute(text(sql), {'estado': estado}).scalars()]
 
 
 def reconciliar(mongo: Database, db: Session) -> dict:
@@ -139,11 +171,7 @@ def _categorias(doc: dict) -> set[str]:
 
 
 def _respaldo_productos(*, estado: str | None, categoria_slug: str | None, q: str | None) -> list[dict]:
-    with SessionLocal() as db:
-        sql = "SELECT documento FROM catalogo_respaldo WHERE coleccion = 'productos'"
-        if estado:
-            sql += ' AND estado = :estado'
-        docs = [_cargar(d) for d in db.execute(text(sql), {'estado': estado}).scalars()]
+    docs = productos_copiados(estado=estado)
     if not docs:
         docs = _productos_elasticsearch(estado=estado)
     if categoria_slug:
