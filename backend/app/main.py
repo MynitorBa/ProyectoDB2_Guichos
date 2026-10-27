@@ -19,7 +19,7 @@ from app.services.checkout_recovery_worker import (
 from app.api.v1 import auth, addresses, categories, products, orders, cart, admin, notifications, vendor, catalog_requests, fulfillment
 from app.api.v1 import backoffice, stores, flash_sales, analytics
 from app.api.v1 import store_editor
-from app.api.v1 import consistency, search, sync
+from app.api.v1 import consistency, search, sync, salud
 from app.api.v1.reviews import router as reviews_router
 
 
@@ -94,6 +94,7 @@ app.include_router(reviews_router, prefix='/api/v1')
 app.include_router(sync.router, prefix='/api/v1')
 app.include_router(search.router, prefix='/api/v1')
 app.include_router(consistency.router, prefix='/api/v1')
+app.include_router(salud.router, prefix='/api/v1')
 # El laboratorio de consistencia es una herramienta de desarrollo aparte de la
 # tienda: sus endpoints de control de fallas solo existen si se habilitan.
 if settings.FAULT_INJECTION_ENABLED:

@@ -28,6 +28,19 @@ PUERTO_PASARELA = 8091
 URL_PASARELA = f'http://127.0.0.1:{PUERTO_PASARELA}'
 
 
+@pytest.fixture(autouse=True)
+def circuitos_cerrados():
+    """Cada prueba empieza con todos los motores marcados como disponibles.
+
+    Una prueba que simula un motor caído abre su circuito; sin esto, las
+    siguientes usarían el respaldo durante la espera del detector de fallas.
+    """
+    from app.core import salud
+    salud.reiniciar()
+    yield
+    salud.reiniciar()
+
+
 @pytest.fixture(scope='session', autouse=True)
 def pasarela_simulada():
     ledger = Path(tempfile.gettempdir()) / f'pasarela_pruebas_{os.getpid()}.db'

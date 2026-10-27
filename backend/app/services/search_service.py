@@ -26,6 +26,7 @@ from elasticsearch import ApiError, Elasticsearch
 from pymongo.database import Database
 from sqlalchemy.orm import Session
 
+from app.core import salud
 from app.core.config import settings
 from app.models.categoria import Categoria
 from app.services import catalog_service
@@ -41,6 +42,23 @@ MAX_ATRIBUTOS_FACETA = 8
 # Errores tolerados por palabra: 0 hasta 4 letras, 1 de 5 a 7, 2 desde 8.
 FUZZINESS = 'AUTO:5,8'
 ERRORES_MOTOR = (TransportError, ApiError)
+
+
+def _consultar(es: Elasticsearch, **argumentos) -> dict:
+    """``es.search`` pasando por el detector de fallas del motor.
+
+    Con el circuito abierto no se intenta: se lanza el mismo error de transporte
+    para que el llamador use su respaldo sin esperar el timeout.
+    """
+    if not salud.disponible('elasticsearch'):
+        raise TransportError('Elasticsearch marcado como no disponible (circuito abierto)')
+    try:
+        respuesta = es.search(index=settings.ES_INDEX_ALIAS, **argumentos)
+    except TransportError as exc:
+        salud.registrar_falla('elasticsearch', exc)
+        raise
+    salud.registrar_exito('elasticsearch')
+    return respuesta
 
 
 @dataclass
@@ -480,7 +498,7 @@ def _alternativa_sin_coincidencias(
     for conservar in intentos:
         alternativa = _sin_texto(p, conservar_filtros=conservar)
         try:
-            respuesta = es.search(index=settings.ES_INDEX_ALIAS, **como_argumentos(construir_consulta(alternativa)))
+            respuesta = _consultar(es, **como_argumentos(construir_consulta(alternativa)))
         except ERRORES_MOTOR as exc:
             logger.warning('No se pudo calcular la alternativa sin coincidencias: %s', exc)
             return None
@@ -499,7 +517,7 @@ def buscar(
     redis_db=None,
 ) -> dict:
     try:
-        respuesta = es.search(index=settings.ES_INDEX_ALIAS, **como_argumentos(construir_consulta(p)))
+        respuesta = _consultar(es, **como_argumentos(construir_consulta(p)))
     except ERRORES_MOTOR as exc:
         logger.warning('Elasticsearch no disponible; búsqueda degradada a MongoDB: %s', exc)
         return buscar_en_mongo(mysql_db, mongo, p, redis_db)
@@ -607,8 +625,8 @@ def sugerir(es: Elasticsearch, mysql_db: Session, mongo: Database, q: str, limit
         if texto and normalizar(nombre).startswith(normalizar(texto))
     ][:3]
     try:
-        respuesta = es.search(
-            index=settings.ES_INDEX_ALIAS,
+        respuesta = _consultar(
+            es,
             suggest={'productos': {
                 'prefix': texto,
                 'completion': {

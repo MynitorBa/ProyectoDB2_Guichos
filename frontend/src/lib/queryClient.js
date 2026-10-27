@@ -22,6 +22,10 @@ function esFallaDeServicio(error) {
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {
+      // Un 503 indica que un motor cayó: se actualiza el aviso de servicios sin esperar su sondeo.
+      if (error?.response?.status === 503 && query.queryKey[0] !== 'salud-motores') {
+        queryClient.invalidateQueries({ queryKey: ['salud-motores'] })
+      }
       if (query.meta?.silencioso || !esFallaDeServicio(error)) return
       const mensaje = mensajeError(error)
       // Un mismo id evita apilar el mismo aviso cuando fallan varias consultas a la vez.
@@ -30,6 +34,7 @@ export const queryClient = new QueryClient({
   }),
   mutationCache: new MutationCache({
     onError: (error, _variables, _context, mutation) => {
+      if (error?.response?.status === 503) queryClient.invalidateQueries({ queryKey: ['salud-motores'] })
       // Si la acción ya maneja su error, no se duplica el aviso.
       if (mutation.options.onError || mutation.meta?.silencioso) return
       toast.error(mensajeError(error, 'No se pudo completar la acción.'))

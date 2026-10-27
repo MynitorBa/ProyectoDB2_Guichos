@@ -19,6 +19,8 @@ import sqlalchemy.exc as sa_err
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.core import salud
+
 logger = logging.getLogger(__name__)
 
 # Códigos de error de MySQL que indican una carrera con otra transacción,
@@ -31,7 +33,10 @@ def _respuesta(status: int, detalle: str, codigo: str, reintentar_en: int | None
     return JSONResponse(status_code=status, content={'detail': detalle, 'code': codigo}, headers=headers)
 
 
-def _registrar(request: Request, exc: Exception, motor: str) -> None:
+def _registrar(request: Request, exc: Exception, motor: str, clave: str | None = None) -> None:
+    # La falla también alimenta el detector de fallas del motor (salud.py).
+    if clave:
+        salud.registrar_falla(clave, exc)
     logger.error('%s no disponible en %s %s: %s', motor, request.method, request.url.path,
                  exc.__class__.__name__, exc_info=(type(exc), exc, exc.__traceback__))
 
@@ -39,13 +44,14 @@ def _registrar(request: Request, exc: Exception, motor: str) -> None:
 def registrar_manejadores(app: FastAPI) -> None:
     @app.exception_handler(redis_err.RedisError)
     async def redis_caido(request: Request, exc: redis_err.RedisError):
-        _registrar(request, exc, 'Redis')
+        _registrar(request, exc, 'Redis', 'redis')
         return _respuesta(503, 'El carrito y las ofertas flash no están disponibles temporalmente. '
                                'Intenta de nuevo en unos momentos.', 'REDIS_UNAVAILABLE', 5)
 
     @app.exception_handler(mongo_err.PyMongoError)
     async def mongo_caido(request: Request, exc: mongo_err.PyMongoError):
-        _registrar(request, exc, 'MongoDB')
+        conexion = isinstance(exc, (mongo_err.ConnectionFailure, mongo_err.NetworkTimeout, mongo_err.ExecutionTimeout))
+        _registrar(request, exc, 'MongoDB', 'mongo' if conexion else None)
         if isinstance(exc, (mongo_err.ConnectionFailure, mongo_err.NetworkTimeout, mongo_err.ExecutionTimeout)):
             return _respuesta(503, 'El catálogo de productos no está disponible temporalmente. '
                                    'Intenta de nuevo en unos momentos.', 'CATALOG_UNAVAILABLE', 5)
@@ -58,13 +64,13 @@ def registrar_manejadores(app: FastAPI) -> None:
             logger.warning('Conflicto de bloqueo en %s %s: %s', request.method, request.url.path, codigo_mysql)
             return _respuesta(409, 'Otra operación estaba modificando los mismos datos. Intenta de nuevo.',
                               'CONCURRENT_UPDATE', 1)
-        _registrar(request, exc, 'MySQL')
+        _registrar(request, exc, 'MySQL', 'mysql')
         return _respuesta(503, 'La base de datos principal no está disponible temporalmente. '
                                'Intenta de nuevo en unos momentos.', 'DATABASE_UNAVAILABLE', 5)
 
     @app.exception_handler(sa_err.InterfaceError)
     async def mysql_interfaz(request: Request, exc: sa_err.InterfaceError):
-        _registrar(request, exc, 'MySQL')
+        _registrar(request, exc, 'MySQL', 'mysql')
         return _respuesta(503, 'La base de datos principal no está disponible temporalmente. '
                                'Intenta de nuevo en unos momentos.', 'DATABASE_UNAVAILABLE', 5)
 
@@ -88,7 +94,7 @@ def registrar_manejadores(app: FastAPI) -> None:
         @app.exception_handler(neo_err.ServiceUnavailable)
         @app.exception_handler(neo_err.SessionExpired)
         async def neo4j_caido(request: Request, exc: Exception):
-            _registrar(request, exc, 'Neo4j')
+            _registrar(request, exc, 'Neo4j', 'neo4j')
             return _respuesta(503, 'Las reseñas, recomendaciones y el análisis de fraude no están '
                                    'disponibles temporalmente.', 'GRAPH_UNAVAILABLE', 5)
     except ImportError:  # pragma: no cover - el driver es dependencia del proyecto
@@ -102,7 +108,7 @@ def registrar_manejadores(app: FastAPI) -> None:
         @app.exception_handler(cassandra.OperationTimedOut)
         @app.exception_handler(cassandra.Unavailable)
         async def cassandra_caido(request: Request, exc: Exception):
-            _registrar(request, exc, 'Cassandra')
+            _registrar(request, exc, 'Cassandra', 'cassandra')
             return _respuesta(503, 'Las estadísticas y tendencias de ventas no están disponibles '
                                    'temporalmente.', 'ANALYTICS_UNAVAILABLE', 5)
     except ImportError:  # pragma: no cover
@@ -113,7 +119,7 @@ def registrar_manejadores(app: FastAPI) -> None:
 
         @app.exception_handler(TransportError)
         async def elastic_caido(request: Request, exc: TransportError):
-            _registrar(request, exc, 'Elasticsearch')
+            _registrar(request, exc, 'Elasticsearch', 'elasticsearch')
             return _respuesta(503, 'El buscador no está disponible temporalmente.',
                               'SEARCH_UNAVAILABLE', 5)
     except ImportError:  # pragma: no cover

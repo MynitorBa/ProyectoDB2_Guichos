@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import Router from './router'
 import { Header } from './components/layout/Header'
 import { Footer } from './components/layout/Footer'
+import { AvisoServicios } from './components/layout/AvisoServicios'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Un error en una página no tumba la cabecera; al cambiar de ruta se reintenta solo.
@@ -29,6 +30,9 @@ export default function App() {
       <div className="min-h-screen flex flex-col bg-[var(--color-background)]">
         <ErrorBoundary>
           <Header />
+        </ErrorBoundary>
+        <ErrorBoundary fallback={null}>
+          <AvisoServicios />
         </ErrorBoundary>
         <main className="flex-1">
           <ContenidoProtegido />
