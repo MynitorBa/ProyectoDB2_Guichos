@@ -7,6 +7,7 @@ import time
 from bson import ObjectId
 from pymongo.database import Database
 import redis as redis_lib
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
@@ -19,6 +20,7 @@ from app.services.offer_service import resolver_oferta_comprable, stock_by_offer
 from app.services import redis_cart_service as rcs
 from app.services import flash_sale_service as flash
 from app.services import catalogo_respaldo_service as catalogo_respaldo
+from app.services import lectura_respaldo_service as lectura
 
 router = APIRouter(prefix='/cart', tags=['Carrito'])
 
@@ -57,7 +59,16 @@ def ver_carrito(
         return {'items': [], 'total': 0, 'tiene_alertas': False, 'ttl_segundos': -2}
 
     offer_ids = [i['oferta_id'] for i in items_raw]
-    stocks = stock_by_offer(db, offer_ids)
+    if not lectura.disponible():
+        return _carrito_solo_lectura(r, mongo_db, current_user.id, items_raw)
+    try:
+        stocks = stock_by_offer(db, offer_ids)
+    except (OperationalError, InterfaceError) as exc:
+        if not lectura.es_caida(exc):
+            raise
+        db.rollback()
+        lectura.registrar_caida(exc)
+        return _carrito_solo_lectura(r, mongo_db, current_user.id, items_raw)
 
     items = []
     total = Decimal('0')
@@ -146,6 +157,56 @@ def ver_carrito(
     }
 
 
+def _carrito_solo_lectura(r, mongo_db, usuario_id: int, items_raw: list[dict]) -> dict:
+    """Plan B de MySQL: el carrito de Redis con el precio que el usuario vio al agregar.
+
+    No se puede validar precio ni existencia; al pagar, el pedido queda en cola
+    y la saga los revisa cuando MySQL vuelva.
+    """
+    nombres = catalogo_respaldo.productos_por_ids(
+        mongo_db, [i['producto_ref'] for i in items_raw if i.get('producto_ref')],
+    )[0]
+    items, total = [], Decimal('0')
+    for raw in items_raw:
+        precio = Decimal(raw['precio_al_agregar'])
+        cantidad = raw['cantidad']
+        total += precio * cantidad
+        doc = nombres.get(raw.get('producto_ref')) or {}
+        items.append({
+            'oferta_id': raw['oferta_id'], 'producto_ref': raw.get('producto_ref'),
+            'nombre': doc.get('nombre') or f"Oferta {raw['oferta_id']}",
+            'precio': float(precio), 'precio_al_agregar': float(precio), 'precio_cambio': False,
+            'sin_stock': False, 'stock_disponible': cantidad, 'cantidad': cantidad,
+            'subtotal': float(precio * cantidad), 'es_flash': bool(raw.get('promocion_flash_id')),
+            'reserva_flash_vencida': False, 'promocion_flash_id': raw.get('promocion_flash_id'),
+            'reserva_expira_en': None,
+        })
+    try:
+        ttl = rcs.ttl_restante(r, usuario_id)
+    except redis_lib.RedisError as exc:
+        raise _cart_unavailable(exc) from exc
+    return {'items': items, 'total': float(total), 'tiene_alertas': False,
+            'ttl_segundos': ttl, 'solo_lectura': True}
+
+
+class _OfertaProyectada:
+    """Oferta tomada de la proyección del catálogo cuando MySQL no responde."""
+    def __init__(self, doc: dict):
+        self.id = int(doc['oferta_id'])
+        self.precio_actual = Decimal(str(doc.get('precio')))
+        self.producto_ref = str(doc['_id'])
+
+
+def _oferta_sin_mysql(mongo_db, oferta_id: int) -> _OfertaProyectada:
+    try:
+        doc = mongo_db.productos.find_one({'oferta_id': oferta_id, 'estado': 'activo'})
+    except Exception:  # noqa: BLE001 - sin MongoDB tampoco hay precio que mostrar
+        doc = None
+    if not doc or doc.get('precio') is None:
+        raise lectura.MySQLNoDisponible(f'oferta:{oferta_id}')
+    return _OfertaProyectada(doc)
+
+
 # ── POST /cart/items ──────────────────────────────────────────────────────────
 
 
@@ -154,15 +215,26 @@ def agregar_item(
     payload: CartItemRequest,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
+    mongo_db: Database = Depends(get_mongo_db),
     r: redis_lib.Redis = Depends(get_redis),
 ):
     if payload.cantidad < 1:
         raise HTTPException(status_code=422, detail='La cantidad debe ser positiva.')
 
     try:
-        offer = resolver_oferta_comprable(db, oferta_id=payload.oferta_id)
+        if not lectura.disponible():
+            # Plan B de MySQL: precio de la oferta principal proyectada en el catálogo.
+            offer = _oferta_sin_mysql(mongo_db, payload.oferta_id)
+        else:
+            offer = resolver_oferta_comprable(db, oferta_id=payload.oferta_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OperationalError, InterfaceError) as exc:
+        if not lectura.es_caida(exc):
+            raise
+        db.rollback()
+        lectura.registrar_caida(exc)
+        offer = _oferta_sin_mysql(mongo_db, payload.oferta_id)
 
     try:
         existing = next(

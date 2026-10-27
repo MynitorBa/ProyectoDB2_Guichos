@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Package, ChevronRight, FileDown } from 'lucide-react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
-import { getOrders, getOrderInvoice } from '../api/orders'
+import { getOrders, getOrderInvoice, getQueuedOrders } from '../api/orders'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
@@ -41,6 +41,39 @@ function downloadBlob(blob, filename) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+const ESTADO_COLA = {
+  en_cola: { texto: 'En cola', detalle: 'Se confirmará y cobrará cuando el sistema se recupere.', clase: 'border-amber-300 bg-amber-50 text-amber-900' },
+  procesado: { texto: 'Procesado', detalle: 'Ya es un pedido normal de tu historial.', clase: 'border-green-300 bg-green-50 text-green-900' },
+  requiere_atencion: { texto: 'Requiere tu atención', detalle: 'No se cobró nada.', clase: 'border-red-300 bg-red-50 text-red-900' },
+}
+
+// Pedidos que quedaron en cola mientras la base principal no respondía.
+function PedidosEnCola() {
+  const { data } = useQuery({
+    queryKey: ['orders-cola'],
+    queryFn: () => getQueuedOrders().then((r) => r.data),
+    refetchInterval: (query) => (query.state.data?.some((s) => s.estado === 'en_cola') ? 10_000 : false),
+    meta: { silencioso: true },
+  })
+  const solicitudes = (data || []).filter((s) => s.estado !== 'procesado' || !s.pedido_id)
+  if (!solicitudes.length) return null
+  return (
+    <div className="space-y-2 mb-6">
+      {solicitudes.map((s) => {
+        const estado = ESTADO_COLA[s.estado] || ESTADO_COLA.en_cola
+        const unidades = s.items.reduce((total, item) => total + item.cantidad, 0)
+        return (
+          <div key={s.id} className={`rounded-[var(--radius-lg)] border px-4 py-3 font-sans text-sm ${estado.clase}`}>
+            <p className="font-semibold">Pedido en cola · {estado.texto}</p>
+            <p>{unidades} producto{unidades !== 1 ? 's' : ''} · {new Date(s.creado_en + 'Z').toLocaleString()}</p>
+            <p className="text-xs mt-1">{s.motivo || estado.detalle}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function OrdersPage() {
@@ -81,9 +114,11 @@ export default function OrdersPage() {
 
   if (isError) {
     return (
-      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-        <p className="font-sans text-sm text-[var(--color-error)]">
-          Error al cargar los pedidos. Recarga la página.
+      <div className="max-w-3xl mx-auto px-4 py-16">
+        <PedidosEnCola />
+        <p className="font-sans text-sm text-center text-[var(--color-error)]">
+          No pudimos cargar tu historial de pedidos. Si la tienda está en modo de solo lectura,
+          aparecerá cuando se recupere.
         </p>
       </div>
     )
@@ -91,6 +126,8 @@ export default function OrdersPage() {
 
   if (pedidos.length === 0) {
     return (
+      <>
+      <div className="max-w-3xl mx-auto px-4 pt-8"><PedidosEnCola /></div>
       <motion.div
         className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4"
         initial={{ opacity: 0, y: 20 }}
@@ -114,6 +151,7 @@ export default function OrdersPage() {
           <Link to="/catalog">Ir al catálogo</Link>
         </Button>
       </motion.div>
+      </>
     )
   }
 
@@ -129,6 +167,8 @@ export default function OrdersPage() {
         >
           Mis pedidos
         </motion.h1>
+
+        <PedidosEnCola />
 
         <div className="space-y-3">
           {pedidos.map((pedido, i) => (

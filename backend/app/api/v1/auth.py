@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.db_mysql import get_db
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.deps import get_current_user
+from app.services import lectura_respaldo_service as lectura
 from app.models.usuario import Usuario, Rol, UsuarioRol
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse, ProfileUpdateRequest
 
@@ -59,7 +60,14 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 # Devuelve el perfil completo del usuario autenticado incluyendo sus roles
 @router.get('/me', response_model=UserResponse)
 def me(current_user: Usuario = Depends(get_current_user)):
-    return UserResponse(
+    clave = f'usuario:{current_user.id}'
+    if getattr(current_user, 'solo_token', False):
+        # MySQL no responde: el perfil sale de la última copia guardada.
+        copia = lectura.leer(clave)
+        if copia is None:
+            raise lectura.MySQLNoDisponible(clave)
+        return copia
+    perfil = UserResponse(
         id=current_user.id,
         email=current_user.email,
         nombre=current_user.nombre,
@@ -68,6 +76,8 @@ def me(current_user: Usuario = Depends(get_current_user)):
         roles=[r.nombre for r in current_user.roles],
         estado=current_user.estado,
     )
+    lectura.guardar(clave, perfil.model_dump(mode='json'))
+    return perfil
 
 
 # Emite un nuevo token con fecha de expiración renovada sin necesidad de re-autenticar

@@ -6,6 +6,7 @@ from app.core.deps import get_current_user
 from app.models.usuario import Usuario
 from app.models.direccion import Direccion
 from app.schemas.direccion import DireccionCreate, DireccionResponse
+from app.services import lectura_respaldo_service as lectura
 
 router = APIRouter(prefix='/addresses', tags=['Direcciones'])
 
@@ -16,7 +17,11 @@ def listar_direcciones(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return db.query(Direccion).filter_by(usuario_id=current_user.id, activa=True).all()
+    # Si MySQL no responde se devuelve la última copia (el checkout puede dejar el pedido en cola).
+    return lectura.consultar(f'direcciones:{current_user.id}', lambda: [
+        DireccionResponse.model_validate(d).model_dump(mode='json')
+        for d in db.query(Direccion).filter_by(usuario_id=current_user.id, activa=True).all()
+    ])
 
 
 # Si la nueva dirección es predeterminada, desactiva primero la predeterminada existente

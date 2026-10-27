@@ -47,7 +47,8 @@ export function AuthProvider({ children }) {
     if (token) {
       me()
         .then((r) => { setUser(r.data); scheduleRefresh(token) })
-        .catch(() => localStorage.removeItem('token'))
+        // Solo un 401 invalida la sesión; si el servidor está caído el token se conserva.
+        .catch((err) => { if (err?.response?.status === 401) localStorage.removeItem('token') })
         .finally(() => setLoading(false))
     } else {
       setLoading(false)

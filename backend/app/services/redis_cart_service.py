@@ -99,6 +99,8 @@ def _como_items(crudo: dict) -> list[dict]:
 
 def _resincronizar(r: redis.Redis, usuario_id: int) -> None:
     """Si el carrito cambió solo en MySQL mientras Redis no respondía, lo trae de vuelta."""
+    if not salud.disponible('mysql'):
+        return  # sin MySQL no hay copia que revisar; no se espera su timeout
     try:
         pendiente = respaldo.pendiente(usuario_id)
     except SQLAlchemyError as exc:
@@ -123,6 +125,8 @@ def _espejar(r: redis.Redis, usuario_id: int) -> None:
     Si fallara aquí y se reintentara en el respaldo, el cambio se aplicaría dos
     veces; por eso cualquier error solo se registra.
     """
+    if not salud.disponible('mysql'):
+        return  # la copia se pone al día con la siguiente escritura
     k = _key(usuario_id)
 
     def leer_redis():

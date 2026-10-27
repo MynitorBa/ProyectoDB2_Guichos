@@ -314,7 +314,14 @@ def como_argumentos(cuerpo: dict) -> dict:
 # ── Respuesta ─────────────────────────────────────────────────────────────────
 
 def _etiquetas_categorias(mysql_db: Session) -> dict[str, str]:
-    return {slug: nombre for slug, nombre in mysql_db.query(Categoria.slug, Categoria.nombre)}
+    """Nombre de cada categoría; sin MySQL, su última copia (o el slug como etiqueta)."""
+    from app.services import lectura_respaldo_service as lectura
+    try:
+        return lectura.consultar('etiquetas_categorias', lambda: {
+            slug: nombre for slug, nombre in mysql_db.query(Categoria.slug, Categoria.nombre)
+        })
+    except lectura.MySQLNoDisponible:
+        return {}
 
 
 def _etiquetas_atributos(mongo: Database) -> dict[str, str]:

@@ -7,6 +7,8 @@ import api from './client'
 export const checkout = (data, idempotencyKey) =>
   api.post('/orders/checkout', data, { headers: { 'Idempotency-Key': idempotencyKey } })
 export const getOrders = () => api.get('/orders/')
+// Solicitudes que quedaron en cola mientras la base principal no respondía.
+export const getQueuedOrders = () => api.get('/orders/cola')
 export const getOrder = (id) => api.get(`/orders/${id}`)
 export const getOrderInvoice = (id) => api.get(`/orders/${id}/invoice`, { responseType: 'blob' })
 export const getAddresses = () => api.get('/addresses/')

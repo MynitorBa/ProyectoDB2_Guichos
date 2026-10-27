@@ -5,6 +5,7 @@ from pymongo.database import Database
 from app.core.db_mysql import get_db
 from app.core.db_mongo import get_mongo_db
 from app.models.categoria import Categoria
+from app.services import lectura_respaldo_service as lectura
 
 router = APIRouter(prefix='/categories', tags=['Categorías'])
 
@@ -12,6 +13,11 @@ router = APIRouter(prefix='/categories', tags=['Categorías'])
 # Lista categorías activas ordenadas por el campo 'orden' para respetar la jerarquía visual
 @router.get('/')
 def listar_categorias(db: Session = Depends(get_db)):
+    # Si MySQL no responde se devuelve la última copia guardada en Redis.
+    return lectura.consultar('categorias', lambda: _categorias_activas(db))
+
+
+def _categorias_activas(db: Session) -> list[dict]:
     categorias = db.query(Categoria).filter_by(activa=True).order_by(Categoria.orden).all()
     return [
         {

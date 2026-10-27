@@ -254,6 +254,12 @@ export default function CheckoutPage() {
         ),
       }, clave)
       descartarIntento()
+      if (res.status === 202 && res.data?.codigo === 'ORDER_QUEUED') {
+        // La base principal no respondía: el pedido quedó en cola sin cobrar.
+        toast.info(res.data.detail, { duration: 10000 })
+        navigate('/orders')
+        return
+      }
       if (res.status === 202) {
         // El cobro salió pero la pasarela no confirmó: se resolverá en segundo plano.
         toast.info('Estamos verificando tu pago con la pasarela.')

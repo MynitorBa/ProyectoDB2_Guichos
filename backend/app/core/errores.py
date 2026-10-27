@@ -20,6 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core import salud
+from app.services.lectura_respaldo_service import MySQLNoDisponible, es_caida
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +66,16 @@ def registrar_manejadores(app: FastAPI) -> None:
             return _respuesta(409, 'Otra operación estaba modificando los mismos datos. Intenta de nuevo.',
                               'CONCURRENT_UPDATE', 1)
         _registrar(request, exc, 'MySQL', 'mysql')
+        if es_caida(exc):
+            salud.registrar_falla('mysql', exc, confirmada=True)
         return _respuesta(503, 'La base de datos principal no está disponible temporalmente. '
                                'Intenta de nuevo en unos momentos.', 'DATABASE_UNAVAILABLE', 5)
+
+    @app.exception_handler(MySQLNoDisponible)
+    async def mysql_sin_copia(request: Request, exc: MySQLNoDisponible):
+        return _respuesta(503, 'La tienda está en modo de solo lectura: esta información no está '
+                               'disponible por ahora. Intenta de nuevo en unos momentos.',
+                          'DATABASE_UNAVAILABLE', 5)
 
     @app.exception_handler(sa_err.InterfaceError)
     async def mysql_interfaz(request: Request, exc: sa_err.InterfaceError):

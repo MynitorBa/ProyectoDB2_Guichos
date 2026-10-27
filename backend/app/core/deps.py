@@ -1,5 +1,8 @@
+from dataclasses import dataclass, field
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.db_mysql import get_db
@@ -9,6 +12,33 @@ from app.models.usuario import Usuario
 
 bearer_scheme = HTTPBearer()
 bearer_scheme_optional = HTTPBearer(auto_error=False)
+
+
+@dataclass
+class UsuarioToken:
+    """Usuario identificado solo por su JWT mientras MySQL no responde (plan B).
+
+    El token está firmado y vence solo, así que identifica al usuario. Sin
+    roles: las funciones de vendedor y administrador quedan fuera mientras
+    tanto; comprar se convierte en dejar el pedido en cola.
+    """
+    id: int
+    estado: str = 'activo'
+    roles: list = field(default_factory=list)
+    solo_token: bool = True
+
+
+def _usuario_de_mysql(db: Session, user_id: int) -> Usuario | UsuarioToken:
+    from app.services import lectura_respaldo_service as lectura
+    if not lectura.disponible():
+        return UsuarioToken(user_id)
+    try:
+        return db.get(Usuario, user_id)
+    except (OperationalError, InterfaceError) as exc:
+        if not lectura.es_caida(exc):
+            raise
+        lectura.registrar_caida(exc)
+        return UsuarioToken(user_id)
 
 
 # Valida el JWT del header Authorization y devuelve el usuario activo de la BD
@@ -21,7 +51,7 @@ def get_current_user(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Token inválido')
 
-    user = db.get(Usuario, int(user_id))
+    user = _usuario_de_mysql(db, int(user_id))
     if not user or user.estado != 'activo':
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Usuario no encontrado o inactivo')
     return user
@@ -51,7 +81,7 @@ def get_optional_user(
         user_id = payload.get('sub')
         if not user_id:
             return None
-        user = db.get(Usuario, int(user_id))
+        user = _usuario_de_mysql(db, int(user_id))
         return user if user and user.estado == 'activo' else None
     except Exception:
         return None

@@ -8,7 +8,8 @@ import redis as redis_lib
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pymongo.database import Database
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core import salud
@@ -31,6 +32,8 @@ from app.services.invoice_service import generar_factura_pdf
 from app.services.email_service import enviar_factura_por_correo
 from app.services import redis_cart_service as rcs
 from app.services import flash_sale_service as flash
+from app.services import cola_pedidos_service as cola
+from app.services import lectura_respaldo_service as lectura
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/orders', tags=['Pedidos'])
@@ -183,6 +186,11 @@ def checkout(
             status_code=409,
             detail={'detail': 'El carrito contiene datos inválidos. Vacíalo e intenta nuevamente.', 'code': 'INVALID_CART'},
         ) from exc
+
+    # Plan B de MySQL: sin la base principal no se reserva ni se cobra nada; la
+    # compra queda como solicitud en cola y la saga normal la procesa al volver.
+    if not _mysql_responde(db):
+        return _encolar(r, current_user.id, redis_items, payload, idempotency_key)
 
     flash_context = {}
     for item in redis_items:
@@ -347,6 +355,56 @@ def checkout(
 
 
 # Lista todos los pedidos del usuario autenticado ordenados del más reciente al más antiguo
+def _mysql_responde(db: Session) -> bool:
+    if not lectura.disponible():
+        return False
+    try:
+        db.execute(text('SELECT 1'))
+        return True
+    except (OperationalError, InterfaceError) as exc:
+        if not lectura.es_caida(exc):
+            raise
+        db.rollback()
+        lectura.registrar_caida(exc)
+        return False
+
+
+def _encolar(r, usuario_id: int, redis_items: list[dict], payload: CheckoutRequest,
+             idempotency_key: str | None) -> JSONResponse:
+    try:
+        solicitud = cola.encolar(
+            r, usuario_id=usuario_id, items=redis_items, direccion_id=payload.direccion_id,
+            metodo_pago_id=payload.metodo_pago_id, idempotency_key=idempotency_key,
+        )
+    except cola.SolicitudInvalida as exc:
+        raise HTTPException(exc.estado, detail={'detail': exc.mensaje, 'code': exc.codigo}) from exc
+    except redis_lib.RedisError as exc:
+        raise HTTPException(503, detail={
+            'detail': 'La tienda no puede recibir pedidos en este momento. Intenta de nuevo más tarde.',
+            'code': 'CHECKOUT_UNAVAILABLE',
+        }) from exc
+    return JSONResponse(status_code=202, content={
+        'codigo': 'ORDER_QUEUED',
+        'solicitud_id': solicitud['id'],
+        'estado': solicitud['estado'],
+        'detail': 'Recibimos tu pedido y quedó en cola: lo confirmaremos y cobraremos cuando el sistema '
+                  'se recupere, con el precio que viste. Si el precio o la existencia cambian, te avisaremos '
+                  'antes de cobrar.',
+    })
+
+
+# Solicitudes de pedido que quedaron en cola mientras MySQL no respondía
+@router.get('/cola')
+def pedidos_en_cola(
+    current_user: Usuario = Depends(get_current_user),
+    r: redis_lib.Redis = Depends(get_redis),
+):
+    try:
+        return cola.listar(r, current_user.id)
+    except redis_lib.RedisError:
+        return []
+
+
 @router.get('/')
 def listar_pedidos(
     current_user: Usuario = Depends(get_current_user),

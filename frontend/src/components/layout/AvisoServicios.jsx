@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext'
 // Qué nota el usuario cuando un motor no responde. Cassandra solo afecta a los
 // paneles de tendencias, así que se avisa únicamente a administradores y vendedores.
 const MENSAJES = {
-  mysql: 'La base de datos principal no responde: algunas funciones no están disponibles por ahora.',
+  mysql: 'La tienda está en modo de solo lectura: puedes navegar y dejar tu pedido en cola; lo confirmaremos y cobraremos cuando se recupere. Los precios mostrados son referenciales.',
   redis: 'El carrito y las ofertas flash funcionan en modo de respaldo: puedes seguir comprando, un poco más lento.',
   mongo: 'El catálogo se muestra desde una copia de respaldo: la información puede estar desactualizada y por ahora no se pueden editar productos.',
   elasticsearch: 'La búsqueda funciona en modo básico: sin corrección de errores ni filtros.',

@@ -13,6 +13,7 @@ from app.core.db_neo4j import close_driver as close_neo4j
 from app.core.db_elastic import close_es
 from app.services.outbox_service import start_outbox_worker, stop_outbox_worker
 from app.services.flash_sale_worker import start_flash_worker, stop_flash_worker
+from app.services.cola_pedidos_service import start_cola_pedidos_worker, stop_cola_pedidos_worker
 from app.services.checkout_recovery_worker import (
     start_checkout_recovery_worker, stop_checkout_recovery_worker,
 )
@@ -113,10 +114,12 @@ def startup():
     start_outbox_worker()
     start_flash_worker()
     start_checkout_recovery_worker()
+    start_cola_pedidos_worker()
 
 
 @app.on_event('shutdown')
 def shutdown():
+    stop_cola_pedidos_worker()
     stop_checkout_recovery_worker()
     stop_flash_worker()
     stop_outbox_worker()

@@ -11,6 +11,7 @@ from bson import ObjectId
 from bson.decimal128 import Decimal128
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.core.time import utc_now
 from app.services.product_history_service import registrar_evento
@@ -19,6 +20,7 @@ from app.models.promocion_flash import PromocionFlash
 from app.models.pedido import Pedido, PedidoLinea
 from app.services import flash_sale_service as flash_sales
 from app.services import catalogo_respaldo_service as catalogo_respaldo
+from app.services import lectura_respaldo_service as lectura
 
 
 def _active_flash_by_offer(mysql_db: Session, redis_db, offer_ids: list[int]) -> dict[int, dict]:
@@ -79,6 +81,28 @@ def _serialize(doc: dict) -> dict:
     return doc
 
 
+def _sin_mysql(docs: list[dict], vendedor_id: int | None, solo_flash: bool) -> list[dict]:
+    """Plan B de MySQL: los productos con el precio y stock proyectados en el catálogo.
+
+    Es la última copia que el outbox dejó en MongoDB (o en su copia), así que
+    puede estar desactualizada: cada ítem lleva ``precio_referencial`` y comprar
+    no cobra nada hasta que MySQL vuelva y confirme precio y existencia.
+    """
+    items = []
+    for doc in docs:
+        item = _serialize(doc)
+        if 'categorias' not in item and 'categoria' in item:
+            item['categorias'] = [item['categoria']]
+        if solo_flash or (vendedor_id is not None and item.get('vendedor_id') != vendedor_id):
+            continue
+        item.setdefault('oferta_id', None)
+        item['stock'] = int(item.get('stock') or 0)
+        item['disponible'] = bool(item.get('disponible')) and item['oferta_id'] is not None
+        item.update({'ventas': 0, 'tiene_flash_activa': False, 'precio_referencial': True})
+        items.append(item)
+    return items
+
+
 def enriquecer_productos(
     docs: list[dict],
     mysql_db: Session,
@@ -92,8 +116,33 @@ def enriquecer_productos(
 
     Precio, stock, vendedor y promoción flash se toman de MySQL/Redis, nunca de
     la proyección de MongoDB ni del índice de búsqueda. Conserva el orden de
-    ``docs``. Devuelve ``(items, divergencias_con_la_proyeccion)``.
+    ``docs``. Devuelve ``(items, divergencias_con_la_proyeccion)``. Si MySQL no
+    responde, devuelve los valores proyectados marcados como referenciales.
     """
+    if not lectura.disponible():
+        return _sin_mysql(docs, vendedor_id, solo_flash), 0
+    try:
+        return _enriquecer_con_mysql(
+            docs, mysql_db, redis_db, vendedor_id=vendedor_id,
+            solo_flash=solo_flash, incluir_ventas=incluir_ventas,
+        )
+    except (OperationalError, InterfaceError) as exc:
+        if not lectura.es_caida(exc):
+            raise
+        mysql_db.rollback()
+        lectura.registrar_caida(exc)
+        return _sin_mysql(docs, vendedor_id, solo_flash), 0
+
+
+def _enriquecer_con_mysql(
+    docs: list[dict],
+    mysql_db: Session,
+    redis_db=None,
+    *,
+    vendedor_id: int | None = None,
+    solo_flash: bool = False,
+    incluir_ventas: bool = False,
+) -> tuple[list[dict], int]:
     offers_by_ref = listar_ofertas_por_referencias(
         mysql_db, [str(doc['_id']) for doc in docs]
     )
@@ -337,48 +386,85 @@ def obtener_producto(
     item = _serialize(doc)
     if 'categorias' not in item and 'categoria' in item:
         item['categorias'] = [item['categoria']]
+    if mysql_db is not None and not lectura.disponible():
+        _detalle_sin_mysql(item)
+    elif mysql_db is not None:
+        try:
+            _detalle_con_mysql(db, mysql_db, item)
+        except (OperationalError, InterfaceError) as exc:
+            if not lectura.es_caida(exc):
+                raise
+            mysql_db.rollback()
+            lectura.registrar_caida(exc)
+            _detalle_sin_mysql(item)
     if mysql_db is not None:
-        from app.services.variant_service import list_variants
-
-        variants = list_variants(db, mysql_db, item['_id'])
-        variants_by_id = {variant['variante_id']: variant for variant in variants}
-        offers = listar_ofertas_por_referencias(mysql_db, [item['_id']]).get(
-            item['_id'], []
-        )
-        for offer in offers:
-            variant = variants_by_id.get(offer['producto_variante_id'], {})
-            offer['variante_atributos'] = variant.get('atributos', {})
-            offer['variante_sku'] = variant.get('sku_catalogo')
-        for variant in variants:
-            variant['ofertas'] = [
-                offer for offer in offers
-                if offer['producto_variante_id'] == variant['variante_id']
-            ]
-            variant['disponible'] = any(
-                offer['disponible'] for offer in variant['ofertas']
-            )
-        item['variantes'] = variants
-        primary = oferta_principal(offers)
-        stock_total = sum(o['stock'] for o in offers)
-        item['ofertas'] = offers
-        item['ofertas_count'] = len(offers)
-        if primary:
-            item.update({
-                'oferta_id': primary['oferta_id'],
-                'precio': primary['precio'],
-                'moneda': primary['moneda'],
-                'stock': stock_total,
-                'disponible': primary['disponible'],
-                'vendedor_id': primary['vendedor_id'],
-                'vendedor_usuario_id': primary['vendedor_usuario_id'],
-                'vendedor_nombre': primary['vendedor_nombre'],
-                'es_tiendaya': primary.get('es_tiendaya', False),
-            })
-        else:
-            item.update({'oferta_id': None, 'stock': 0, 'disponible': False})
-        item['dual_read'] = {'source': 'respaldo_mysql+mysql' if desde_respaldo else 'mongodb+mysql'}
+        fuente = 'mongodb' if not desde_respaldo else 'respaldo_mysql'
+        item['dual_read'] = {'source': fuente + ('+proyeccion' if item.get('precio_referencial') else '+mysql')}
     item['catalogo_respaldo'] = desde_respaldo
     return item
+
+
+def _detalle_sin_mysql(item: dict) -> None:
+    """Plan B de MySQL: una sola oferta, la principal proyectada en el catálogo."""
+    oferta = None
+    if item.get('oferta_id') is not None:
+        oferta = {
+            'id': item['oferta_id'], 'oferta_id': item['oferta_id'], 'producto_ref': item['_id'],
+            'producto_variante_id': None, 'variante_ref': None, 'sku': item.get('sku'),
+            'precio': item.get('precio'), 'moneda': item.get('moneda', 'GTQ'), 'estado': 'activa',
+            'version': None, 'vendedor_id': item.get('vendedor_id'),
+            'vendedor_usuario_id': item.get('vendedor_usuario_id'),
+            'vendedor_nombre': item.get('vendedor_nombre'), 'es_tiendaya': item.get('es_tiendaya', False),
+            'stock': int(item.get('stock') or 0), 'disponible': bool(item.get('disponible')),
+            'variante_atributos': {}, 'variante_sku': None, 'precio_referencial': True,
+        }
+    item.update({
+        'ofertas': [oferta] if oferta else [], 'ofertas_count': 1 if oferta else 0,
+        'variantes': [], 'precio_referencial': True,
+        'disponible': bool(oferta and oferta['disponible']),
+        'stock': oferta['stock'] if oferta else 0,
+    })
+
+
+def _detalle_con_mysql(db: Database, mysql_db: Session, item: dict) -> None:
+    from app.services.variant_service import list_variants
+
+    variants = list_variants(db, mysql_db, item['_id'])
+    variants_by_id = {variant['variante_id']: variant for variant in variants}
+    offers = listar_ofertas_por_referencias(mysql_db, [item['_id']]).get(
+        item['_id'], []
+    )
+    for offer in offers:
+        variant = variants_by_id.get(offer['producto_variante_id'], {})
+        offer['variante_atributos'] = variant.get('atributos', {})
+        offer['variante_sku'] = variant.get('sku_catalogo')
+    for variant in variants:
+        variant['ofertas'] = [
+            offer for offer in offers
+            if offer['producto_variante_id'] == variant['variante_id']
+        ]
+        variant['disponible'] = any(
+            offer['disponible'] for offer in variant['ofertas']
+        )
+    item['variantes'] = variants
+    primary = oferta_principal(offers)
+    stock_total = sum(o['stock'] for o in offers)
+    item['ofertas'] = offers
+    item['ofertas_count'] = len(offers)
+    if primary:
+        item.update({
+            'oferta_id': primary['oferta_id'],
+            'precio': primary['precio'],
+            'moneda': primary['moneda'],
+            'stock': stock_total,
+            'disponible': primary['disponible'],
+            'vendedor_id': primary['vendedor_id'],
+            'vendedor_usuario_id': primary['vendedor_usuario_id'],
+            'vendedor_nombre': primary['vendedor_nombre'],
+            'es_tiendaya': primary.get('es_tiendaya', False),
+        })
+    else:
+        item.update({'oferta_id': None, 'stock': 0, 'disponible': False})
 
 
 def crear_producto(
