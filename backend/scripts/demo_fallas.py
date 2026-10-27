@@ -12,6 +12,11 @@ Requisitos en backend/.env: ``FAULT_INJECTION_ENABLED=true`` y, para que los
 escenarios de caída a mitad de la saga no tarden 10 minutos,
 ``CHECKOUT_RESERVA_MINUTOS=1`` y ``RECONCILIADOR_GRACIA_S=20``.
 
+E09 y E14–E17 demuestran el plan B entre bases de datos: con un motor
+detenido, la función sigue respondiendo desde otro (carrito en MySQL, catálogo
+desde su copia, búsqueda hasta MySQL, recomendaciones desde su caché, pedidos
+en cola sin MySQL).
+
 ATENCIÓN: crea pedidos reales (de la cuenta comprador1) y detiene/arranca
 contenedores. Úsese solo en desarrollo.
 
@@ -502,30 +507,42 @@ def e08_doble_envio(c: Cliente) -> Escenario:
     return e
 
 
+def _detener(contenedor: str):
+    """Detiene un contenedor y devuelve la función que lo vuelve a arrancar y espera su salud."""
+    docker('stop', contenedor)
+
+    def arrancar() -> float | None:
+        docker('start', contenedor)
+        return esperar(lambda: salud(contenedor) == 'healthy', 240, 2)
+    return arrancar
+
+
 def e09_redis_caido(c: Cliente) -> Escenario:
-    e = Escenario('E09', 'Redis no disponible al iniciar el checkout', 'El carrito (Redis) no responde',
-                  '`docker pause tiendaya_redis` antes de enviar la compra.',
-                  'HTTP 503 CART_UNAVAILABLE sin crear pedido ni tocar inventario; al volver Redis el carrito sigue ahí.')
-    preparar_carrito()
-    antes_pedidos = ultimo_pedido_del_comprador()
+    e = Escenario('E09', 'Redis caído durante el checkout (plan B)', 'El carrito (Redis) no responde',
+                  '`docker stop tiendaya_redis` antes de enviar la compra.',
+                  'El carrito sale de su copia en MySQL y la compra se confirma; al volver Redis, '
+                  'el carrito se reconstruye desde MySQL sin lo comprado.')
+    c.pasarela('aprobar')
+    preparar_carrito()  # con Redis arriba: el carrito queda también copiado en MySQL
     antes = inventario()
-    docker('pause', 'tiendaya_redis')
-    e.paso('Redis pausado')
+    arrancar = _detener('tiendaya_redis')
+    e.paso('Redis detenido')
     try:
         estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
         e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+        e.seccion('Respuesta al cliente', cuerpo)
     finally:
-        docker('unpause', 'tiendaya_redis')
-        e.paso('Redis reanudado')
-    e.seccion('Respuesta al cliente', cuerpo)
-    foto(e, 'después')
-    e.comprobar('HTTP 503 CART_UNAVAILABLE', estado == 503 and cuerpo['detail']['code'] == 'CART_UNAVAILABLE')
-    e.comprobar('No se creó ningún pedido', ultimo_pedido_del_comprador() == antes_pedidos)
-    e.comprobar('Inventario intacto', inventario() == antes)
-    # El cliente Redis reabre su conexión tras la pausa; se da un margen breve.
-    e.comprobar('El carrito sigue disponible al volver Redis',
-                esperar(lambda: carrito() == [OFERTA], 10) is not None)
-    cierre(e, None)
+        sano = arrancar()
+        e.paso(f'Redis arrancado de nuevo y saludable tras {sano} s')
+    pid = cuerpo.get('pedido_id') if isinstance(cuerpo, dict) else None
+    e.metricas['Respuesta del checkout sin Redis'] = f'{segundos} s'
+    foto(e, 'después', pid)
+    e.comprobar('La compra se confirmó sin Redis (carrito leído de MySQL)',
+                estado == 201 and bool(pid) and pedido(pid).get('estado') == 'confirmado')
+    e.comprobar('Stock descontado en 1 unidad', inventario()['disponible'] == antes['disponible'] - 1)
+    e.comprobar('Al volver Redis, el carrito ya no tiene lo comprado',
+                esperar(lambda: carrito() == [], 30) is not None)
+    cierre(e, pid)
     return e
 
 
@@ -624,11 +641,170 @@ def e13_cassandra(c):
     return _componente_caido(c, 'E13', 'tiendaya_cassandra', 'cassandra', 'Cassandra')
 
 
+def e14_catalogo_sin_mongo(c: Cliente) -> Escenario:
+    e = Escenario('E14', 'Catálogo con MongoDB caído (plan B)', 'MongoDB detenido',
+                  '`docker stop tiendaya_mongo`; se consulta el listado, un detalle y la búsqueda.',
+                  'El catálogo se lee de su copia en MySQL (catalogo_respaldo) con el precio de MySQL; '
+                  'solo la primera petición espera el timeout de MongoDB.')
+    antes = c.http.get('/products/', params={'page_size': 100}).json()
+    precios = {i['_id']: i.get('precio') for i in antes['items']}
+    arrancar = _detener('tiendaya_mongo')
+    e.paso('MongoDB detenido')
+    try:
+        inicio = time.monotonic()
+        listado = c.http.get('/products/', params={'page_size': 100}).json()
+        primera = round(time.monotonic() - inicio, 2)
+        inicio = time.monotonic()
+        c.http.get('/products/', params={'page_size': 100})
+        segunda = round(time.monotonic() - inicio, 2)
+        ref = next(i['_id'] for i in listado['items'] if i.get('oferta_id'))
+        detalle = c.http.get(f'/products/{ref}').json()
+        busqueda = c.buscar('granola')
+        e.paso(f'Listado: {listado["total"]} productos; detalle de {ref}; búsqueda «granola»')
+    finally:
+        sano = arrancar()
+        e.paso(f'MongoDB arrancado de nuevo y saludable tras {sano} s')
+    e.metricas['Primera petición sin MongoDB'] = f'{primera} s'
+    e.metricas['Siguientes peticiones (circuito abierto)'] = f'{segunda} s'
+    e.seccion('Respuestas sin MongoDB', {
+        'listado': {'total': listado['total'], 'catalogo_respaldo': listado.get('catalogo_respaldo')},
+        'detalle': {'nombre': detalle.get('nombre'), 'ofertas': len(detalle.get('ofertas', [])),
+                    'catalogo_respaldo': detalle.get('catalogo_respaldo')},
+        'busqueda': {'motor': busqueda.get('motor'), 'total': busqueda.get('total')},
+    })
+    e.comprobar('El listado sale de la copia con los mismos productos',
+                listado.get('catalogo_respaldo') is True and listado['total'] == antes['total'])
+    e.comprobar('Los precios siguen siendo los de MySQL',
+                all(precios.get(i['_id']) == i.get('precio') for i in listado['items']))
+    e.comprobar('El detalle trae sus ofertas desde la copia',
+                detalle.get('catalogo_respaldo') is True and bool(detalle.get('ofertas')))
+    e.comprobar('La búsqueda sigue respondiendo', busqueda.get('total', 0) >= 1)
+    e.comprobar('Con el circuito abierto ya no se espera a MongoDB', segunda < 1)
+    cierre(e, None)
+    return e
+
+
+def e15_busqueda_sin_elasticsearch_ni_mongo(c: Cliente) -> Escenario:
+    e = Escenario('E15', 'Búsqueda con Elasticsearch y MongoDB caídos (plan B)',
+                  'Elasticsearch y MongoDB detenidos',
+                  '`docker stop tiendaya_elasticsearch tiendaya_mongo`; se busca y se autocompleta.',
+                  'La búsqueda sale de la copia del catálogo en MySQL y el autocompletado del índice de '
+                  'prefijos en Redis.')
+    arrancar_es = _detener('tiendaya_elasticsearch')
+    arrancar_mongo = _detener('tiendaya_mongo')
+    e.paso('Elasticsearch y MongoDB detenidos')
+    try:
+        busqueda = c.buscar('granola')
+        sugerencias = c.http.get('/search/suggest', params={'q': 'gran'}).json()
+        sin_coincidencias = c.buscar('hefkjdshafh')
+    finally:
+        e.paso(f'MongoDB saludable tras {arrancar_mongo()} s')
+        e.paso(f'Elasticsearch saludable tras {arrancar_es()} s')
+    e.seccion('Respuestas', {
+        'busqueda': {'motor': busqueda.get('motor'), 'total': busqueda.get('total'),
+                     'productos': [i['nombre'] for i in busqueda.get('items', [])][:5]},
+        'autocompletado': {'motor': sugerencias.get('motor'),
+                           'productos': [p['nombre'] for p in sugerencias.get('productos', [])]},
+        'sin_coincidencias': {'motor': sin_coincidencias.get('motor'),
+                              'populares': len(sin_coincidencias.get('items', []))},
+    })
+    e.comprobar('La búsqueda respondió desde MySQL con resultados',
+                busqueda.get('motor') == 'mysql' and busqueda.get('total', 0) >= 1)
+    e.comprobar('El autocompletado respondió desde Redis',
+                sugerencias.get('motor') == 'redis' and bool(sugerencias.get('productos')))
+    e.comprobar('Un texto sin coincidencias sigue mostrando productos populares',
+                sin_coincidencias.get('sin_coincidencias') is True and bool(sin_coincidencias.get('items')))
+    e.comprobar('Al volver, la búsqueda usa Elasticsearch otra vez',
+                esperar(lambda: c.buscar('granola').get('motor') == 'elasticsearch', 60, 2) is not None)
+    cierre(e, None)
+    return e
+
+
+def e16_recomendaciones_sin_neo4j(c: Cliente) -> Escenario:
+    e = Escenario('E16', 'Recomendaciones y fraude con Neo4j caído (plan B)', 'Neo4j detenido',
+                  '`docker stop tiendaya_neo4j`; se piden recomendaciones y el resumen de fraude.',
+                  'Las recomendaciones salen de la caché horaria en MySQL con el mismo resultado; el panel '
+                  'de fraude muestra F01–F03 pendientes y lo que guarda MySQL.')
+    ref, base = None, None
+    for fila in sql('SELECT DISTINCT producto_ref FROM recomendaciones_cache LIMIT 60'):
+        respuesta = c.http.get(f"/products/{fila['producto_ref']}/recommendations").json()
+        if respuesta.get('items'):
+            ref, base = fila['producto_ref'], respuesta
+            break
+    arrancar = _detener('tiendaya_neo4j')
+    e.paso('Neo4j detenido')
+    try:
+        sin_grafo = c.http.get(f'/products/{ref}/recommendations').json() if ref else {}
+        fraude = c.http.get('/reviews/admin/fraude/resumen', headers=c.admin).json()
+    finally:
+        e.paso(f'Neo4j saludable tras {arrancar()} s')
+    e.seccion('Respuestas', {
+        'producto': ref,
+        'con_grafo': [i['nombre'] for i in (base or {}).get('items', [])],
+        'sin_grafo': {'origen': sin_grafo.get('origen'), 'productos': [i['nombre'] for i in sin_grafo.get('items', [])]},
+        'fraude': {'grafo_disponible': fraude.get('grafo_disponible'),
+                   'F01_pendiente': fraude.get('bombardeo', {}).get('pendiente')},
+    })
+    e.comprobar('Hay un producto con recomendaciones para la prueba', ref is not None)
+    e.comprobar('Sin Neo4j las recomendaciones salen de la caché',
+                sin_grafo.get('origen') == 'cache')
+    e.comprobar('Y son las mismas que daba Neo4j',
+                [i['_id'] for i in sin_grafo.get('items', [])] == [i['_id'] for i in (base or {}).get('items', [])])
+    e.comprobar('El resumen de fraude responde con F01–F03 pendientes',
+                fraude.get('grafo_disponible') is False and fraude.get('bombardeo', {}).get('pendiente') is True)
+    cierre(e, None)
+    return e
+
+
+def e17_pedido_en_cola_sin_mysql(c: Cliente) -> Escenario:
+    e = Escenario('E17', 'Pedido en cola con MySQL caído (plan B)', 'MySQL detenido',
+                  '`docker stop tiendaya_mysql` antes de pagar; se vuelve a arrancar después.',
+                  'El checkout responde 202 ORDER_QUEUED sin cobrar; al volver MySQL el worker pasa la '
+                  'solicitud por la saga normal y el pedido se confirma con el precio que vio el usuario.')
+    c.pasarela('aprobar')
+    preparar_carrito()
+    antes = inventario()
+    arrancar = _detener('tiendaya_mysql')
+    e.paso('MySQL detenido')
+    try:
+        listado = c.http.get('/products/', params={'page_size': 5}).json()
+        estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
+        e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+        en_cola = c.http.get('/orders/cola', headers=c.comprador).json()
+        e.seccion('Respuesta al cliente', cuerpo)
+    finally:
+        e.paso(f'MySQL saludable tras {arrancar()} s')
+    solicitud_id = cuerpo.get('solicitud_id') if isinstance(cuerpo, dict) else None
+    inicio = time.monotonic()
+
+    def procesada():
+        for s in c.http.get('/orders/cola', headers=c.comprador).json():
+            if s['id'] == solicitud_id and s['estado'] != 'en_cola':
+                return s
+        return None
+    final = esperar(procesada, 120, 2) and procesada()
+    e.metricas['Procesada tras volver MySQL'] = f'{round(time.monotonic() - inicio, 1)} s'
+    pid = (final or {}).get('pedido_id')
+    foto(e, 'después', pid)
+    e.comprobar('Sin MySQL el catálogo mostró precios referenciales',
+                all(i.get('precio_referencial') for i in listado.get('items', [])))
+    e.comprobar('HTTP 202 ORDER_QUEUED sin cobrar', estado == 202 and cuerpo.get('codigo') == 'ORDER_QUEUED')
+    e.comprobar('La solicitud quedó visible en cola',
+                any(s['id'] == solicitud_id and s['estado'] == 'en_cola' for s in en_cola))
+    e.comprobar('Al volver MySQL se confirmó por la saga normal',
+                bool(final) and final['estado'] == 'procesado' and pedido(pid).get('estado') == 'confirmado')
+    e.comprobar('Stock descontado en 1 unidad', inventario()['disponible'] == antes['disponible'] - 1)
+    cierre(e, pid)
+    return e
+
+
 ESCENARIOS = {
     'E00': e00_linea_base, 'E01': e01_rechazo, 'E02': e02_cobrar_y_fallar, 'E03': e03_timeout,
     'E04': e04_error_sin_cobro, 'E05': e05_caida_antes_de_cobrar, 'E06': e06_caida_despues_de_cobrar,
     'E07': e07_confirmacion_falla, 'E08': e08_doble_envio, 'E09': e09_redis_caido,
     'E10': e10_mongo, 'E11': e11_elasticsearch, 'E12': e12_neo4j, 'E13': e13_cassandra,
+    'E14': e14_catalogo_sin_mongo, 'E15': e15_busqueda_sin_elasticsearch_ni_mongo,
+    'E16': e16_recomendaciones_sin_neo4j, 'E17': e17_pedido_en_cola_sin_mysql,
 }
 
 

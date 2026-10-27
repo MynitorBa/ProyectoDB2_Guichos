@@ -3,8 +3,10 @@
 The DEMO API is started with --lifespan off, so its startup hook (which
 launches the reconciler and the reaper) never runs. Without this process a
 payment left «en verificación» (gateway timeout or 503) is never resolved.
-This process starts only the checkout recovery loop; flash and fraud workers
-stay off, exactly like run_demo_outbox.py does for projections.
+This process starts only the checkout recovery loop and the queued-orders
+worker (plan B: orders taken while MySQL was down go through the saga when it
+returns); flash and fraud workers stay off, like run_demo_outbox.py does for
+projections.
 """
 
 import logging
@@ -18,6 +20,7 @@ from app.core.config import settings
 from app.services.checkout_recovery_worker import (
     start_checkout_recovery_worker, stop_checkout_recovery_worker,
 )
+from app.services.cola_pedidos_service import start_cola_pedidos_worker, stop_cola_pedidos_worker
 
 
 def main() -> None:
@@ -37,11 +40,13 @@ def main() -> None:
         flush=True,
     )
     start_checkout_recovery_worker()
+    start_cola_pedidos_worker()
     try:
         threading.Event().wait()
     except KeyboardInterrupt:
         pass
     finally:
+        stop_cola_pedidos_worker()
         stop_checkout_recovery_worker()
 
 

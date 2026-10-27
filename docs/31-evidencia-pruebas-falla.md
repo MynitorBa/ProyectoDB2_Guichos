@@ -50,11 +50,15 @@ cobros de la pasarela.
 | [E06](evidencia/fallas/E06.md) | El proceso muere tras cobrar, antes de confirmar | 500 | El recolector encuentra el cargo y confirma **sin volver a cobrar** | 63.4 s |
 | [E07](evidencia/fallas/E07.md) | Falla dentro de la transacción de confirmación | 500 | Rollback completo; el recolector confirma con el cargo existente; stock descontado una vez | 63.4 s |
 | [E08](evidencia/fallas/E08.md) | Doble envío simultáneo con la misma clave | 201 y 409 `CHECKOUT_IN_PROGRESS`; reintento posterior → 200 (mismo pedido) | Un solo pedido y un solo cargo | — |
-| [E09](evidencia/fallas/E09.md) | Redis (carrito) no responde | 503 `CART_UNAVAILABLE` | Ningún pedido creado, inventario intacto; el carrito sigue al volver Redis | — |
+| [E09](evidencia/fallas/E09.md) | Redis (carrito) no responde | 201 | Plan B: el carrito se lee de su copia en MySQL y la compra se confirma; al volver Redis el carrito ya no tiene lo comprado. Antes del plan B respondía 503 `CART_UNAVAILABLE` | — |
 | [E10](evidencia/fallas/E10.md) | MongoDB detenido | 201 | Eventos `mongo` retenidos; Cassandra, Neo4j y Redis al día con MongoDB caído; todo converge al volver | Demás destinos al día en 6.5 s |
 | [E11](evidencia/fallas/E11.md) | Elasticsearch detenido | 201 | La búsqueda sigue en modo degradado (MongoDB); el índice converge al volver | Demás destinos al día en 0.5 s |
 | [E12](evidencia/fallas/E12.md) | Neo4j detenido | 201 | El nodo `Compra` y sus relaciones definitivas esperan en el outbox y llegan al volver | Demás destinos al día en 9.1 s |
 | [E13](evidencia/fallas/E13.md) | Cassandra detenida | 201 | La proyección analítica se pone al día al volver | Demás destinos al día en 0.5 s |
+| [E14](evidencia/fallas/E14.md) | MongoDB detenido (plan B) | 200 | El catálogo se lee de su copia en MySQL con precios de MySQL | Primera petición 3.3 s, luego sin espera |
+| [E15](evidencia/fallas/E15.md) | Elasticsearch y MongoDB detenidos (plan B) | 200 | Búsqueda desde MySQL y autocompletado desde Redis | — |
+| [E16](evidencia/fallas/E16.md) | Neo4j detenido (plan B) | 200 | Recomendaciones desde la caché en MySQL; F01–F03 pendientes | — |
+| [E17](evidencia/fallas/E17.md) | MySQL detenido (plan B) | 202 `ORDER_QUEUED` | Pedido en cola sin cobrar; al volver MySQL se confirma por la saga | Procesado 6.1 s después de volver |
 
 En E10 la búsqueda (`busqueda`) también espera, porque sus documentos se arman con el
 catálogo de MongoDB: es una dependencia de datos, no un bloqueo del outbox.

@@ -69,6 +69,22 @@ Detalle en
 [`30-estrategia-consistencia-checkout.md`](30-estrategia-consistencia-checkout.md)
 y [`29-busqueda-elasticsearch.md`](29-busqueda-elasticsearch.md).
 
+## Plan B: respaldos entre motores
+
+Cuando un motor no responde, la tienda usa otro que ya tiene una copia de sus
+datos y lo avisa (`GET /api/v1/salud/motores` y el aviso bajo la cabecera). El
+dinero y el inventario solo se deciden en MySQL. Detalle, justificación y
+pruebas en [`44-plan-b-respaldos-entre-bases.md`](44-plan-b-respaldos-entre-bases.md).
+
+| Motor caído | Respaldo |
+|---|---|
+| Redis | Carrito copiado en MySQL; reservas flash con `FOR UPDATE` en MySQL |
+| MongoDB | Copia completa del catálogo en MySQL (destino `catalogo` del outbox); Elasticsearch como último recurso |
+| Elasticsearch | MongoDB → copia del catálogo en MySQL; autocompletado con un índice de prefijos en Redis |
+| Neo4j | Caché horaria de recomendaciones en MySQL → más vendidos de la categoría; F01–F03 pendientes |
+| MySQL | Solo lectura (sesión por JWT, copias de lectura en Redis, precios proyectados) y pedidos en cola sin cobrar |
+| Cassandra | Pendiente |
+
 ## Decisión de la Entrega 2: grafos y columnar
 
 Las dos necesidades analíticas de la Entrega 2 tienen patrones de acceso

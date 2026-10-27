@@ -184,7 +184,7 @@ flowchart LR
 | F11 | Segunda compra con un pago en verificación | Bloqueada | 409 `PAYMENT_PENDING_EXISTS` | `test_api_pago_en_verificacion_responde_202_y_bloquea_otra_compra` |
 | F12 | Cobro aprobado de un pedido que ya no se puede cumplir | C4: reembolso + cancelación | 409 `ORDER_NOT_FULFILLABLE` | `test_cobro_aprobado_de_pedido_no_cumplible_se_reembolsa` |
 | F13 | Precio cambió entre carrito y pago | No se reserva ni cobra | 409 `PRICE_CHANGED` | `test_checkout.py` |
-| F14 | Redis no responde al iniciar el checkout | No se crea pedido ni se toca inventario; el carrito sigue intacto al volver Redis. Si Redis cae después de confirmar, la limpieza del carrito espera en el outbox | 503 `CART_UNAVAILABLE` | E09 |
+| F14 | Redis no responde al iniciar el checkout | Plan B: el carrito se lee de su copia en MySQL y la compra se confirma; al volver Redis el carrito se reconstruye sin lo comprado. Solo si también falla MySQL: 503 sin crear pedido ([plan B](44-plan-b-respaldos-entre-bases.md)) | 201 (503 `CART_UNAVAILABLE` si MySQL tampoco responde) | E09 |
 | F15 | MongoDB caído | Pedido confirmado; evento `mongo` retenido; los demás destinos al día | 201 | E10 |
 | F16 | Elasticsearch caído | Pedido confirmado; búsqueda degradada a MongoDB | 201 | E11 |
 | F17 | Neo4j caído | Pedido confirmado; el nodo `Compra` y sus relaciones definitivas llegan al volver | 201 | E12 |
@@ -233,5 +233,5 @@ Los puntos de falla (`checkout.despues_reserva`, `checkout.despues_cobro`,
 `checkout.confirmacion`, `outbox.<destino>`) y los modos de la pasarela solo existen con
 `FAULT_INJECTION_ENABLED=true`; sin la bandera el backend ni siquiera registra esos
 endpoints. Se controlan desde el **laboratorio de consistencia** (`laboratorio/`, puerto
-5174) o desde `scripts/demo_fallas.py`, que ejecuta los escenarios E00–E13 y genera la
+5174) o desde `scripts/demo_fallas.py`, que ejecuta los escenarios E00–E17 (E14–E17: plan B entre bases) y genera la
 evidencia en [`evidencia/fallas/`](evidencia/fallas/README.md).

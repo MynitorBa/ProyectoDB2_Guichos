@@ -208,6 +208,7 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [ADR-003: motor de búsqueda](docs/28-ADR-003-motor-busqueda.md)
 - [Búsqueda con Elasticsearch: detalle técnico](docs/29-busqueda-elasticsearch.md)
 - [Estrategia de consistencia del checkout distribuido](docs/30-estrategia-consistencia-checkout.md)
+- [Plan B entre bases de datos: qué hace la tienda cuando se cae un motor](docs/44-plan-b-respaldos-entre-bases.md)
 - [Evidencia de las pruebas de falla](docs/31-evidencia-pruebas-falla.md)
 
 El checkout es una saga con una pasarela de pagos externa simulada
