@@ -629,7 +629,7 @@ export default function ProductDetailPage() {
                     Quienes compraron este producto también compraron
                   </h2>
                   <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
-                    Recomendaciones por compradores en común; precio y existencia se validan en tiempo real.
+                    Productos de la misma categoría con compradores en común; precio y existencia se validan en tiempo real.
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {recommendationData.items.map(item => (
