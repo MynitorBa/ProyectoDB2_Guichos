@@ -6,7 +6,7 @@ False y quien tenga un respaldo lo usa de inmediato, sin pagar el timeout del
 motor caído en cada petición. Pasada la espera se deja pasar un intento
 (semiabierto): si funciona, el circuito se cierra; si falla, se vuelve a abrir.
 
-``sondear()`` hace un ping real a los seis motores (en paralelo y con tiempo
+``sondear()`` hace un ping real a los seis motores y al servicio de embeddings (en paralelo y con tiempo
 límite) y alimenta el mismo estado; lo usa ``GET /salud/motores``.
 """
 
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-MOTORES = ('mysql', 'mongo', 'redis', 'elasticsearch', 'neo4j', 'cassandra')
+MOTORES = ('mysql', 'mongo', 'redis', 'elasticsearch', 'neo4j', 'cassandra', 'embeddings')
 UMBRAL = 3
 ESPERA_SEGUNDOS = 15
 TIEMPO_SONDEO_SEGUNDOS = 3
@@ -136,9 +136,16 @@ def _ping_cassandra():
     get_cassandra_session(initialize=False).execute('SELECT release_version FROM system.local')
 
 
+def _ping_embeddings():
+    from app.services.embeddings_client import estado
+    if not estado().get('listo'):
+        raise ConnectionError('El modelo de embeddings no está cargado')
+
+
 _PINGS = {
     'mysql': _ping_mysql, 'mongo': _ping_mongo, 'redis': _ping_redis,
     'elasticsearch': _ping_elasticsearch, 'neo4j': _ping_neo4j, 'cassandra': _ping_cassandra,
+    'embeddings': _ping_embeddings,
 }
 # Los hilos del sondeo pueden quedar esperando a un motor colgado; un pool
 # propio evita que se acumulen más allá de uno por motor.

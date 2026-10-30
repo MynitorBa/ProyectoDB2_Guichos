@@ -77,6 +77,45 @@ def pasarela_simulada():
             pass  # Windows libera el archivo unos instantes después; está en %TEMP%.
 
 
+PUERTO_EMBEDDINGS = 8092
+URL_EMBEDDINGS = f'http://127.0.0.1:{PUERTO_EMBEDDINGS}'
+
+
+@pytest.fixture(scope='session', autouse=True)
+def servicio_embeddings():
+    """Servicio de embeddings real en un puerto propio, como la pasarela.
+
+    Usa el mismo modelo y la misma carpeta de modelos que el de desarrollo, así
+    que solo la primera corrida lo descarga.
+    """
+    proceso = subprocess.Popen(
+        [sys.executable, '-m', 'uvicorn', 'embeddings_service.app:app',
+         '--port', str(PUERTO_EMBEDDINGS), '--log-level', 'warning'],
+        cwd=RAIZ, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        limite = time.time() + 600  # la primera vez descarga el modelo
+        while True:
+            try:
+                if httpx.get(f'{URL_EMBEDDINGS}/health', timeout=1).json().get('listo'):
+                    break
+            except httpx.HTTPError:
+                pass
+            if time.time() > limite or proceso.poll() is not None:
+                raise RuntimeError('No arrancó el servicio de embeddings para las pruebas.')
+            time.sleep(0.5)
+        anterior = settings.EMBEDDINGS_URL
+        settings.EMBEDDINGS_URL = URL_EMBEDDINGS
+        yield URL_EMBEDDINGS
+        settings.EMBEDDINGS_URL = anterior
+    finally:
+        proceso.terminate()
+        try:
+            proceso.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proceso.kill()
+
+
 def modo_pasarela(modo: str, **extra) -> None:
     """Cambia el comportamiento de la pasarela de pruebas."""
     httpx.post(f'{URL_PASARELA}/control', json={'modo': modo, **extra}, timeout=5).raise_for_status()

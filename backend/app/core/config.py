@@ -69,6 +69,9 @@ class Settings(BaseSettings):
 
     # Pasarela de pagos (simulada en payment_simulator/, proceso aparte)
     PAYMENT_GATEWAY_URL: str = 'http://127.0.0.1:8001'
+    # Servicio de embeddings (Entrega 4): modelo multilingüe local en un proceso aparte.
+    EMBEDDINGS_URL: str = 'http://127.0.0.1:8002'
+    EMBEDDINGS_TIMEOUT: float = 10.0
     PAYMENT_TIMEOUT: float = 3.0  # segundos por intento; después el resultado es "desconocido"
     PAYMENT_RETRIES: int = 2  # reintentos seguros con la misma clave idempotente
     # Tiempo máximo que un pedido puede retener inventario esperando su pago.

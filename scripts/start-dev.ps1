@@ -108,6 +108,9 @@ try {
 }
 
 # 2. Pasarela de pagos simulada (sistema externo al que el checkout le cobra)
+Write-Host "Iniciando servicio de embeddings en :8002 (la primera vez descarga el modelo, ~1 GB)..." -ForegroundColor Yellow
+$embeddingsJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root`" && `"$Root\backend\venv\Scripts\python.exe`" -m uvicorn embeddings_service.app:app --host 127.0.0.1 --port 8002" -PassThru -WindowStyle Normal
+
 Write-Host "Iniciando pasarela de pagos simulada en :8001..." -ForegroundColor Yellow
 $gatewayJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root`" && `"$Root\backend\venv\Scripts\python.exe`" -m uvicorn payment_simulator.app:app --host 127.0.0.1 --port 8001" -PassThru -WindowStyle Normal
 
@@ -153,6 +156,7 @@ Write-Host "  Cassandra CQL: localhost:9042 (cqlsh dentro de tiendaya_cassandra)
 Write-Host "  Neo4j Browser: http://localhost:7474  (neo4j / tiendaya123)" -ForegroundColor Cyan
 Write-Host "  Elasticsearch: http://localhost:9200  ·  Elasticvue: http://localhost:8083" -ForegroundColor Cyan
 Write-Host "  Pasarela de pagos simulada: http://127.0.0.1:8001/docs" -ForegroundColor Cyan
+Write-Host "  Servicio de embeddings:     http://127.0.0.1:8002/health" -ForegroundColor Cyan
 if ($labHabilitado) {
     Write-Host "  Laboratorio de consistencia: http://localhost:5174  (herramienta de desarrollo)" -ForegroundColor Magenta
 } else {
