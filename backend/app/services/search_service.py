@@ -407,7 +407,7 @@ def vector_consulta(texto: str, redis_db=None) -> list[float] | None:
     """
     # Las tildes se conservan: cambian el vector («portátil» ≠ «portatil»).
     consulta = ' '.join((texto or '').lower().split())
-    if len(consulta) < MIN_LARGO_SEMANTICO or not salud.disponible('embeddings'):
+    if len(consulta) < MIN_LARGO_SEMANTICO:
         return None
     clave = 'vector_consulta:' + hashlib.sha1(
         f'{settings.EMBEDDINGS_MODEL}\n{consulta}'.encode('utf-8')).hexdigest()
@@ -419,6 +419,9 @@ def vector_consulta(texto: str, redis_db=None) -> list[float] | None:
         except redis_lib.RedisError as exc:
             salud.registrar_falla('redis', exc)
             redis_db = None
+    # Sin servicio de embeddings, las consultas ya vistas siguen usando su vector guardado.
+    if not salud.disponible('embeddings'):
+        return None
     vectores = embeddings_client.generar([consulta])
     if not vectores:
         return None

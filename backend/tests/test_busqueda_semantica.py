@@ -102,3 +102,13 @@ def test_una_coincidencia_parcial_no_queda_antes_que_lo_relacionado():
     resultado = buscar(q='novela de fantasía')
     assert resultado['items'][0]['categoria']['slug'] == 'libros'
     assert resultado['items'][0]['coincidencia'] == 'semantica'
+
+
+def test_sin_servicio_una_consulta_ya_hecha_usa_su_vector_guardado():
+    buscar(q='algo para escuchar música sin cables')  # guarda el vector en Redis
+    salud.registrar_falla('embeddings', 'caído', confirmada=True)
+    try:
+        resultado = buscar(q='algo para escuchar música sin cables')
+    finally:
+        salud.reiniciar()
+    assert resultado['semantica'] is True and resultado['alternativa'] == 'semanticos'
