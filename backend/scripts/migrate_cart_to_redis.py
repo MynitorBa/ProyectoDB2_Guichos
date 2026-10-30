@@ -30,7 +30,8 @@ from app.models.oferta import Oferta
 
 def main(dry_run: bool = False) -> None:
     engine = create_engine(settings.mysql_url)
-    r = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True)
+    r = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, username=settings.REDIS_USERNAME or None,
+                    password=settings.REDIS_PASSWORD or None, decode_responses=True)
 
     with Session(engine) as db:
         reparados = 0

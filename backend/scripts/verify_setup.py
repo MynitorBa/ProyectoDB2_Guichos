@@ -21,6 +21,8 @@ MONGO_DB    = os.getenv('MONGO_DB', 'tiendaya')
 REDIS_HOST  = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT  = int(os.getenv('REDIS_PORT', 6379))
 REDIS_TTL   = int(os.getenv('REDIS_CART_TTL', 1800))
+REDIS_USER  = os.getenv('REDIS_USERNAME') or None
+REDIS_PASS  = os.getenv('REDIS_PASSWORD') or None
 
 
 def main():
@@ -34,6 +36,8 @@ def main():
         redis_client = redis.Redis(
             host=REDIS_HOST,
             port=REDIS_PORT,
+            username=REDIS_USER,
+            password=REDIS_PASS,
             decode_responses=True,
             socket_connect_timeout=2,
             socket_timeout=2,

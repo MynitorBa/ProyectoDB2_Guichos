@@ -117,7 +117,7 @@ def test_al_volver_redis_el_carrito_se_reconstruye_desde_mysql(carrito_limpio):
     items = {i['oferta_id']: i['cantidad'] for i in rcs.obtener_carrito(carrito_limpio, USUARIO)}
 
     assert items == {11: 4, 13: 1}
-    assert set(carrito_limpio.hkeys(rcs._key(USUARIO))) == {'11', '13'}
+    assert set(carrito_limpio.hgetall(rcs._key(USUARIO))) == {'11', '13'}
     assert carrito_limpio.ttl(rcs._key(USUARIO)) > 0
     assert _pendiente(USUARIO) is False
 

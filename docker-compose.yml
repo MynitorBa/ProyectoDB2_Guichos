@@ -55,12 +55,19 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+      # Control de acceso: reglas versionadas; contraseñas desde .env (fuera del repositorio).
+      - ./database/redis/acl.conf:/etc/redis/acl.conf:ro
+      - ./database/redis/iniciar-redis.sh:/usr/local/bin/iniciar-redis.sh:ro
+    environment:
+      REDIS_API_PASSWORD: ${REDIS_API_PASSWORD:-}
+      REDIS_LECTURA_PASSWORD: ${REDIS_LECTURA_PASSWORD:-}
+      REDIS_ADMIN_PASSWORD: ${REDIS_ADMIN_PASSWORD:-}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning --user tiendaya_lectura --pass \"$$REDIS_LECTURA_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
-    command: redis-server --save 60 1 --loglevel warning
+    entrypoint: ["sh", "/usr/local/bin/iniciar-redis.sh"]
 
   redis-commander:
     image: rediscommander/redis-commander:latest
@@ -71,8 +78,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # Solo lectura. Esta imagen no admite usuario: entra como «default», que en el
+    # ACL solo puede leer (database/redis/acl.conf).
     environment:
-      REDIS_HOSTS: local:redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_LECTURA_PASSWORD:-}
+      READ_ONLY: "true"
 
   cassandra:
     image: cassandra:4.1.12

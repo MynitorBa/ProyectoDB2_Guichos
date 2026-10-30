@@ -97,7 +97,7 @@ def test_el_texto_del_vector_combina_los_campos_del_documento():
 def test_busqueda_knn_encuentra_por_significado(es):
     vector = emb.generar(['algo para escuchar música sin cables'])[0]
     respuesta = es.search(index=settings.ES_INDEX_ALIAS, size=3, source=['nombre'],
-                          knn={'field': 'vector', 'query_vector': vector, 'k': 3, 'num_candidates': 50})
+                          knn={'field': 'vector', 'query_vector': vector, 'k': 3, 'num_candidates': 100})
     nombres = ' '.join(h['_source']['nombre'].lower() for h in respuesta['hits']['hits'])
     assert any(palabra in nombres for palabra in ('audífonos', 'airpods', 'bocina'))
 

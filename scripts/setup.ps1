@@ -49,6 +49,8 @@ if (-not $SkipDocker) {
         Copy-Item "$Root\.env.example" "$Root\.env"
         Write-Host "  Copiado .env.example → .env"
     }
+    # Contraseñas de los usuarios de Redis (y demás componentes NoSQL): se crean si faltan.
+    & "$PSScriptRoot\generar-credenciales.ps1"
 
     docker compose up -d
 

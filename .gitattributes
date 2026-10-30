@@ -1,0 +1,4 @@
+# Archivos que se ejecutan o leen dentro de contenedores Linux: siempre LF, aunque
+# git en Windows tenga core.autocrlf=true (con CRLF el shell y Redis fallan).
+*.sh text eol=lf
+database/redis/*.conf text eol=lf
