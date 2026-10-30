@@ -10,10 +10,17 @@ eventos que lo disparan.
 La versión externa de cada documento es el instante (µs) en que se leyó ese
 estado. Si dos escrituras compiten, Elasticsearch rechaza la que leyó datos
 más antiguos (``version_type=external_gte``).
+
+Desde la Entrega 4 (mapping v2) cada documento lleva además el **vector** del
+texto del producto (nombre, categorías, descripción y atributos), calculado por
+el servicio de embeddings. Solo se recalcula si cambia ese texto (huella en
+``vector_texto_hash``); si el servicio no responde, el producto se indexa sin
+vector y la reconciliación periódica lo completa cuando vuelve.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -27,16 +34,18 @@ from pymongo.database import Database
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core import salud
 from app.core.config import settings
 from app.core.time import utc_now
 from app.models.pedido import Pedido, PedidoLinea
 from app.models.promocion_flash import PromocionFlash
+from app.services import embeddings_client
 from app.services.offer_service import listar_ofertas_por_referencias
 
 logger = logging.getLogger(__name__)
 
 MAPPINGS_DIR = Path(__file__).resolve().parents[3] / 'database' / 'elasticsearch'
-VERSION_MAPPING = 1
+VERSION_MAPPING = 2  # v2 (Entrega 4): agrega el campo vectorial
 PREFIJO_INDICE = 'productos_v'
 
 # Atributos con demasiados valores distintos para servir como faceta; siguen
@@ -310,6 +319,109 @@ def construir_documentos(
     }
 
 
+# ── Vectores (Entrega 4) ──────────────────────────────────────────────────────
+
+def texto_vector(documento: dict) -> str:
+    """Texto que se convierte en vector: el del documento de búsqueda ya armado."""
+    texto = embeddings_client.texto_producto({
+        'nombre': documento.get('nombre'),
+        'categorias': documento.get('categorias'),
+        'descripcion': documento.get('descripcion'),
+    })
+    atributos = (documento.get('texto_atributos') or '').strip()
+    return f'{texto}. {atributos}' if atributos else texto
+
+
+def _huella(texto: str) -> str:
+    return hashlib.sha256(f'{settings.EMBEDDINGS_MODEL}\n{texto}'.encode('utf-8')).hexdigest()
+
+
+def dimensiones_vector() -> int:
+    return cargar_definicion()['mappings']['properties']['vector']['dims']
+
+
+def _vectores_vigentes(es: Elasticsearch, ids: list[str]) -> dict[str, dict]:
+    """Vector y huella que ya tiene cada producto en el índice vigente."""
+    if not ids:
+        return {}
+    try:
+        respuesta = es.mget(index=settings.ES_INDEX_ALIAS, ids=ids,
+                            source=['vector', 'vector_texto_hash', 'vector_modelo'])
+    except NotFoundError:
+        return {}
+    return {d['_id']: d['_source'] for d in respuesta['docs'] if d.get('found') and d['_source'].get('vector')}
+
+
+_indices_con_vector: dict[str, bool] = {}
+
+
+def indice_tiene_vector(es: Elasticsearch, indice: str | None = None) -> bool:
+    """True si el índice (o el que está detrás del alias) ya usa el mapping con vector.
+
+    Un índice v1 tiene mapping estricto y rechazaría el campo: hasta que se
+    migre con ``reindex_search.py --recrear`` se sigue indexando sin vectores.
+    """
+    nombre = indice or indice_actual(es)
+    if not nombre:
+        return False
+    if nombre not in _indices_con_vector:
+        mapping = next(iter(es.indices.get_mapping(index=nombre).values()))['mappings']
+        _indices_con_vector[nombre] = 'vector' in mapping.get('properties', {})
+    return _indices_con_vector[nombre]
+
+
+def adjuntar_vectores(es: Elasticsearch, documentos: dict[str, dict | None], *,
+                      indice: str | None = None) -> dict:
+    """Agrega el vector a cada documento. Reutiliza el vigente si el texto no cambió.
+
+    ``indice`` es el índice de destino (por defecto, el del alias). Devuelve un
+    resumen: reutilizados, calculados y sin_vector (servicio caído).
+    """
+    activos = {ref: doc for ref, doc in documentos.items() if doc is not None}
+    resumen = {'reutilizados': 0, 'calculados': 0, 'sin_vector': 0}
+    if not activos or not indice_tiene_vector(es, indice):
+        return resumen
+    huellas = {ref: _huella(texto_vector(doc)) for ref, doc in activos.items()}
+    vigentes = _vectores_vigentes(es, list(activos))
+    pendientes = []
+    for ref, doc in activos.items():
+        previo = vigentes.get(ref)
+        if previo and previo.get('vector_texto_hash') == huellas[ref]:
+            doc.update(vector=previo['vector'], vector_texto_hash=huellas[ref],
+                       vector_modelo=previo.get('vector_modelo'))
+            resumen['reutilizados'] += 1
+        else:
+            pendientes.append(ref)
+    if pendientes:
+        vectores = embeddings_client.generar([texto_vector(activos[ref]) for ref in pendientes])
+        dims = dimensiones_vector()
+        if vectores is None or any(len(v) != dims for v in vectores):
+            if vectores is not None:
+                logger.error('El modelo de embeddings no produce %s dimensiones; revise EMBEDDINGS_MODEL.', dims)
+            resumen['sin_vector'] = len(pendientes)
+        else:
+            for ref, vector in zip(pendientes, vectores):
+                activos[ref].update(vector=vector, vector_texto_hash=huellas[ref],
+                                    vector_modelo=settings.EMBEDDINGS_MODEL)
+            resumen['calculados'] = len(pendientes)
+    return resumen
+
+
+def ids_sin_vector(es: Elasticsearch) -> list[str]:
+    """Productos activos indexados sin vector (el servicio no respondía al indexarlos)."""
+    if not indice_tiene_vector(es):
+        return []
+    return [
+        hit['_id'] for hit in helpers.scan(
+            es, index=settings.ES_INDEX_ALIAS, _source=False,
+            query={'query': {'bool': {
+                'filter': [{'term': {'estado': 'activo'}}],
+                'must_not': [{'exists': {'field': 'vector'}}],
+            }}},
+        )
+    ]
+
+
 # ── Escritura en el índice ────────────────────────────────────────────────────
 
 def _acciones(documentos: dict[str, dict | None], indice: str, version: int):
@@ -390,6 +502,9 @@ def reconciliar_desfasados(es: Elasticsearch, mysql_db: Session, mongo: Database
             desfasados.append(ref)
     # Lo que queda en ``indexados`` ya no está activo en MongoDB.
     refs = desfasados + sorted(indexados)
+    # Productos que se indexaron sin vector porque el servicio de embeddings no respondía.
+    if salud.disponible('embeddings'):
+        refs += [ref for ref in ids_sin_vector(es) if ref not in refs]
     if not refs:
         return {'indexados': 0, 'eliminados': 0, 'omitidos': 0}
     return indexar_productos(es, mysql_db, mongo, refs, neo4j_driver, refrescar=True)
@@ -406,4 +521,6 @@ def indexar_productos(
     """Lee el estado actual de los productos indicados y lo proyecta al índice."""
     version = version_lectura()
     documentos = construir_documentos(mysql_db, mongo, producto_refs, neo4j_driver)
-    return escribir_documentos(es, documentos, version=version, refrescar=refrescar)
+    vectores = adjuntar_vectores(es, documentos)
+    resumen = escribir_documentos(es, documentos, version=version, refrescar=refrescar)
+    return {**resumen, 'vectores': vectores}

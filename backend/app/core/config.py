@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     PAYMENT_GATEWAY_URL: str = 'http://127.0.0.1:8001'
     # Servicio de embeddings (Entrega 4): modelo multilingüe local en un proceso aparte.
     EMBEDDINGS_URL: str = 'http://127.0.0.1:8002'
+    # Debe coincidir con el modelo del servicio: forma parte de la huella de cada vector.
+    EMBEDDINGS_MODEL: str = 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
     EMBEDDINGS_TIMEOUT: float = 10.0
     PAYMENT_TIMEOUT: float = 3.0  # segundos por intento; después el resultado es "desconocido"
     PAYMENT_RETRIES: int = 2  # reintentos seguros con la misma clave idempotente

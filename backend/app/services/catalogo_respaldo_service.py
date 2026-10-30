@@ -300,7 +300,8 @@ def _productos_elasticsearch(*, ids: list[str] | None = None, estado: str | None
         consulta = {'ids': {'values': ids}} if ids is not None else (
             {'term': {'estado': estado}} if estado else {'match_all': {}}
         )
-        respuesta = get_es().search(index=settings.ES_INDEX_ALIAS, query=consulta, size=1000)
+        respuesta = get_es().search(index=settings.ES_INDEX_ALIAS, query=consulta, size=1000,
+                                    source_excludes=['vector'])
         return [_desde_indice(hit['_source']) for hit in respuesta['hits']['hits']]
     except Exception as exc:  # noqa: BLE001 - último recurso: sin índice, sin documentos
         logger.warning('Tampoco se pudo leer el catálogo desde Elasticsearch: %s', exc)

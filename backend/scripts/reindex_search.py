@@ -5,7 +5,8 @@ Modos (todos idempotentes):
 
 - Sin opciones: crea el índice si falta y sincroniza **todos** los productos
   sobre el índice vigente. Elimina del índice los productos que ya no están
-  activos en MongoDB.
+  activos en MongoDB. Si el índice vigente usa un mapping anterior (por
+  ejemplo v1, sin vectores), lo migra como ``--recrear``.
 - ``--recrear``: construye un índice nuevo (``productos_vN_<fecha>``), lo carga,
   mueve el alias ``productos`` de forma atómica y borra el índice anterior. Se
   usa al cambiar el mapping; las búsquedas no se interrumpen.
@@ -46,6 +47,12 @@ def _neo4j_driver():
 
 
 def sincronizar(es, mysql_db, mongo, neo4j) -> dict:
+    actual = indice.indice_actual(es)
+    if actual and not actual.startswith(f'{indice.PREFIJO_INDICE}{indice.VERSION_MAPPING}_'):
+        # El índice vigente usa un mapping anterior (p. ej. v1 sin vectores): se
+        # migra sin caída con un índice nuevo y cambio de alias.
+        print(f'  El índice {actual} usa un mapping anterior; se migra a v{indice.VERSION_MAPPING}.')
+        return recrear(es, mysql_db, mongo, neo4j)
     indice.asegurar_indice(es)
     activos = [str(doc['_id']) for doc in mongo.productos.find({'estado': 'activo'}, {'_id': 1})]
     sobrantes = set(indice.ids_indexados(es)) - set(activos)
@@ -57,7 +64,10 @@ def recrear(es, mysql_db, mongo, neo4j) -> dict:
     indice.crear_indice(es, nuevo)
     version = indice.version_lectura()
     documentos = indice.construir_documentos(mysql_db, mongo, None, neo4j)
+    # Los vectores se reutilizan del índice anterior si el texto del producto no cambió.
+    vectores = indice.adjuntar_vectores(es, documentos, indice=nuevo)
     resumen = indice.escribir_documentos(es, documentos, indice=nuevo, version=version, refrescar=True)
+    resumen['vectores'] = vectores
     anteriores = indice.cambiar_alias(es, nuevo)
     for viejo in anteriores:
         es.indices.delete(index=viejo)
