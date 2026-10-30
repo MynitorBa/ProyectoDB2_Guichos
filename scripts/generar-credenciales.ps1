@@ -45,8 +45,35 @@ foreach ($archivo in @(@($EnvRaiz, '.env.example'), @($EnvBackend, 'backend\.env
     }
 }
 
+# Una instalación existente ya creó sus volúmenes con las contraseñas de antes (venían fijas en
+# el ejemplo o como valor por defecto): se adoptan, nunca se cambian. Primero la de backend\.env;
+# si no está, la del contenedor ya creado. Solo en una instalación nueva se genera una.
+function Get-ContainerEnv([string]$Contenedor, [string]$Variable) {
+    $valores = docker inspect $Contenedor --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $linea = $valores | Where-Object { $_ -like "$Variable=*" } | Select-Object -First 1
+    if ($linea) { return ($linea -split '=', 2)[1] } else { return $null }
+}
+foreach ($nombre in @('MYSQL_PASSWORD', 'NEO4J_PASSWORD')) {
+    $enBackend = Get-EnvValue $EnvBackend $nombre
+    if (-not (Get-EnvValue $EnvRaiz $nombre) -and $enBackend) { Set-EnvValue $EnvRaiz $nombre $enBackend }
+}
+$enContenedores = @(
+    @('MYSQL_ROOT_PASSWORD', 'tiendaya_mysql', 'MYSQL_ROOT_PASSWORD'),
+    @('MYSQL_PASSWORD', 'tiendaya_mysql', 'MYSQL_PASSWORD'),
+    @('MONGO_ROOT_PASSWORD', 'tiendaya_mongo', 'MONGO_INITDB_ROOT_PASSWORD'),
+    @('NEO4J_PASSWORD', 'tiendaya_neo4j', 'NEO4J_AUTH')
+)
+foreach ($fila in $enContenedores) {
+    if (Get-EnvValue $EnvRaiz $fila[0]) { continue }
+    $valor = Get-ContainerEnv $fila[1] $fila[2]
+    if ($fila[2] -eq 'NEO4J_AUTH' -and $valor) { $valor = $valor -replace '^neo4j/', '' }
+    if ($valor) { Set-EnvValue $EnvRaiz $fila[0] $valor }
+}
+
 # Contraseñas que viven en el .env de la raíz (una por usuario de cada componente).
 $secretos = @(
+    'MYSQL_ROOT_PASSWORD', 'MYSQL_PASSWORD', 'MONGO_ROOT_PASSWORD', 'NEO4J_PASSWORD',
     'REDIS_API_PASSWORD', 'REDIS_LECTURA_PASSWORD', 'REDIS_ADMIN_PASSWORD',
     'MONGO_API_PASSWORD', 'MONGO_LECTURA_PASSWORD', 'MONGO_ADMIN_PASSWORD',
     'ELASTIC_PASSWORD', 'ES_API_PASSWORD', 'ES_INDEXADOR_PASSWORD', 'ES_LECTURA_PASSWORD'
@@ -65,6 +92,8 @@ $uriActual = Get-EnvValue $EnvBackend 'MONGO_URI'
 $servidorMongo = if ($uriActual -match '@([^/?]+)' -or $uriActual -match '^mongodb://([^/?@]+)') { $Matches[1] } else { 'localhost:27017' }
 $baseMongo = if (Get-EnvValue $EnvBackend 'MONGO_DB') { Get-EnvValue $EnvBackend 'MONGO_DB' } else { 'tiendaya' }
 $usuarioBackend = @{
+    'MYSQL_PASSWORD' = (Get-EnvValue $EnvRaiz 'MYSQL_PASSWORD')
+    'NEO4J_PASSWORD' = (Get-EnvValue $EnvRaiz 'NEO4J_PASSWORD')
     'REDIS_USERNAME' = 'tiendaya_api'
     'REDIS_PASSWORD' = (Get-EnvValue $EnvRaiz 'REDIS_API_PASSWORD')
     'ES_USERNAME'    = 'tiendaya_api'
@@ -75,6 +104,14 @@ foreach ($nombre in $usuarioBackend.Keys) {
     if ((Get-EnvValue $EnvBackend $nombre) -ne $usuarioBackend[$nombre]) {
         Set-EnvValue $EnvBackend $nombre $usuarioBackend[$nombre]
     }
+}
+
+# Clave con la que el backend firma las sesiones (JWT). Se genera si falta o si sigue siendo
+# el texto de ejemplo; cambiarla solo obliga a iniciar sesión de nuevo.
+$clave = Get-EnvValue $EnvBackend 'SECRET_KEY'
+if (-not $clave -or $clave -match '^(cambia_esto|CAMBIA_ESTO)') {
+    Set-EnvValue $EnvBackend 'SECRET_KEY' ((New-Secret) + (New-Secret))
+    $creadas++
 }
 
 if ($creadas) {

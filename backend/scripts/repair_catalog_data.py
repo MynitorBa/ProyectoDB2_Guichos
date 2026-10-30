@@ -187,7 +187,7 @@ def mysql_connection():
         port=int(os.getenv('MYSQL_PORT', 3306)),
         database=os.getenv('MYSQL_DB', 'tiendaya'),
         user=os.getenv('MYSQL_USER', 'tiendaya'),
-        password=os.getenv('MYSQL_PASSWORD', 'tiendaya123'),
+        password=os.getenv('MYSQL_PASSWORD', ''),
         charset='utf8mb4', cursorclass=pymysql.cursors.DictCursor,
         autocommit=False,
     )

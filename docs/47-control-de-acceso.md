@@ -155,6 +155,21 @@ Ese script, idempotente:
 3. crea o actualiza los usuarios de MongoDB;
 4. crea o actualiza los roles y usuarios de Elasticsearch.
 
-Los datos no se pierden (volúmenes de Docker). Sin las contraseñas, Redis no arranca y su registro explica qué
-ejecutar; MongoDB y Elasticsearch arrancan, pero el backend no puede conectarse hasta que existan sus
-usuarios.
+Los datos no se pierden (volúmenes de Docker). Sin las contraseñas, `docker compose` se niega a arrancar y
+dice qué ejecutar (`${VARIABLE:?Ejecute scripts/configurar-acceso.ps1}`): no hay valores por defecto.
+
+## Secretos fuera del repositorio
+
+Ninguna contraseña queda en git (Entrega final, fase 12). Antes venían fijas en `.env.example`, en los valores
+por defecto de `backend/app/core/config.py` y como respaldo en 19 scripts.
+
+- `.env.example` y `backend/.env.example` traen las contraseñas **vacías**.
+- `generar-credenciales.ps1` genera al azar las que falten: MySQL (root y usuario de la tienda), root de
+  MongoDB, Neo4j, los usuarios de servicio de Redis, MongoDB y Elasticsearch, y el `SECRET_KEY` con que el
+  backend firma las sesiones.
+- **Instalaciones existentes**: sus volúmenes ya se crearon con las contraseñas de antes, así que el script
+  las **adopta** (primero de `backend/.env`, si no del contenedor ya creado) y nunca las cambia. Solo una
+  instalación nueva recibe contraseñas nuevas.
+- `config.py` no tiene contraseñas por defecto; sin `SECRET_KEY` (al menos 32 caracteres) el backend no arranca.
+- Evidencia en vivo: `backend/scripts/verificar_permisos.py` → [evidencia/permisos.md](evidencia/permisos.md).
+  La tabla generada se revisó contra todas las contraseñas del `.env`: no contiene ninguna.

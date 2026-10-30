@@ -149,11 +149,11 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Frontend:     http://localhost:5173" -ForegroundColor Cyan
 Write-Host "  Backend API:  http://localhost:8000/docs" -ForegroundColor Cyan
-Write-Host "  Adminer:      http://localhost:8080  (server: mysql, user: tiendaya, pass: tiendaya123)" -ForegroundColor Cyan
+Write-Host "  Adminer:      http://localhost:8080  (server: mysql, user: tiendaya; contraseña: MYSQL_PASSWORD en .env)" -ForegroundColor Cyan
 Write-Host "  Mongo Express: http://localhost:8081" -ForegroundColor Cyan
 Write-Host "  Redis Commander: http://localhost:8082" -ForegroundColor Cyan
 Write-Host "  Cassandra CQL: localhost:9042 (cqlsh dentro de tiendaya_cassandra)" -ForegroundColor Cyan
-Write-Host "  Neo4j Browser: http://localhost:7474  (neo4j / tiendaya123)" -ForegroundColor Cyan
+Write-Host "  Neo4j Browser: http://localhost:7474  (usuario neo4j; contraseña: NEO4J_PASSWORD en .env)" -ForegroundColor Cyan
 Write-Host "  Elasticsearch: http://localhost:9200  ·  Elasticvue: http://localhost:8083" -ForegroundColor Cyan
 Write-Host "  Pasarela de pagos simulada: http://127.0.0.1:8001/docs" -ForegroundColor Cyan
 Write-Host "  Servicio de embeddings:     http://127.0.0.1:8002/health" -ForegroundColor Cyan

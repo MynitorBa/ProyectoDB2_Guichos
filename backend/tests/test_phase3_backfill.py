@@ -10,7 +10,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 DB_URL = (
     f"mysql+pymysql://{os.getenv('MYSQL_USER', 'tiendaya')}:"
-    f"{os.getenv('MYSQL_PASSWORD', 'tiendaya123')}@"
+    f"{os.getenv('MYSQL_PASSWORD', '')}@"
     f"{os.getenv('MYSQL_HOST', 'localhost')}:"
     f"{os.getenv('MYSQL_PORT', '3306')}/"
     f"{os.getenv('MYSQL_DB', 'tiendaya')}?charset=utf8mb4"

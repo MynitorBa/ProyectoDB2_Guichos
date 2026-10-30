@@ -11,7 +11,7 @@ from app.core.time import utc_now
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin')
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/tiendaya')
 MONGO_DB  = os.getenv('MONGO_DB', 'tiendaya')
 
 

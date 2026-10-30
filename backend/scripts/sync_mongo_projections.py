@@ -123,14 +123,14 @@ def main() -> int:
         port=int(os.getenv('MYSQL_PORT', 3306)),
         db=os.getenv('MYSQL_DB', 'tiendaya'),
         user=os.getenv('MYSQL_USER', 'tiendaya'),
-        password=os.getenv('MYSQL_PASSWORD', 'tiendaya123'),
+        password=os.getenv('MYSQL_PASSWORD', ''),
         charset='utf8mb4',
         cursorclass=pymysql.cursors.DictCursor,
     )
     client = MongoClient(
         os.getenv(
             'MONGO_URI',
-            'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin',
+            'mongodb://localhost:27017/tiendaya',
         ),
         serverSelectionTimeoutMS=5000,
     )

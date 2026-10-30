@@ -14,7 +14,7 @@ MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
 MYSQL_PORT = int(os.getenv('MYSQL_PORT', 3306))
 MYSQL_DB = os.getenv('MYSQL_DB', 'tiendaya')
 MYSQL_USER = os.getenv('MYSQL_USER', 'tiendaya')
-MYSQL_PASS = os.getenv('MYSQL_PASSWORD', 'tiendaya123')
+MYSQL_PASS = os.getenv('MYSQL_PASSWORD', '')
 
 
 ORPHAN_QUERIES = {

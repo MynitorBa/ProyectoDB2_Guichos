@@ -30,8 +30,8 @@ MYSQL_HOST     = os.getenv('MYSQL_HOST', 'localhost')
 MYSQL_PORT     = int(os.getenv('MYSQL_PORT', 3306))
 MYSQL_DB       = os.getenv('MYSQL_DB', 'tiendaya')
 MYSQL_USER     = os.getenv('MYSQL_USER', 'tiendaya')
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'tiendaya123')
-MONGO_URI      = os.getenv('MONGO_URI', 'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin')
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
+MONGO_URI      = os.getenv('MONGO_URI', 'mongodb://localhost:27017/tiendaya')
 MONGO_DB       = os.getenv('MONGO_DB', 'tiendaya')
 
 # Mapa de categoría slug → función que extrae atributos del campo descripcion

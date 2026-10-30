@@ -33,7 +33,8 @@ try {
         $envRaiz[$nombre.Trim()] = $valor.Trim()
     }
     $rootUser = if ($envRaiz['MONGO_ROOT_USER']) { $envRaiz['MONGO_ROOT_USER'] } else { 'admin' }
-    $rootPass = if ($envRaiz['MONGO_ROOT_PASSWORD']) { $envRaiz['MONGO_ROOT_PASSWORD'] } else { 'adminpassword' }
+    $rootPass = $envRaiz['MONGO_ROOT_PASSWORD']
+    if (-not $rootPass) { throw 'Falta MONGO_ROOT_PASSWORD en .env.' }
     docker exec tiendaya_mongo mongosh --quiet -u $rootUser -p $rootPass --authenticationDatabase admin `
         /docker-entrypoint-initdb.d/03_usuarios.js
     if ($LASTEXITCODE -ne 0) { throw 'No se pudieron crear los usuarios de MongoDB.' }

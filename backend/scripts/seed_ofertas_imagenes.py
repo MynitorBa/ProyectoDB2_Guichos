@@ -24,12 +24,12 @@ MYSQL_CFG = dict(
     port=int(os.getenv('MYSQL_PORT', 3307)),
     database=os.getenv('MYSQL_DB', 'tiendaya'),
     user=os.getenv('MYSQL_USER', 'tiendaya'),
-    password=os.getenv('MYSQL_PASSWORD', 'tiendaya123'),
+    password=os.getenv('MYSQL_PASSWORD', ''),
     charset='utf8mb4',
     cursorclass=pymysql.cursors.DictCursor,
     autocommit=False,
 )
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin')
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/tiendaya')
 MONGO_DB  = os.getenv('MONGO_DB', 'tiendaya')
 
 # Vendedor secundario por vendedor principal

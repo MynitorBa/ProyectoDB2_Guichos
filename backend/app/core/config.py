@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,7 +11,7 @@ class Settings(BaseSettings):
     MYSQL_PORT: int = 3306
     MYSQL_DB: str = 'tiendaya'
     MYSQL_USER: str = 'tiendaya'
-    MYSQL_PASSWORD: str = 'tiendaya123'
+    MYSQL_PASSWORD: str = ''
 
     @property
     def mysql_url(self) -> str:
@@ -21,11 +22,12 @@ class Settings(BaseSettings):
         )
 
     # MongoDB
-    MONGO_URI: str = 'mongodb://admin:adminpassword@localhost:27017/tiendaya?authSource=admin'
+    MONGO_URI: str = 'mongodb://localhost:27017/tiendaya'
     MONGO_DB: str = 'tiendaya'
 
     # JWT
-    SECRET_KEY: str = 'CAMBIA_ESTO_EN_PRODUCCION_clave_secreta_muy_larga'
+    # Sin valor por defecto: sin SECRET_KEY el backend no arranca (firma las sesiones).
+    SECRET_KEY: str = Field(min_length=32)
     ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
@@ -53,7 +55,7 @@ class Settings(BaseSettings):
     # Neo4j (grafo de reseñas y detección de fraude)
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "tiendaya123"
+    NEO4J_PASSWORD: str = ''
 
     # Análisis de fraude. El worker independiente permanece apagado hasta que
     # la migración y las pruebas se validen en cada entorno.
