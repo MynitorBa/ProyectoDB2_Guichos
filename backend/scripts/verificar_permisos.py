@@ -7,11 +7,13 @@ motor si el usuario tiene ese privilegio.
 
 Uso (desde backend/, con los contenedores arriba y scripts/configurar-acceso.ps1 ya ejecutado):
     venv/Scripts/python.exe scripts/verificar_permisos.py
+    venv/Scripts/python.exe scripts/verificar_permisos.py --demo   # motores DEMO (presentación)
 Sale con código 1 si algún resultado no es el esperado.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -28,10 +30,21 @@ from pymongo.errors import OperationFailure
 RAIZ = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ / 'backend'))
 
-from app.core.config import settings  # noqa: E402
+# Con --demo, los motores y las contraseñas son los del entorno DEMO (backend/.env.demo): sus
+# variables DEMO_X_PASSWORD hacen el papel de las X_PASSWORD del .env raíz.
+DEMO = '--demo' in sys.argv
+if DEMO:
+    _demo = {k: v for k, v in dotenv_values(RAIZ / 'backend' / '.env.demo').items() if v is not None}
+    if _demo.get('TIENDAYA_DEMO') != 'true':
+        raise SystemExit('backend/.env.demo no identifica el entorno DEMO.')
+    os.environ.update(_demo)  # antes de importar settings
+    ENV = {k[len('DEMO_'):]: v for k, v in _demo.items() if k.startswith('DEMO_')}
+    SALIDA = RAIZ / 'docs' / 'evidencia' / 'permisos-demo.md'
+else:
+    ENV = dotenv_values(RAIZ / '.env')
+    SALIDA = RAIZ / 'docs' / 'evidencia' / 'permisos.md'
 
-ENV = dotenv_values(RAIZ / '.env')
-SALIDA = RAIZ / 'docs' / 'evidencia' / 'permisos.md'
+from app.core.config import settings  # noqa: E402
 PERMITIDO, DENEGADO = 'permitido', 'denegado'
 
 
@@ -117,8 +130,10 @@ def pruebas_mongo() -> list[Prueba]:
         ('(sin credenciales)', 'find en productos', DENEGADO, lambda: cliente(None, None).productos.find_one()),
         ('tiendaya_api', 'find con contraseña incorrecta', DENEGADO, lambda: cliente('tiendaya_api', 'incorrecta').productos.find_one()),
         ('tiendaya_api', 'find en productos', PERMITIDO, lambda: api.productos.find_one()),
-        ('tiendaya_api', 'insert y delete en producto_eventos', PERMITIDO,
-         lambda: (api.producto_eventos.insert_one({'_id': marca, 'tipo': 'verificar_permisos'}),
+        # Sobre un _id que no existe: exige los privilegios sin tocar datos ni depender del
+        # validador de esquema que tiene la colección en algunos entornos (DEMO).
+        ('tiendaya_api', 'update y delete en producto_eventos (sin tocar datos)', PERMITIDO,
+         lambda: (api.producto_eventos.update_one({'_id': marca}, {'$set': {'verificado': True}}),
                   api.producto_eventos.delete_one({'_id': marca}))),
         ('tiendaya_api', 'no tiene dropCollection ni dropDatabase (connectionStatus)', PERMITIDO, acciones_api),
         ('tiendaya_api', 'find en migraciones (fuera de su rol)', DENEGADO, lambda: api.migraciones.find_one()),
@@ -181,7 +196,7 @@ def main() -> None:
     pruebas = pruebas_redis() + pruebas_mongo() + pruebas_elasticsearch()
     fallidas = [p for p in pruebas if not p.ok]
     lineas = [
-        '# Evidencia del control de acceso',
+        '# Evidencia del control de acceso' + (' — entorno DEMO de la presentación' if DEMO else ''),
         '',
         f'Generado por `backend/scripts/verificar_permisos.py` el {time.strftime("%Y-%m-%d %H:%M")} contra el '
         'sistema en marcha. Cada fila es un intento real con el usuario indicado. Lo que borraría datos (borrar '

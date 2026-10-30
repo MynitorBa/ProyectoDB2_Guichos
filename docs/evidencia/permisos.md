@@ -1,6 +1,6 @@
 # Evidencia del control de acceso
 
-Generado por `backend/scripts/verificar_permisos.py` el 2026-10-30 15:15 contra el sistema en marcha. Cada fila es un intento real con el usuario indicado. Lo que borraría datos (borrar el índice o colecciones de la tienda) no se ejecuta: se pregunta al motor si el usuario tendría ese privilegio.
+Generado por `backend/scripts/verificar_permisos.py` el 2026-10-30 17:44 contra el sistema en marcha. Cada fila es un intento real con el usuario indicado. Lo que borraría datos (borrar el índice o colecciones de la tienda) no se ejecuta: se pregunta al motor si el usuario tendría ese privilegio.
 
 **Resultado: 40 de 40 intentos dieron lo esperado.**
 
@@ -24,14 +24,14 @@ Generado por `backend/scripts/verificar_permisos.py` el 2026-10-30 15:15 contra 
 | MongoDB | `(sin credenciales)` | find en productos | denegado | denegado | Command find requires authentication, full error: {'ok': 0.0, 'errmsg': 'Command find requires authentication' |
 | MongoDB | `tiendaya_api` | find con contraseña incorrecta | denegado | denegado | Authentication failed., full error: {'ok': 0.0, 'errmsg': 'Authentication failed.', 'code': 18, 'codeName': 'A |
 | MongoDB | `tiendaya_api` | find en productos | permitido | permitido | — |
-| MongoDB | `tiendaya_api` | insert y delete en producto_eventos | permitido | permitido | — |
+| MongoDB | `tiendaya_api` | update y delete en producto_eventos (sin tocar datos) | permitido | permitido | — |
 | MongoDB | `tiendaya_api` | no tiene dropCollection ni dropDatabase (connectionStatus) | permitido | permitido | — |
 | MongoDB | `tiendaya_api` | find en migraciones (fuera de su rol) | denegado | denegado | not authorized on tiendaya to execute command { find: "migraciones", filter: {}, limit: 1, singleBatch: true,  |
-| MongoDB | `tiendaya_api` | insert en una colección nueva | denegado | denegado | not authorized on tiendaya to execute command { insert: "coleccion_ajena", ordered: true, lsid: { id: UUID("14 |
+| MongoDB | `tiendaya_api` | insert en una colección nueva | denegado | denegado | not authorized on tiendaya to execute command { insert: "coleccion_ajena", ordered: true, lsid: { id: UUID("6c |
 | MongoDB | `tiendaya_api` | find en admin.system.users | denegado | denegado | not authorized on admin to execute command { find: "system.users", filter: {}, limit: 1, singleBatch: true, ls |
 | MongoDB | `tiendaya_api` | createUser intruso con rol root | denegado | denegado | not authorized on tiendaya to execute command { createUser: "intruso", pwd: "xxx", roles: [ "root" ], lsid: {  |
 | MongoDB | `tiendaya_lectura` | count en productos | permitido | permitido | — |
-| MongoDB | `tiendaya_lectura` | insert en productos | denegado | denegado | not authorized on tiendaya to execute command { insert: "productos", ordered: true, lsid: { id: UUID("abd34546 |
+| MongoDB | `tiendaya_lectura` | insert en productos | denegado | denegado | not authorized on tiendaya to execute command { insert: "productos", ordered: true, lsid: { id: UUID("5be9c9dd |
 | MongoDB | `tiendaya_admin` | crear y borrar una colección de prueba en tiendaya | permitido | permitido | — |
 | MongoDB | `tiendaya_admin` | find en admin.system.users | denegado | denegado | not authorized on admin to execute command { find: "system.users", filter: {}, limit: 1, singleBatch: true, ls |
 | Elasticsearch | `(sin credenciales)` | count en productos | denegado | denegado | AuthenticationException(401, 'security_exception', 'missing authentication credentials for REST request [/prod |

@@ -139,6 +139,8 @@ cd backend
 
 # Evidencia del control de acceso: 40 intentos permitidos y prohibidos → docs\evidencia\permisos.md
 .\venv\Scripts\python.exe scripts\verificar_permisos.py
+# Lo mismo sobre los motores DEMO de la presentación → docs\evidencia\permisos-demo.md
+.\venv\Scripts\python.exe scripts\verificar_permisos.py --demo
 
 # Calidad de la búsqueda por vectores y benchmark de escala (100k / 1M; este último con el indexador)
 .\venv\Scripts\python.exe scripts\evaluar_vectores.py
