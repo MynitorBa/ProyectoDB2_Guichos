@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
@@ -376,6 +376,8 @@ export default function CatalogPage() {
   const products = data?.items || []
   // Sin coincidencias el backend devuelve productos populares: no son resultados de la búsqueda.
   const sinCoincidencias = Boolean(data?.sin_coincidencias)
+  // Búsqueda híbrida: después de las coincidencias de texto vienen las relacionadas por significado.
+  const indiceRelacionados = sinCoincidencias ? -1 : products.findIndex((p) => p.coincidencia === 'semantica')
   const totalEncontrados = sinCoincidencias ? 0 : data?.total
   const totalPages = data?.total_pages || 1
   const page = filtros.page
@@ -569,9 +571,10 @@ export default function CatalogPage() {
             <span>
               No encontramos resultados para{' '}
               <span className="font-semibold text-[var(--color-text-primary)]">«{data.consulta}»</span>.
-              {data.alternativa === 'populares_con_filtros'
-                ? ' Te mostramos productos populares con los filtros que elegiste.'
-                : ' Te mostramos productos populares que podrían interesarte.'}
+              {{
+                semanticos: ' Te mostramos productos relacionados por su significado.',
+                populares_con_filtros: ' Te mostramos productos populares con los filtros que elegiste.',
+              }[data.alternativa] || ' Te mostramos productos populares que podrían interesarte.'}
             </span>
           </div>
         )}
@@ -642,14 +645,24 @@ export default function CatalogPage() {
             ) : (
               <div key={`${searchParams.toString()}`} className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-5">
                 {products.map((product, i) => (
-                  <motion.div
-                    key={product._id}
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, ease, delay: Math.min(i * 0.05, 0.35) }}
-                  >
-                    <ProductCard product={product} />
-                  </motion.div>
+                  <Fragment key={product._id}>
+                    {i === indiceRelacionados && (
+                      <div className="col-span-full flex items-center gap-3 pt-2">
+                        <Sparkles size={15} className="text-[#29B6F6] shrink-0" />
+                        <span className="font-sans text-sm font-semibold text-[var(--color-text-secondary)]">
+                          {i === 0 ? 'Relacionados con tu búsqueda' : 'También relacionados con tu búsqueda'}
+                        </span>
+                        <span className="h-px flex-1 bg-[var(--color-border)]" />
+                      </div>
+                    )}
+                    <motion.div
+                      initial={{ opacity: 0, y: 18 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.45, ease, delay: Math.min(i * 0.05, 0.35) }}
+                    >
+                      <ProductCard product={product} />
+                    </motion.div>
+                  </Fragment>
                 ))}
               </div>
             )}

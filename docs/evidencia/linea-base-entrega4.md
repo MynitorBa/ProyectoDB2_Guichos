@@ -31,3 +31,34 @@ palabras con la consulta (por ejemplo, «herramienta para hacer agujeros en la p
 Conclusión: el modelo será **configurable**. La muestra es pequeña; la elección final se toma con la
 evaluación sobre el catálogo real (fase 7). Cambiarlo después solo exige reindexar con un índice nuevo y
 mover el alias, sin cortar el servicio.
+
+## Búsqueda híbrida: umbral y latencia (fase 4)
+
+Similitud coseno de la consulta con su mejor producto (modelo mpnet, índice v2 con `int8_hnsw`):
+
+| Consulta | Mejores resultados (similitud) |
+|---|---|
+| algo para escuchar música sin cables | AirPods 0.56, Audífonos Sony 0.54, Bocina JBL 0.41 |
+| zapatos de fútbol | Tenis Nike 0.65, Zapato Oxford 0.64, Balón Nike 0.54 |
+| samsung | Galaxy A54 0.62, Redmi Note 0.53, Motorola Edge 0.53 |
+| teléfono con buena cámara | Galaxy A54 0.47, Motorola Edge 0.46 |
+| hefkjdshafh | 0.33 como máximo |
+| xyz | 0.41 como máximo |
+| tractor agrícola (no hay en el catálogo) | 0.29 como máximo |
+
+Las consultas sin sentido o sin productos relacionados no pasan de **0.41**; las útiles quedan entre
+0.46 y 0.77. Se fijó el umbral en **0.45** (`UMBRAL_SEMANTICO`). Todavía pasan resultados dudosos
+cerca del umbral (por ejemplo, una silla ergonómica con 0.50 para «portatil liviana»); el umbral se
+revisa con el conjunto de evaluación de la fase 7.
+
+Latencia de `search_service.buscar` (catálogo de 69 productos, una sola máquina):
+
+| Caso | Tiempo |
+|---|---|
+| Solo texto | 22–31 ms |
+| Híbrida, vector de la consulta ya en Redis | 23–68 ms |
+| Calcular el vector de una consulta nueva (modelo en CPU) | 170–230 ms, una sola vez por consulta |
+| Híbrida con resaltado sobre la consulta kNN (antes de `highlight_query`) | 188 ms dentro de Elasticsearch |
+| Híbrida con `highlight_query` solo de texto | 44 ms dentro de Elasticsearch |
+
+El resaltado intentaba usar también la consulta kNN y era el costo dominante; se limitó al texto.

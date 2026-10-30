@@ -11,12 +11,28 @@ Reparto de responsabilidades:
   índice, que puede ir unos instantes por detrás (consistencia eventual).
 - **Si Elasticsearch no responde**, la búsqueda continúa sobre MongoDB con la
   coincidencia exacta anterior y la respuesta lo indica con ``degradado``.
+
+Búsqueda híbrida (Entrega 4): con orden por relevancia, el texto buscado
+también se convierte en vector y se combina una búsqueda kNN con la de texto.
+
+- Las **coincidencias de texto van siempre primero** (reciben una base fija de
+  puntaje); el vector solo cambia su orden entre ellas según el significado.
+- Después se agregan productos **relacionados por significado** que no
+  contienen las palabras (similitud ≥ ``UMBRAL_SEMANTICO``), marcados con
+  ``coincidencia: 'semantica'``.
+- Si el texto no coincide con nada, primero se muestran resultados por
+  significado (``alternativa: 'semanticos'``) y solo si tampoco hay, populares.
+- Si el servicio de embeddings no responde, la búsqueda es solo de texto
+  (``semantica: false``); el vector de cada consulta se guarda en Redis.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
+import time
 import unicodedata
 from dataclasses import dataclass, field, replace
 
@@ -32,6 +48,8 @@ from app.core.config import settings
 from app.models.categoria import Categoria
 from app.services import catalog_service
 from app.services import catalogo_respaldo_service as catalogo_respaldo
+from app.services import embeddings_client
+from app.services import search_index_service
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +62,19 @@ MAX_ATRIBUTOS_FACETA = 8
 # Errores tolerados por palabra: 0 hasta 4 letras, 1 de 5 a 7, 2 desde 8.
 FUZZINESS = 'AUTO:5,8'
 ERRORES_MOTOR = (TransportError, ApiError)
+
+# Búsqueda semántica. El umbral se midió con el modelo multilingüe (mpnet):
+# las consultas sin sentido no pasan de 0.41 y las útiles quedan entre 0.46 y
+# 0.77 (docs/evidencia/linea-base-entrega4.md).
+UMBRAL_SEMANTICO = 0.45
+CANDIDATOS_SEMANTICOS = 50
+# Puntaje fijo que suma toda coincidencia de texto: las relacionadas solo por
+# significado (como mucho ``PESO_SEMANTICO``) nunca quedan antes que ellas.
+BASE_TEXTO = 1000.0
+PESO_SEMANTICO = 40.0
+MIN_LARGO_SEMANTICO = 3
+CACHE_VECTOR_CONSULTA_S = 24 * 3600
+_vector_disponible: dict[str, tuple[float, bool]] = {}
 
 
 def _consultar(es: Elasticsearch, **argumentos) -> dict:
@@ -242,29 +273,53 @@ def _orden(orden: str) -> list:
     }[orden]
 
 
-def construir_consulta(p: ParametrosBusqueda) -> dict:
-    """Cuerpo completo de la búsqueda; separado para probarlo y medirlo."""
+def _con_popularidad(consulta: dict) -> dict:
+    """La popularidad desempata entre productos igual de relevantes."""
+    return {'function_score': {
+        'query': consulta,
+        'functions': [
+            {'field_value_factor': {'field': 'ventas_totales', 'factor': 0.5, 'modifier': 'log2p', 'missing': 0}},
+            {'field_value_factor': {'field': 'rating_promedio', 'modifier': 'ln2p', 'missing': 0}},
+            {'filter': {'term': {'tiene_stock': True}}, 'weight': 1},
+        ],
+        'score_mode': 'sum',
+        'boost_mode': 'multiply',
+    }}
+
+
+def construir_consulta(
+    p: ParametrosBusqueda, vector: list[float] | None = None, *, solo_vector: bool = False,
+) -> dict:
+    """Cuerpo completo de la búsqueda; separado para probarlo y medirlo.
+
+    Con ``vector`` la búsqueda es híbrida (texto + kNN); con ``solo_vector``
+    se ignora el texto y solo cuenta el significado.
+    """
     filtros = filtros_posteriores(p)
     alcance = [{'term': {'estado': 'activo'}}]
     if p.vendedor_id is not None:
         # El alcance de tienda no es una faceta: también limita los conteos.
         alcance.append({'term': {'vendedor_ids': p.vendedor_id}})
-    base = {'bool': {
-        'filter': alcance,
-        'must': [_consulta_texto(p.texto)] if p.texto else [],
-    }}
+    texto = _consulta_texto(p.texto) if p.texto and not solo_vector else None
+    if vector is None:
+        consulta = _con_popularidad({'bool': {'filter': alcance, 'must': [texto] if texto else []}})
+    else:
+        # El alcance va también dentro del kNN: así se buscan vecinos solo entre
+        # los productos permitidos, no se filtran después.
+        knn = {'knn': {
+            'field': 'vector', 'query_vector': vector, 'num_candidates': CANDIDATOS_SEMANTICOS,
+            'similarity': UMBRAL_SEMANTICO, 'filter': alcance, 'boost': PESO_SEMANTICO,
+        }}
+        should = [knn]
+        if texto:
+            should = [
+                _con_popularidad({'bool': {'filter': alcance, 'must': [texto]}}),
+                {'constant_score': {'filter': texto, 'boost': BASE_TEXTO}},
+                knn,
+            ]
+        consulta = {'bool': {'filter': alcance, 'should': should, 'minimum_should_match': 1}}
     cuerpo = {
-        'query': {'function_score': {
-            'query': base,
-            # La popularidad desempata entre productos igual de relevantes.
-            'functions': [
-                {'field_value_factor': {'field': 'ventas_totales', 'factor': 0.5, 'modifier': 'log2p', 'missing': 0}},
-                {'field_value_factor': {'field': 'rating_promedio', 'modifier': 'ln2p', 'missing': 0}},
-                {'filter': {'term': {'tiene_stock': True}}, 'weight': 1},
-            ],
-            'score_mode': 'sum',
-            'boost_mode': 'multiply',
-        }},
+        'query': consulta,
         'aggs': _agregaciones(filtros, p),
         'sort': _orden(p.orden_efectivo),
         'from': (p.page - 1) * p.page_size,
@@ -274,7 +329,14 @@ def construir_consulta(p: ParametrosBusqueda) -> dict:
     }
     if filtros:
         cuerpo['post_filter'] = {'bool': {'filter': list(filtros.values())}}
-    if p.texto:
+    if vector is not None:
+        cuerpo['track_scores'] = True
+        if texto:
+            # Cuántos resultados (con los filtros elegidos) contienen el texto.
+            cuerpo['aggs']['coincidencias_texto'] = {
+                'filter': {'bool': {'filter': [texto, *filtros.values()]}},
+            }
+    if texto:
         cuerpo['highlight'] = {
             'pre_tags': ['<mark>'], 'post_tags': ['</mark>'], 'encoder': 'html',
             'fields': {
@@ -282,6 +344,9 @@ def construir_consulta(p: ParametrosBusqueda) -> dict:
                 'descripcion': {'fragment_size': 120, 'number_of_fragments': 1},
             },
         }
+        if vector is not None:
+            # Se resalta solo con el texto: resaltar con la consulta kNN es lento.
+            cuerpo['highlight']['highlight_query'] = texto
         cuerpo['suggest'] = {
             'text': p.texto,
             'correccion': {'phrase': {
@@ -303,6 +368,54 @@ def construir_consulta(p: ParametrosBusqueda) -> dict:
             }},
         }
     return cuerpo
+
+
+def _vector_habilitado(es: Elasticsearch) -> bool:
+    """True si el índice vigente tiene vectores (un índice v1 no; DEMO sin migrar).
+
+    Se recuerda un minuto para no consultar el alias en cada búsqueda.
+    """
+    ahora = time.monotonic()
+    guardado = _vector_disponible.get(settings.ES_INDEX_ALIAS)
+    if guardado and ahora - guardado[0] < 60:
+        return guardado[1]
+    try:
+        habilitado = search_index_service.indice_tiene_vector(es)
+    except ERRORES_MOTOR:
+        return False
+    _vector_disponible[settings.ES_INDEX_ALIAS] = (ahora, habilitado)
+    return habilitado
+
+
+def vector_consulta(texto: str, redis_db=None) -> list[float] | None:
+    """El vector del texto buscado; ``None`` si el servicio de embeddings no responde.
+
+    Las mismas búsquedas se repiten mucho: el vector se guarda un día en Redis
+    y la segunda vez no se llama al modelo.
+    """
+    # Las tildes se conservan: cambian el vector («portátil» ≠ «portatil»).
+    consulta = ' '.join((texto or '').lower().split())
+    if len(consulta) < MIN_LARGO_SEMANTICO or not salud.disponible('embeddings'):
+        return None
+    clave = 'vector_consulta:' + hashlib.sha1(
+        f'{settings.EMBEDDINGS_MODEL}\n{consulta}'.encode('utf-8')).hexdigest()
+    if redis_db is not None and salud.disponible('redis'):
+        try:
+            guardado = redis_db.get(clave)
+            if guardado:
+                return json.loads(guardado)
+        except redis_lib.RedisError as exc:
+            salud.registrar_falla('redis', exc)
+            redis_db = None
+    vectores = embeddings_client.generar([consulta])
+    if not vectores:
+        return None
+    if redis_db is not None:
+        try:
+            redis_db.set(clave, json.dumps(vectores[0]), ex=CACHE_VECTOR_CONSULTA_S)
+        except redis_lib.RedisError as exc:
+            salud.registrar_falla('redis', exc)
+    return vectores[0]
 
 
 def como_argumentos(cuerpo: dict) -> dict:
@@ -447,7 +560,10 @@ def _hidratar(
     return items
 
 
-def _armar_respuesta(respuesta: dict, p: ParametrosBusqueda, mysql_db: Session, mongo: Database, redis_db) -> dict:
+def _armar_respuesta(
+    respuesta: dict, p: ParametrosBusqueda, mysql_db: Session, mongo: Database, redis_db,
+    *, semantica: bool = False, solo_vector: bool = False,
+) -> dict:
     hits = respuesta['hits']['hits']
     ids = [hit['_id'] for hit in hits]
     resaltados = {
@@ -456,6 +572,14 @@ def _armar_respuesta(respuesta: dict, p: ParametrosBusqueda, mysql_db: Session, 
     }
     total = respuesta['hits']['total']['value']
     items = _hidratar(ids, resaltados, mysql_db, mongo, redis_db, p.vendedor_id)
+    if semantica:
+        # Solo las coincidencias de texto superan la base fija de puntaje.
+        tipos = {
+            hit['_id']: 'texto' if not solo_vector and (hit.get('_score') or 0) >= BASE_TEXTO else 'semantica'
+            for hit in hits
+        }
+        for item in items:
+            item['coincidencia'] = tipos.get(item['_id'], 'texto')
     return {
         'items': items,
         'total': total,
@@ -470,6 +594,7 @@ def _armar_respuesta(respuesta: dict, p: ParametrosBusqueda, mysql_db: Session, 
         ),
         'degradado': False,
         'motor': 'elasticsearch',
+        'semantica': semantica,
         'tiempo_ms': respuesta.get('took'),
         'sin_coincidencias': False,
     }
@@ -521,6 +646,28 @@ def _alternativa_sin_coincidencias(
     return None
 
 
+def _alternativa_semantica(
+    es: Elasticsearch, mysql_db: Session, mongo: Database, p: ParametrosBusqueda, redis_db,
+    vector: list[float] | None,
+) -> dict | None:
+    """Productos relacionados por significado cuando ninguno contiene el texto.
+
+    Respeta los filtros y el orden elegidos. ``None`` si tampoco hay.
+    """
+    if vector is None:
+        return None
+    try:
+        respuesta = _consultar(es, **como_argumentos(construir_consulta(p, vector, solo_vector=True)))
+    except ERRORES_MOTOR as exc:
+        logger.warning('No se pudo calcular la alternativa semántica: %s', exc)
+        return None
+    if not respuesta['hits']['total']['value']:
+        return None
+    resultado = _armar_respuesta(respuesta, p, mysql_db, mongo, redis_db, semantica=True, solo_vector=True)
+    resultado['alternativa'] = 'semanticos'
+    return resultado
+
+
 def buscar(
     es: Elasticsearch,
     mysql_db: Session,
@@ -528,18 +675,37 @@ def buscar(
     p: ParametrosBusqueda,
     redis_db=None,
 ) -> dict:
+    # Híbrida solo con orden por relevancia: ordenando por precio, un producto
+    # que solo «se parece» quedaría mezclado entre las coincidencias.
+    vector = None
+    if p.texto and p.orden_efectivo == 'relevancia' and _vector_habilitado(es):
+        vector = vector_consulta(p.texto, redis_db)
     try:
-        respuesta = _consultar(es, **como_argumentos(construir_consulta(p)))
+        respuesta = _consultar(es, **como_argumentos(construir_consulta(p, vector)))
     except ERRORES_MOTOR as exc:
         logger.warning('Elasticsearch no disponible; búsqueda degradada a MongoDB: %s', exc)
         return buscar_en_mongo(mysql_db, mongo, p, redis_db)
 
-    resultado = _armar_respuesta(respuesta, p, mysql_db, mongo, redis_db)
-    if resultado['total'] or not p.texto:
+    resultado = _armar_respuesta(respuesta, p, mysql_db, mongo, redis_db, semantica=vector is not None)
+    coincidencias = (
+        respuesta['aggregations']['coincidencias_texto']['doc_count']
+        if vector is not None and p.texto else resultado['total']
+    )
+    if coincidencias or not p.texto:
         return resultado
-    # El texto no coincide con ningún producto: en lugar de una página vacía se
-    # muestran productos populares, marcados como tales (no son coincidencias).
-    alternativa = _alternativa_sin_coincidencias(es, mysql_db, mongo, p, redis_db)
+    # El texto no coincide con ningún producto: primero se muestran productos
+    # parecidos por significado y, si tampoco hay, populares; ambos marcados
+    # como tales (no son coincidencias).
+    if resultado['total']:
+        # La búsqueda híbrida ya trajo solo relacionados por significado.
+        alternativa = {**resultado, 'alternativa': 'semanticos', 'tiempo_ms': 0}
+    else:
+        if vector is None and p.texto and _vector_habilitado(es):
+            vector = vector_consulta(p.texto, redis_db)
+        alternativa = (
+            _alternativa_semantica(es, mysql_db, mongo, p, redis_db, vector)
+            if resultado['orden'] != 'relevancia' else None
+        ) or _alternativa_sin_coincidencias(es, mysql_db, mongo, p, redis_db)
     if alternativa is None:
         return resultado
     alternativa.update({
