@@ -65,7 +65,7 @@ def test_resaltado_marca_lo_que_coincidio():
     assert item['resaltado']['nombre'] == '<mark>MacBook</mark> Air M2'
 
 
-def test_resaltado_escapa_html_del_catalogo():
+def test_resaltado_escapa_html_del_catalogo(es_indexador):
     """El frontend pinta `resaltado` como HTML: solo debe contener <mark>."""
     from uuid import uuid4
 
@@ -74,7 +74,7 @@ def test_resaltado_escapa_html_del_catalogo():
 
     es = get_es().options(request_timeout=15)
     nombre = f'productos_test_{uuid4().hex[:12]}'
-    indice.crear_indice(es, nombre)
+    indice.crear_indice(es_indexador, nombre)
     try:
         es.index(index=nombre, id='x', refresh=True, document={
             'producto_id': 'x', 'nombre': '<img src=x onerror=alert(1)> Laptop maliciosa',
@@ -84,7 +84,7 @@ def test_resaltado_escapa_html_del_catalogo():
         respuesta = es.search(index=nombre, **como_argumentos(cuerpo))
         resaltado = respuesta['hits']['hits'][0]['highlight']['nombre'][0]
     finally:
-        es.options(ignore_status=404).indices.delete(index=nombre)
+        es_indexador.options(ignore_status=404).indices.delete(index=nombre)
     assert '<img' not in resaltado
     assert '&lt;img' in resaltado
     assert '<mark>Laptop</mark>' in resaltado

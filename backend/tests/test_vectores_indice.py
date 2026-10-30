@@ -74,16 +74,16 @@ def test_sin_servicio_se_indexa_sin_vector_y_la_reconciliacion_lo_completa(es, p
     assert producto not in indice.ids_sin_vector(es)
 
 
-def test_un_indice_sin_campo_vector_sigue_recibiendo_documentos(es):
+def test_un_indice_sin_campo_vector_sigue_recibiendo_documentos(es, es_indexador):
     nombre = 'productos_prueba_sin_vector'
     definicion = indice.cargar_definicion(1)
-    es.indices.create(index=nombre, **definicion)
+    es_indexador.indices.create(index=nombre, **definicion)
     try:
         documentos = {'abc': {'nombre': 'Producto de prueba'}}
         assert indice.adjuntar_vectores(es, documentos, indice=nombre)['calculados'] == 0
         assert 'vector' not in documentos['abc']
     finally:
-        es.indices.delete(index=nombre)
+        es_indexador.indices.delete(index=nombre)
 
 
 def test_el_texto_del_vector_combina_los_campos_del_documento():

@@ -48,7 +48,8 @@ foreach ($archivo in @(@($EnvRaiz, '.env.example'), @($EnvBackend, 'backend\.env
 # Contraseñas que viven en el .env de la raíz (una por usuario de cada componente).
 $secretos = @(
     'REDIS_API_PASSWORD', 'REDIS_LECTURA_PASSWORD', 'REDIS_ADMIN_PASSWORD',
-    'MONGO_API_PASSWORD', 'MONGO_LECTURA_PASSWORD', 'MONGO_ADMIN_PASSWORD'
+    'MONGO_API_PASSWORD', 'MONGO_LECTURA_PASSWORD', 'MONGO_ADMIN_PASSWORD',
+    'ELASTIC_PASSWORD', 'ES_API_PASSWORD', 'ES_INDEXADOR_PASSWORD', 'ES_LECTURA_PASSWORD'
 )
 $creadas = 0
 foreach ($nombre in $secretos) {
@@ -66,6 +67,8 @@ $baseMongo = if (Get-EnvValue $EnvBackend 'MONGO_DB') { Get-EnvValue $EnvBackend
 $usuarioBackend = @{
     'REDIS_USERNAME' = 'tiendaya_api'
     'REDIS_PASSWORD' = (Get-EnvValue $EnvRaiz 'REDIS_API_PASSWORD')
+    'ES_USERNAME'    = 'tiendaya_api'
+    'ES_PASSWORD'    = (Get-EnvValue $EnvRaiz 'ES_API_PASSWORD')
     'MONGO_URI'      = "mongodb://tiendaya_api:$(Get-EnvValue $EnvRaiz 'MONGO_API_PASSWORD')@$servidorMongo/$baseMongo" + "?authSource=$baseMongo"
 }
 foreach ($nombre in $usuarioBackend.Keys) {

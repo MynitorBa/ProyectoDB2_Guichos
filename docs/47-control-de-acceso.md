@@ -92,6 +92,54 @@ propósito las pruebas de permisos; la aplicación no tuvo ninguno.
 `drop` sobre colecciones reales no se intenta en las pruebas: si el rol estuviera mal configurado, borraría
 datos. En su lugar se comprueba que el usuario no tenga esa acción.
 
+## Elasticsearch
+
+Seguridad activada (`xpack.security.enabled`) en el nodo único. Roles y usuarios sin contraseñas en
+`database/elasticsearch/seguridad.json`; `scripts/configurar-acceso.ps1` los crea o actualiza con el
+superusuario `elastic` (cuya contraseña inicial toma Elasticsearch de `ELASTIC_PASSWORD`).
+
+| Usuario | Lo usa | Rol | Puede |
+|---|---|---|---|
+| `tiendaya_api` | Backend | `tiendaya_busqueda` | Sobre `productos*`: buscar y leer, escribir documentos (`write`), ver mappings y alias, estadísticas y mantenimiento (`refresh`, `forcemerge` de la purga de borrados). Del clúster, solo `monitor`. **No** puede crear ni borrar índices, cambiar alias ni ajustes, ni ver otros índices |
+| `tiendaya_indexador` | Instalación, `reindex_search.py --recrear`, benchmark | `tiendaya_indexacion` | Todo sobre `productos*` y `bench_vectores_*`; nada más |
+| `tiendaya_lectura` | Elasticvue (:8083), diagnóstico | `tiendaya_consulta` | Solo leer `productos*` |
+| `elastic` | Configurar roles y usuarios; healthcheck del contenedor | `superuser` | Todo |
+
+**Por qué el backend no crea índices.** Crear un índice nuevo y mover el alias solo ocurre al migrar el mapping
+o reindexar todo (`reindex_search.py --recrear`), que es una tarea de instalación. El botón «Reindexar» del
+panel de administración solo reescribe documentos. Así, un fallo o una intrusión en el backend no puede borrar
+el índice ni apuntar el alias a otro lado. `setup.ps1` corre la instalación con el indexador (solo por variable
+de entorno del proceso); si alguien ejecuta `--recrear` con el usuario del backend, el script lo rechaza y
+explica qué usuario usar.
+
+**Elasticvue** corre en el navegador: su configuración (con la contraseña) la puede ver quien abra :8083. Por
+eso usa el usuario que solo lee.
+
+**Sin TLS en desarrollo.** El nodo es único y la red es local, así que HTTP va sin cifrar
+(`xpack.security.http.ssl.enabled: false`) y las contraseñas viajan en Basic Auth sin cifrar. En producción se
+activaría TLS en HTTP; el resto de la configuración no cambia.
+
+**Validación.** Elasticsearch no tiene registro de auditoría en la licencia básica. Para detectar permisos
+faltantes que el plan B pudiera esconder (si la búsqueda falla, sale de MongoDB), las 397 pruebas del backend
+se corrieron mostrando todas las advertencias del backend: no hubo ningún `security_exception` ni `401` fuera
+de las pruebas de permisos. Las pruebas que crean índices temporales (`productos_test_*`) usan el indexador
+(fixture `es_indexador`).
+
+### Evidencia (`backend/tests/test_permisos_elasticsearch.py`, 14 pruebas)
+
+| Intento | Resultado |
+|---|---|
+| Consultar sin credenciales / con contraseña incorrecta | `401 AuthenticationException` |
+| Backend busca, indexa, edita y borra un documento; lee el mapping y las estadísticas | Permitido |
+| Privilegios del backend sobre el índice (`has_privileges`) | `read`, `write`, `maintenance`: sí. `delete_index`, `create_index`, `manage`, `all`: no |
+| Backend crea un índice, agrega un alias, cambia ajustes del índice | `403 security_exception` |
+| Backend lee `.security-7`, cambia ajustes del clúster, crea un superusuario o lista usuarios | `403 security_exception` |
+| Backend busca en `.security*` (comodín) | 0 resultados en 0 shards: Elasticsearch descarta lo no autorizado |
+| Lectura busca / indexa o borra | Permitido / `403` |
+| Indexador crea y borra `productos_test_*` / crea otro índice o lista usuarios | Permitido / `403` |
+
+Borrar el índice real no se intenta: `has_privileges` confirma que el backend no tiene `delete_index`.
+
 ## Instalación y equipos existentes
 
 `scripts/setup.ps1` llama a `configurar-acceso.ps1` antes de instalar. En un equipo que ya tenía el proyecto,
@@ -104,7 +152,9 @@ después de actualizar el repositorio basta con:
 Ese script, idempotente:
 1. genera las contraseñas que falten en `.env` y `backend\.env` (`generar-credenciales.ps1`);
 2. recrea los contenedores para que las tomen (`docker compose up -d`);
-3. crea o actualiza los usuarios de MongoDB.
+3. crea o actualiza los usuarios de MongoDB;
+4. crea o actualiza los roles y usuarios de Elasticsearch.
 
 Los datos no se pierden (volúmenes de Docker). Sin las contraseñas, Redis no arranca y su registro explica qué
-ejecutar; MongoDB arranca, pero el backend no puede conectarse hasta que existan sus usuarios.
+ejecutar; MongoDB y Elasticsearch arrancan, pero el backend no puede conectarse hasta que existan sus
+usuarios.

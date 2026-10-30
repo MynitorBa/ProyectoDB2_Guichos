@@ -28,6 +28,20 @@ PUERTO_PASARELA = 8091
 URL_PASARELA = f'http://127.0.0.1:{PUERTO_PASARELA}'
 
 
+@pytest.fixture(scope='session')
+def es_indexador():
+    """Cliente con el usuario indexador: crear y borrar índices temporales de prueba.
+
+    El backend (tiendaya_api) no puede crear ni borrar índices (control de acceso).
+    """
+    from dotenv import dotenv_values
+    from elasticsearch import Elasticsearch
+
+    clave = dotenv_values(Path(__file__).resolve().parents[2] / '.env').get('ES_INDEXADOR_PASSWORD')
+    credenciales = ('tiendaya_indexador', clave) if clave else None
+    return Elasticsearch(settings.ES_URL, basic_auth=credenciales, request_timeout=15)
+
+
 @pytest.fixture(autouse=True)
 def circuitos_cerrados():
     """Cada prueba empieza con todos los motores marcados como disponibles.

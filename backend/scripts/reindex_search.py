@@ -30,6 +30,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
+from elasticsearch import AuthorizationException  # noqa: E402
+
 from app.core.config import settings  # noqa: E402
 from app.core.db_elastic import get_es  # noqa: E402
 from app.core.db_mongo import get_mongo_db  # noqa: E402
@@ -85,13 +87,19 @@ def main() -> None:
     es = get_es().options(request_timeout=30)
     mongo = get_mongo_db()
     neo4j = _neo4j_driver()
-    with SessionLocal() as mysql_db:
-        if args.recrear:
-            resumen = recrear(es, mysql_db, mongo, neo4j)
-        elif args.diff:
-            resumen = indice.reconciliar_desfasados(es, mysql_db, mongo, neo4j)
-        else:
-            resumen = sincronizar(es, mysql_db, mongo, neo4j)
+    try:
+        with SessionLocal() as mysql_db:
+            if args.recrear:
+                resumen = recrear(es, mysql_db, mongo, neo4j)
+            elif args.diff:
+                resumen = indice.reconciliar_desfasados(es, mysql_db, mongo, neo4j)
+            else:
+                resumen = sincronizar(es, mysql_db, mongo, neo4j)
+    except AuthorizationException as exc:
+        # Crear el índice nuevo y mover el alias es del indexador, no del backend (control de acceso).
+        sys.exit(f'Sin permiso en Elasticsearch para {settings.ES_USERNAME}: {exc.message}.\n'
+                 'Ejecute con el usuario indexador:\n'
+                 "  $env:ES_USERNAME = 'tiendaya_indexador'; $env:ES_PASSWORD = '<ES_INDEXADOR_PASSWORD del .env raíz>'")
 
     total = es.count(index=settings.ES_INDEX_ALIAS)['count']
     print(f'Índice de búsqueda ({indice.indice_actual(es)}): {resumen} · documentos={total}')

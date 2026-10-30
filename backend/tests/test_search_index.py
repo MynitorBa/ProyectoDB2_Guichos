@@ -31,11 +31,11 @@ def es():
 
 
 @pytest.fixture
-def indice_temporal(es):
+def indice_temporal(es_indexador):
     nombre = f'productos_test_{uuid4().hex[:12]}'
-    indice.crear_indice(es, nombre)
+    indice.crear_indice(es_indexador, nombre)
     yield nombre
-    es.options(ignore_status=404).indices.delete(index=nombre)
+    es_indexador.options(ignore_status=404).indices.delete(index=nombre)
 
 
 @pytest.fixture(scope='module')
@@ -63,14 +63,14 @@ def test_definicion_versionada_no_usa_el_mapping_por_defecto():
     assert {'autocompletar', 'sugeridor', 'orden'} <= set(nombre['fields'])
 
 
-def test_analizadores_quitan_tildes_derivan_y_expanden_sinonimos(es, indice_temporal):
-    assert _tokens(es, indice_temporal, 'es_texto', 'Audífonos') == \
-        _tokens(es, indice_temporal, 'es_texto', 'audifonos')
+def test_analizadores_quitan_tildes_derivan_y_expanden_sinonimos(es_indexador, indice_temporal):
+    assert _tokens(es_indexador, indice_temporal, 'es_texto', 'Audífonos') == \
+        _tokens(es_indexador, indice_temporal, 'es_texto', 'audifonos')
     # Los sinónimos solo se aplican al consultar.
-    busqueda = _tokens(es, indice_temporal, 'es_texto_busqueda', 'telefono')
+    busqueda = _tokens(es_indexador, indice_temporal, 'es_texto_busqueda', 'telefono')
     assert {'celular', 'movil'} <= set(busqueda)
-    assert 'celular' not in _tokens(es, indice_temporal, 'es_texto', 'telefono')
-    assert _tokens(es, indice_temporal, 'autocompletar', 'Sams')[:3] == ['sa', 'sam', 'sams']
+    assert 'celular' not in _tokens(es_indexador, indice_temporal, 'es_texto', 'telefono')
+    assert _tokens(es_indexador, indice_temporal, 'autocompletar', 'Sams')[:3] == ['sa', 'sam', 'sams']
 
 
 def test_mapping_estricto_rechaza_campos_no_declarados(es, indice_temporal):

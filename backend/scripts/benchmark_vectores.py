@@ -19,6 +19,10 @@ El índice de prueba (``bench_vectores_*``) es independiente del de la tienda y
 se borra al terminar salvo ``--conservar``. Resultados en
 docs/evidencia/benchmark/vectores_<n>_<tipo>.json.
 
+Crea y borra índices: necesita el usuario indexador de Elasticsearch (el del backend
+no puede crear índices):
+    $env:ES_USERNAME = 'tiendaya_indexador'; $env:ES_PASSWORD = '<ES_INDEXADOR_PASSWORD del .env raíz>'
+
 Uso (desde backend/):
     venv/Scripts/python.exe scripts/benchmark_vectores.py --n 100000
     venv/Scripts/python.exe scripts/benchmark_vectores.py --n 100000 --tipo hnsw   # sin cuantizar

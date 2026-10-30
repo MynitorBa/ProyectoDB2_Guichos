@@ -158,6 +158,12 @@ $mongoAdminPass = (Get-Content "$Root\.env" | Where-Object { $_ -match '^MONGO_A
 if ($mongoUriBackend -match 'tiendaya_api:' -and $mongoAdminPass) {
     $env:MONGO_URI = $mongoUriBackend -replace 'tiendaya_api:[^@]+@', "tiendaya_admin:$mongoAdminPass@"
 }
+# Igual con Elasticsearch: crear el índice y mover el alias es tarea del indexador.
+$esIndexadorPass = (Get-Content "$Root\.env" | Where-Object { $_ -match '^ES_INDEXADOR_PASSWORD=' } | Select-Object -Last 1) -replace '^ES_INDEXADOR_PASSWORD=', ''
+if ($esIndexadorPass) {
+    $env:ES_USERNAME = 'tiendaya_indexador'
+    $env:ES_PASSWORD = $esIndexadorPass
+}
 
 # ── 4. Migrar o reconocer el esquema instalado ───────────────────────────────
 Write-Host "`n[4/8] Preparando modelo relacional y catálogo..." -ForegroundColor Cyan
@@ -326,7 +332,7 @@ Set-Location $Root
 Write-Host "`n[7/8] Verificando integridad del sistema..." -ForegroundColor Cyan
 Set-Location "$Root\backend"
 # La verificación final usa la configuración real del backend (su propio usuario).
-Remove-Item Env:MONGO_URI -ErrorAction SilentlyContinue
+Remove-Item Env:MONGO_URI, Env:ES_USERNAME, Env:ES_PASSWORD -ErrorAction SilentlyContinue
 & $python scripts\verify_setup.py
 if ($LASTEXITCODE -ne 0) {
     throw 'La verificación final detectó errores; la instalación no está completa.'

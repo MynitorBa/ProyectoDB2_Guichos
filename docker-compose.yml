@@ -169,7 +169,12 @@ services:
     restart: unless-stopped
     environment:
       discovery.type: single-node
-      xpack.security.enabled: "false"
+      # Control de acceso (Entrega final): usuarios y roles en database/elasticsearch/seguridad.json.
+      # Nodo único en desarrollo: sin TLS (la red es local); en producción se activa TLS en HTTP.
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
       xpack.ml.enabled: "false"
       ES_JAVA_OPTS: -Xms512m -Xmx512m
       cluster.name: tiendaya-busqueda
@@ -182,7 +187,7 @@ services:
     volumes:
       - es_data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fs -u \"elastic:$$ELASTIC_PASSWORD\" 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 18
@@ -195,7 +200,9 @@ services:
     ports:
       - "8083:8080"
     environment:
-      ELASTICVUE_CLUSTERS: '[{"name": "TiendaYa", "uri": "http://localhost:9200"}]'
+      # Solo lectura (tiendaya_lectura). Elasticvue corre en el navegador: la contraseña
+      # de este usuario queda visible para quien abra :8083, por eso no puede escribir.
+      ELASTICVUE_CLUSTERS: '[{"name": "TiendaYa", "uri": "http://localhost:9200", "username": "tiendaya_lectura", "password": "${ES_LECTURA_PASSWORD:-}"}]'
     depends_on:
       elasticsearch:
         condition: service_healthy

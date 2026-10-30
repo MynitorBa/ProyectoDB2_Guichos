@@ -1,0 +1,40 @@
+{
+  "_descripcion": "Control de acceso de Elasticsearch (Entrega final). Roles y usuarios sin contraseñas: scripts/configurar-acceso.ps1 los crea o actualiza con el superusuario elastic y toma cada contraseña de la variable indicada en el .env de la raíz.",
+  "roles": {
+    "tiendaya_busqueda": {
+      "_uso": "Backend: busca y mantiene los documentos del catálogo. No crea ni borra índices ni cambia el alias (eso es del indexador).",
+      "cluster": ["monitor"],
+      "indices": [
+        {
+          "names": ["productos*"],
+          "privileges": ["read", "write", "view_index_metadata", "monitor", "maintenance"]
+        }
+      ]
+    },
+    "tiendaya_indexacion": {
+      "_uso": "Instalación, reindexado completo (índice nuevo + cambio de alias) y benchmark de vectores.",
+      "cluster": ["monitor"],
+      "indices": [
+        {
+          "names": ["productos*", "bench_vectores_*"],
+          "privileges": ["all"]
+        }
+      ]
+    },
+    "tiendaya_consulta": {
+      "_uso": "Elasticvue y diagnóstico: solo leer.",
+      "cluster": ["monitor"],
+      "indices": [
+        {
+          "names": ["productos*"],
+          "privileges": ["read", "view_index_metadata", "monitor"]
+        }
+      ]
+    }
+  },
+  "usuarios": {
+    "tiendaya_api": {"roles": ["tiendaya_busqueda"], "variable": "ES_API_PASSWORD"},
+    "tiendaya_indexador": {"roles": ["tiendaya_indexacion"], "variable": "ES_INDEXADOR_PASSWORD"},
+    "tiendaya_lectura": {"roles": ["tiendaya_consulta"], "variable": "ES_LECTURA_PASSWORD"}
+  }
+}

@@ -19,8 +19,10 @@ def get_es() -> Elasticsearch:
         return _client
     with _lock:
         if _client is None:
+            credenciales = (settings.ES_USERNAME, settings.ES_PASSWORD) if settings.ES_USERNAME else None
             _client = Elasticsearch(
                 settings.ES_URL,
+                basic_auth=credenciales,
                 request_timeout=settings.ES_TIMEOUT,
                 retry_on_timeout=False,
                 max_retries=0,

@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     ES_URL: str = 'http://127.0.0.1:9200'
     ES_INDEX_ALIAS: str = 'productos'  # alias estable; apunta a productos_vN
     ES_TIMEOUT: float = 1.5  # segundos; si se excede, la búsqueda usa MongoDB
+    # Usuario de Elasticsearch (database/elasticsearch/seguridad.json); vacío = sin autenticación.
+    ES_USERNAME: str | None = None
+    ES_PASSWORD: str | None = None
 
     # Pasarela de pagos (simulada en payment_simulator/, proceso aparte)
     PAYMENT_GATEWAY_URL: str = 'http://127.0.0.1:8001'
