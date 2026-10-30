@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, Zap } from 'lucide-react'
 import { motion, useInView } from 'motion/react'
-import { getProducts, getCategories } from '../api/products'
+import { getProducts, getCategories, getParaTi } from '../api/products'
+import { useAuth } from '../context/AuthContext'
+import { leerVistos } from '../lib/vistos'
 import { ProductCard } from '../components/product/ProductCard'
 import { ProductCardSkeleton } from '../components/ui/skeleton'
 import { Button } from '../components/ui/button'
@@ -40,6 +42,12 @@ export default function HomePage() {
     queryKey: ['categories'],
     queryFn: () => getCategories().then(r => r.data),
   })
+  const { user } = useAuth()
+  const { data: paraTiData } = useQuery({
+    queryKey: ['para-ti', user?.id],
+    queryFn: () => getParaTi(leerVistos(), 8).then(r => r.data),
+  })
+  const paraTi = paraTiData?.items || []
 
   const products = featuredData?.items || []
   const flashProducts = flashData?.items || []
@@ -158,6 +166,43 @@ export default function HomePage() {
         </section>
       )}
 
+
+      {/* ══════════════════════════════════════════
+          TE PODRÍA INTERESAR — parecidos a lo visto y al carrito (vectores)
+      ══════════════════════════════════════════ */}
+      {paraTi.length > 0 && (
+        <section className="pt-20 lg:pt-28 bg-[var(--color-background)]">
+          <div className="max-w-[1320px] mx-auto px-6 lg:px-12">
+            <Reveal className="mb-12">
+              <p className="font-sans text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-muted)] mb-3">
+                Para ti
+              </p>
+              <h2
+                className="font-display font-bold text-[var(--color-text-primary)] leading-[0.95]"
+                style={{ fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', letterSpacing: '-0.025em' }}
+              >
+                Te podría interesar
+              </h2>
+              <p className="font-sans text-sm text-[var(--color-text-muted)] mt-3">
+                Parecidos a lo que has visto y a lo que tienes en tu carrito.
+              </p>
+            </Reveal>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 lg:gap-5">
+              {paraTi.map((product, i) => (
+                <motion.div
+                  key={product._id}
+                  initial={{ opacity: 0, y: 18 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-20px' }}
+                  transition={{ delay: (i % 4) * 0.07, duration: 0.55, ease }}
+                >
+                  <ProductCard product={product} />
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ══════════════════════════════════════════
           PRODUCTOS DESTACADOS

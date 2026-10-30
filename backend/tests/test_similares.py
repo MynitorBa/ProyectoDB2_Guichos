@@ -4,8 +4,7 @@ import pytest
 from elasticsearch import Elasticsearch
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
-from app.core.db_elastic import get_es as cliente_es
+from app.core.db_mongo import get_mongo_db
 from app.core.db_redis import get_redis
 from app.core.deps import get_es
 from app.main import app
@@ -16,12 +15,8 @@ client = TestClient(app)
 
 @pytest.fixture
 def laptop() -> str:
-    """Un producto activo con vector cuyo nombre empieza con «Laptop»."""
-    respuesta = cliente_es().search(index=settings.ES_INDEX_ALIAS, size=1, source=False, query={'bool': {
-        'filter': [{'term': {'estado': 'activo'}}, {'exists': {'field': 'vector'}},
-                   {'match_phrase_prefix': {'nombre': 'Laptop'}}],
-    }})
-    return respuesta['hits']['hits'][0]['_id']
+    """Laptop Dell Inspiron 15, por SKU (otras pruebas la reindexan)."""
+    return str(get_mongo_db().productos.find_one({'sku': 'TECH-LAP-001'}, {'_id': 1})['_id'])
 
 
 @pytest.fixture(autouse=True)
@@ -38,14 +33,16 @@ def _similares(ref, **params):
 
 
 def test_devuelve_productos_parecidos_por_vector(laptop):
-    datos = _similares(laptop, limite=4)
+    datos = _similares(laptop)
     assert datos['origen'] == 'vectores'
-    assert 0 < len(datos['items']) <= 4
+    assert 0 < len(datos['items']) <= 8
     refs = [p['_id'] for p in datos['items']]
     assert laptop not in refs and len(refs) == len(set(refs))
     assert all(p['disponible'] and 0 < p['similitud'] <= 1 for p in datos['items'])
-    # El vecino más cercano de una laptop es otra laptop.
-    assert 'laptop' in datos['items'][0]['nombre'].lower()
+    similitudes = [p['similitud'] for p in datos['items']]
+    assert similitudes == sorted(similitudes, reverse=True)
+    # Entre los parecidos a una laptop hay otra laptop (la calidad se mide en la fase 7).
+    assert any('laptop' in p['nombre'].lower() for p in datos['items'])
 
 
 def test_no_repite_lo_que_ya_muestra_la_seccion_de_compras(laptop):

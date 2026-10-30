@@ -68,6 +68,8 @@ def test_sin_servicio_se_indexa_sin_vector_y_la_reconciliacion_lo_completa(es, p
     assert producto in indice.ids_sin_vector(es)
     with SessionLocal() as db:
         indice.reconciliar_desfasados(es, db, get_mongo_db())
+    # La reconciliación no refresca: sin esto, el kNN de otras pruebas aún no vería el vector.
+    es.indices.refresh(index=settings.ES_INDEX_ALIAS)
     assert 'vector' in _fuente(es, producto)
     assert producto not in indice.ids_sin_vector(es)
 

@@ -6,12 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
-from app.core.deps import get_es, get_optional_user
+from app.core.deps import get_current_user, get_es, get_optional_user
 from app.models.usuario import Usuario
 from app.models.producto_imagen import ProductoImagen
 from app.services import catalog_service
 from app.services import recommendation_service
-from app.services import similares_service
+from app.services import para_ti_service, similares_service
 
 router = APIRouter(prefix='/products', tags=['Productos'])
 
@@ -48,6 +48,33 @@ def listar_productos(
         solo_flash=solo_flash,
         redis_db=redis_db,
     )
+
+
+@router.get('/para-ti')
+def te_podria_interesar(
+    vistos: str | None = Query(None, description='Productos vistos en este navegador, separados por coma'),
+    limite: int = Query(8, ge=1, le=20),
+    user: Usuario | None = Depends(get_optional_user),
+    db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
+    redis_db=Depends(get_redis),
+    es=Depends(get_es),
+):
+    """«Te podría interesar» del inicio: vecinos por vector del carrito y lo visto."""
+    return para_ti_service.recomendar(
+        mysql_db, db, es, redis_db, usuario_id=user.id if user else None,
+        vistos_cliente=(vistos or '').split(','), limite=limite,
+    )
+
+
+@router.post('/{producto_id}/visto', status_code=204)
+def registrar_visto(
+    producto_id: str,
+    user: Usuario = Depends(get_current_user),
+    redis_db=Depends(get_redis),
+):
+    """Historial de vistos del usuario (Redis); alimenta «Te podría interesar»."""
+    para_ti_service.registrar_visto(redis_db, user.id, producto_id)
 
 
 # Sirve imágenes almacenadas como BLOB en MySQL con caché de 24 horas

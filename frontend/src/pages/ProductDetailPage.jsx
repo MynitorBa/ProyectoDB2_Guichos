@@ -6,7 +6,8 @@ import { motion, useInView } from 'motion/react'
 import { toast } from 'sonner'
 import { EstadoError, esNoEncontrado } from '../components/EstadoError'
 import { mensajeError } from '../lib/errors'
-import { getProduct, getProductRecommendations, getProductSimilares, getActiveFlashSales, reserveFlashSale } from '../api/products'
+import { getProduct, getProductRecommendations, getProductSimilares, getActiveFlashSales, reserveFlashSale, registrarVisto } from '../api/products'
+import { agregarVisto } from '../lib/vistos'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { ProductImage } from '../components/product/ProductImage'
@@ -103,6 +104,14 @@ export default function ProductDetailPage() {
   const allOfferIds = new Set((data?.ofertas || []).map(o => o.oferta_id))
   const flashRows = allFlashRows.filter(f => allOfferIds.has(f.oferta_id))
   const [clock, setClock] = useState(Date.now())
+
+  // Historial para «Te podría interesar»; si falla, solo se pierde la personalización.
+  const productoCargado = data?._id
+  useEffect(() => {
+    if (!productoCargado) return
+    agregarVisto(productoCargado)
+    if (user) registrarVisto(productoCargado).catch(() => {})
+  }, [productoCargado, user?.id])
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000)
     return () => clearInterval(timer)
