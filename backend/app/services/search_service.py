@@ -15,11 +15,14 @@ Reparto de responsabilidades:
 Búsqueda híbrida (Entrega 4): con orden por relevancia, el texto buscado
 también se convierte en vector y se combina una búsqueda kNN con la de texto.
 
-- Las **coincidencias de texto van siempre primero** (reciben una base fija de
-  puntaje); el vector solo cambia su orden entre ellas según el significado.
-- Después se agregan productos **relacionados por significado** que no
-  contienen las palabras (similitud ≥ ``UMBRAL_SEMANTICO``), marcados con
-  ``coincidencia: 'semantica'``.
+- Las **coincidencias de texto estrictas van siempre primero** (reciben una
+  base fija de puntaje); el vector solo cambia su orden entre ellas según el
+  significado. Estrictas: todas las palabras (con sinónimos o errores), frase,
+  prefijo o SKU; no la recuperación amplia donde basta una palabra parecida.
+- Después van los productos **relacionados**: por significado (similitud ≥
+  ``UMBRAL_SEMANTICO``) o por coincidencias de texto parciales, marcados con
+  ``coincidencia: 'semantica'``. Se eligió así con la evaluación de la fase 7
+  (docs/evidencia/evaluacion-vectores.md).
 - Si el texto no coincide con nada, primero se muestran resultados por
   significado (``alternativa: 'semanticos'``) y solo si tampoco hay, populares.
 - Si el servicio de embeddings no responde, la búsqueda es solo de texto
@@ -130,7 +133,7 @@ def normalizar(texto: str) -> str:
 
 # ── Construcción de la consulta ───────────────────────────────────────────────
 
-def _consulta_texto(q: str) -> dict:
+def _consulta_texto(q: str, *, estricta: bool = False) -> dict:
     """Varias estrategias combinadas; cada una aporta puntaje si coincide.
 
     1. Coincidencia exacta de todas las palabras, con sinónimos (``telefono``
@@ -145,8 +148,19 @@ def _consulta_texto(q: str) -> dict:
     4. Prefijos sobre n-gramas, para búsquedas incompletas (``sams``).
     5. Frase en el nombre, que premia el orden correcto de las palabras.
     6. SKU exacto.
+
+    ``estricta`` deja fuera la recuperación amplia (3): con dos palabras basta
+    que una se parezca («cortar madera» → rompecabezas de madera; «medir» →
+    «tueste medio»). La búsqueda híbrida solo pone primero lo que coincide de
+    forma estricta; lo demás compite con los resultados por significado.
     """
     campos = ['nombre^4', 'categorias.nombre^2', 'texto_atributos^1.5', 'descripcion']
+    amplia = [] if estricta else [{'multi_match': {
+        'query': q, 'type': 'best_fields', 'fields': campos,
+        'analyzer': 'es_texto', 'fuzziness': FUZZINESS, 'prefix_length': 1,
+        # Con 2 o más palabras basta el 75 % ("laptop barata").
+        'minimum_should_match': '1<75%', 'boost': 0.5,
+    }}]
     return {
         'bool': {
             'should': [
@@ -160,12 +174,7 @@ def _consulta_texto(q: str) -> dict:
                     'analyzer': 'es_texto', 'fuzziness': FUZZINESS, 'prefix_length': 1,
                     'max_expansions': 50, 'operator': 'and', 'boost': 1.5,
                 }},
-                {'multi_match': {
-                    'query': q, 'type': 'best_fields', 'fields': campos,
-                    'analyzer': 'es_texto', 'fuzziness': FUZZINESS, 'prefix_length': 1,
-                    # Con 2 o más palabras basta el 75 % ("laptop barata").
-                    'minimum_should_match': '1<75%', 'boost': 0.5,
-                }},
+                *amplia,
                 {'match': {'nombre.autocompletar': {'query': q, 'operator': 'and', 'boost': 1}}},
                 {'match_phrase': {'nombre': {'query': q, 'slop': 2, 'boost': 3}}},
                 {'term': {'sku': {'value': q, 'boost': 20}}},
@@ -314,7 +323,9 @@ def construir_consulta(
         if texto:
             should = [
                 _con_popularidad({'bool': {'filter': alcance, 'must': [texto]}}),
-                {'constant_score': {'filter': texto, 'boost': BASE_TEXTO}},
+                # La base fija solo para coincidencias estrictas (fase 7: «novela» ≈ «nivel»
+                # quedaba antes que los libros encontrados por significado).
+                {'constant_score': {'filter': _consulta_texto(p.texto, estricta=True), 'boost': BASE_TEXTO}},
                 knn,
             ]
         consulta = {'bool': {'filter': alcance, 'should': should, 'minimum_should_match': 1}}
@@ -333,8 +344,9 @@ def construir_consulta(
         cuerpo['track_scores'] = True
         if texto:
             # Cuántos resultados (con los filtros elegidos) contienen el texto.
+            # Cuenta solo las estrictas, igual que la base de puntaje y la etiqueta ``coincidencia``.
             cuerpo['aggs']['coincidencias_texto'] = {
-                'filter': {'bool': {'filter': [texto, *filtros.values()]}},
+                'filter': {'bool': {'filter': [_consulta_texto(p.texto, estricta=True), *filtros.values()]}},
             }
     if texto:
         cuerpo['highlight'] = {

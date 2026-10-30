@@ -1,0 +1,106 @@
+{
+  "n": 1000000,
+  "dims": 768,
+  "tipo": "int8_hnsw",
+  "fecha": "2026-10-30 12:18",
+  "segmentos_tras_carga": 32,
+  "fusion_s": null,
+  "espacio": {
+    "disco_total_mb": 14040.3,
+    "disco_vector_mb": 3698.2,
+    "memoria_knn_estimada_mb": 858.3,
+    "float32_crudo_mb": 2929.7
+  },
+  "latencia": {
+    "cliente_ms": {
+      "p50": 8.8,
+      "p95": 10.8,
+      "p99": 12.6
+    },
+    "elasticsearch_ms": {
+      "p50": 4.0,
+      "p95": 5.0,
+      "p99": 7.1
+    }
+  },
+  "latencia_filtro_estado": {
+    "cliente_ms": {
+      "p50": 10.9,
+      "p95": 14.0,
+      "p99": 19.7
+    },
+    "elasticsearch_ms": {
+      "p50": 6.0,
+      "p95": 8.0,
+      "p99": 13.0
+    }
+  },
+  "latencia_filtro_categoria_1pct": {
+    "cliente_ms": {
+      "p50": 14.7,
+      "p95": 19.2,
+      "p99": 24.1
+    },
+    "elasticsearch_ms": {
+      "p50": 10.0,
+      "p95": 14.0,
+      "p99": 17.1
+    }
+  },
+  "rendimiento": {
+    "hilos": 8,
+    "consultas_por_segundo": 328.3
+  },
+  "memoria_contenedor": "1.497GiB / 5.788GiB",
+  "recall_10": {
+    "20": 0.768,
+    "50": 0.802,
+    "100": 0.805,
+    "200": 0.806,
+    "400": 0.806
+  },
+  "reordenado_float32": {
+    "100": {
+      "recall_10": 0.99,
+      "cliente_ms": {
+        "p50": 44.8,
+        "p95": 58.8,
+        "p99": 61.2
+      }
+    },
+    "200": {
+      "recall_10": 0.991,
+      "cliente_ms": {
+        "p50": 13.3,
+        "p95": 17.2,
+        "p99": 22.7
+      }
+    }
+  },
+  "exacta_sin_hnsw": {
+    "consultas": 5,
+    "p50_ms": 145.8
+  },
+  "carga": {
+    "segundos": 616.6,
+    "docs_por_segundo": 1622,
+    "refresh_s": 1.1,
+    "errores": 0,
+    "nota": "Medida en la primera corrida; la medición se repitió sobre el mismo índice (--reusar)."
+  },
+  "fusion_nota": "forcemerge a 1 segmento terminó en java.lang.OutOfMemoryError: Java heap space (heap de 512 MB); Elasticsearch se reinició. Se midió con los 32 segmentos de la carga.",
+  "latencia_fria_32_segmentos": {
+    "latencia": {
+      "cliente_ms": {
+        "p50": 17.3,
+        "p95": 22.7,
+        "p99": 25.5
+      },
+      "elasticsearch_ms": {
+        "p50": 12.0,
+        "p95": 16.0,
+        "p99": 19.0
+      }
+    }
+  }
+}

@@ -1,0 +1,1942 @@
+{
+  "fecha": "2026-10-30 12:19",
+  "productos": 69,
+  "busqueda": {
+    "resumen": {
+      "texto": {
+        "exacta": {
+          "p5": 0.38,
+          "r5": 0.93,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "todas": {
+          "p5": 0.24,
+          "r5": 0.565,
+          "mrr": 0.624,
+          "exito5": 0.657
+        },
+        "tolerancia": {
+          "p5": 0.425,
+          "r5": 0.85,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "natural": {
+          "p5": 0.071,
+          "r5": 0.216,
+          "mrr": 0.225,
+          "exito5": 0.294
+        }
+      },
+      "vector": {
+        "exacta": {
+          "p5": 0.36,
+          "r5": 0.935,
+          "mrr": 0.933,
+          "exito5": 1.0
+        },
+        "todas": {
+          "p5": 0.331,
+          "r5": 0.771,
+          "mrr": 0.745,
+          "exito5": 0.857
+        },
+        "tolerancia": {
+          "p5": 0.325,
+          "r5": 0.613,
+          "mrr": 0.618,
+          "exito5": 0.75
+        },
+        "natural": {
+          "p5": 0.318,
+          "r5": 0.749,
+          "mrr": 0.694,
+          "exito5": 0.824
+        }
+      },
+      "vector_umbral": {
+        "exacta": {
+          "p5": 0.36,
+          "r5": 0.935,
+          "mrr": 0.933,
+          "exito5": 1.0
+        },
+        "todas": {
+          "p5": 0.246,
+          "r5": 0.612,
+          "mrr": 0.683,
+          "exito5": 0.771
+        },
+        "tolerancia": {
+          "p5": 0.15,
+          "r5": 0.269,
+          "mrr": 0.417,
+          "exito5": 0.5
+        },
+        "natural": {
+          "p5": 0.224,
+          "r5": 0.583,
+          "mrr": 0.662,
+          "exito5": 0.765
+        }
+      },
+      "hibrida": {
+        "exacta": {
+          "p5": 0.4,
+          "r5": 0.98,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "todas": {
+          "p5": 0.337,
+          "r5": 0.8,
+          "mrr": 0.824,
+          "exito5": 0.886
+        },
+        "tolerancia": {
+          "p5": 0.475,
+          "r5": 0.975,
+          "mrr": 0.938,
+          "exito5": 1.0
+        },
+        "natural": {
+          "p5": 0.235,
+          "r5": 0.613,
+          "mrr": 0.667,
+          "exito5": 0.765
+        }
+      }
+    },
+    "detalle": [
+      {
+        "q": "samsung",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "TECH-CEL-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-004",
+            "TECH-CEL-002",
+            "TECH-AUD-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-004"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-004"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "laptop",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "TECH-LAP-001",
+            "PCU-050AB025",
+            "TECH-LAP-005",
+            "TECH-LAP-002",
+            "TECH-LAP-004"
+          ],
+          "p5": 0.8,
+          "r5": 0.8,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "TECH-LAP-002",
+            "TECH-LAP-005",
+            "TECH-LAP-001"
+          ],
+          "p5": 0.6,
+          "r5": 0.6,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "TECH-LAP-002",
+            "TECH-LAP-005",
+            "TECH-LAP-001"
+          ],
+          "p5": 0.6,
+          "r5": 0.6,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-LAP-001",
+            "PCU-050AB025",
+            "TECH-LAP-005",
+            "TECH-LAP-002",
+            "TECH-LAP-004"
+          ],
+          "p5": 0.8,
+          "r5": 0.8,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "licuadora",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "HOGAR-COC-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "HOGAR-COC-001",
+            "LIBRO-TEC-001",
+            "DEP-ROP-002",
+            "HOGAR-COC-002",
+            "HER-TAL-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HOGAR-COC-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "HOGAR-COC-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "audífonos",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "TECH-AUD-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-AUD-003",
+            "TECH-AUD-001",
+            "HER-ESM-001",
+            "TECH-AUD-002",
+            "JUG-91EA5E10"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-AUD-003",
+            "TECH-AUD-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-AUD-001",
+            "TECH-AUD-003"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "pantalones",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "ROPA-PAN-003",
+            "ROPA-PAN-001",
+            "ROPA-PAN-002"
+          ],
+          "p5": 0.6,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "ROPA-PAN-003",
+            "ROPA-PAN-001",
+            "ROPA-CAL-001",
+            "ROPA-PAN-002",
+            "ROPA-CAL-002"
+          ],
+          "p5": 0.6,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "ROPA-PAN-003",
+            "ROPA-PAN-001",
+            "ROPA-CAL-001",
+            "ROPA-PAN-002",
+            "ROPA-CAL-002"
+          ],
+          "p5": 0.6,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "ROPA-PAN-003",
+            "ROPA-PAN-001",
+            "ROPA-PAN-002",
+            "ROPA-CAL-001",
+            "ROPA-CAL-002"
+          ],
+          "p5": 0.6,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "café",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "ALI-CAF-001",
+            "HOGAR-COC-002"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "HOGAR-COC-002",
+            "ALI-CAF-001",
+            "ROPA-CAM-004",
+            "LUI-6525CEC3",
+            "ALI-MIE-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HOGAR-COC-002",
+            "ALI-CAF-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "ALI-CAF-001",
+            "HOGAR-COC-002"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "camisa",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "ROPA-CAM-002",
+            "ROPA-CAM-001",
+            "ROPA-CAM-005",
+            "ROPA-CAM-003",
+            "ROPA-CAM-004"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "ROPA-CAM-004",
+            "ROPA-CAM-002",
+            "ROPA-CAM-001",
+            "ROPA-PAN-003",
+            "ROPA-CAM-006"
+          ],
+          "p5": 0.6,
+          "r5": 0.75,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "ROPA-CAM-004",
+            "ROPA-CAM-002",
+            "ROPA-CAM-001",
+            "ROPA-PAN-003",
+            "ROPA-CAM-006"
+          ],
+          "p5": 0.6,
+          "r5": 0.75,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "ROPA-CAM-002",
+            "ROPA-CAM-001",
+            "ROPA-CAM-005",
+            "ROPA-CAM-004",
+            "ROPA-CAM-003"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "harry potter",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "LIBRO-FIC-003"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "LIBRO-FIC-003",
+            "LIBRO-FIC-002",
+            "LIBRO-TEC-003",
+            "LIBRO-AUT-001",
+            "LIBRO-FIC-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "LIBRO-FIC-003"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "LIBRO-FIC-003"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "taladro",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "HER-TAL-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "HER-TAL-001",
+            "DEP-ROP-002",
+            "HOGAR-COC-001",
+            "LUI-833084D6",
+            "JUG-91EA5E10"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HER-TAL-001",
+            "DEP-ROP-002",
+            "HOGAR-COC-001",
+            "LUI-833084D6",
+            "JUG-91EA5E10"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "HER-TAL-001",
+            "DEP-ROP-002",
+            "HOGAR-COC-001",
+            "LUI-833084D6",
+            "JUG-91EA5E10"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "monitor",
+        "tipo": "exacta",
+        "texto": {
+          "top5": [
+            "TECH-MON-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-MON-001",
+            "PCU-050AB025",
+            "TECH-RAT-001",
+            "PCU-AB7CEE94",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-MON-001",
+            "PCU-050AB025",
+            "TECH-RAT-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-MON-001",
+            "PCU-050AB025",
+            "TECH-RAT-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "macbok",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "TECH-LAP-003"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "LIBRO-TEC-003",
+            "TECH-LAP-003",
+            "HOGAR-MUE-002",
+            "JUG-91EA5E10",
+            "PCU-AB7CEE94"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-LAP-003"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "telefono",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "TECH-CEL-004",
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-002"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-CEL-004",
+            "HOGAR-MUE-001",
+            "TECH-CEL-001",
+            "TECH-AUD-001",
+            "TECH-CEL-003"
+          ],
+          "p5": 0.6,
+          "r5": 0.75,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-CEL-004",
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-002"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "zapatillas",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "ROPA-CAL-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "JUG-91EA5E10",
+            "LUI-6525CEC3",
+            "ROPA-CAM-003",
+            "LUI-833084D6",
+            "DEP-ROP-002"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "JUG-91EA5E10",
+            "LUI-6525CEC3",
+            "ROPA-CAM-003",
+            "LUI-833084D6",
+            "DEP-ROP-002"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [
+            "ROPA-CAL-001",
+            "JUG-91EA5E10",
+            "LUI-6525CEC3",
+            "ROPA-CAM-003",
+            "LUI-833084D6"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "audifonos inalambricos",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "TECH-AUD-001",
+            "TECH-RAT-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-AUD-003",
+            "HER-TAL-001",
+            "LUI-833084D6",
+            "LUI-6525CEC3",
+            "TECH-AUD-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-AUD-003"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-AUD-003",
+            "TECH-AUD-001",
+            "TECH-RAT-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "computadora portatil",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "TECH-LAP-001",
+            "PCU-050AB025",
+            "TECH-LAP-005",
+            "TECH-LAP-002",
+            "TECH-LAP-004"
+          ],
+          "p5": 0.8,
+          "r5": 0.8,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "TECH-LAP-002",
+            "TECH-LAP-004",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.4,
+          "r5": 0.4,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "TECH-LAP-002",
+            "TECH-LAP-004",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.4,
+          "r5": 0.4,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "PCU-050AB025",
+            "TECH-LAP-005",
+            "TECH-LAP-002",
+            "TECH-LAP-004",
+            "TECH-LAP-001"
+          ],
+          "p5": 0.8,
+          "r5": 0.8,
+          "mrr": 0.5,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "celular",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "TECH-CEL-004",
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-002"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-CEL-004",
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "HOGAR-MUE-001",
+            "TECH-AUD-001"
+          ],
+          "p5": 0.6,
+          "r5": 0.75,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-CEL-004"
+          ],
+          "p5": 0.2,
+          "r5": 0.25,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-CEL-004",
+            "TECH-CEL-001",
+            "TECH-CEL-003",
+            "TECH-CEL-002"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "zapatos",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "ROPA-CAL-002"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "ROPA-CAL-002",
+            "ROPA-CAL-001",
+            "DEP-ROP-001",
+            "ROPA-PAN-003",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "ROPA-CAL-002",
+            "ROPA-CAL-001",
+            "DEP-ROP-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "ROPA-CAL-002",
+            "ROPA-CAL-001",
+            "DEP-ROP-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "multimetro",
+        "tipo": "tolerancia",
+        "texto": {
+          "top5": [
+            "HER-MED-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "HER-NIV-001",
+            "HER-TAL-001",
+            "HER-ESM-001",
+            "HOGAR-MUE-002",
+            "DEP-GIM-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.1111111111111111,
+          "exito5": 0.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HER-NIV-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [
+            "HER-MED-001",
+            "HER-NIV-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "algo para escuchar música sin cables",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-AUD-003",
+            "TECH-AUD-001",
+            "TECH-AUD-002",
+            "HER-ESM-001",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.6,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-AUD-003",
+            "TECH-AUD-001"
+          ],
+          "p5": 0.4,
+          "r5": 0.6666666666666666,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-AUD-003",
+            "TECH-AUD-001"
+          ],
+          "p5": 0.4,
+          "r5": 0.6666666666666666,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "herramienta para hacer agujeros en la pared",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "HOGAR-DEC-002",
+            "HOGAR-COC-003",
+            "JUG-MAD-001",
+            "HOGAR-MUE-002",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.1111111111111111,
+          "exito5": 0.0
+        },
+        "vector_umbral": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        }
+      },
+      {
+        "q": "celular con buena cámara",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "TECH-CEL-001",
+            "TECH-CEL-004",
+            "JUG-ELE-001",
+            "TECH-CEL-003",
+            "TECH-CEL-002"
+          ],
+          "p5": 0.8,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "TECH-CEL-001",
+            "TECH-CEL-004",
+            "JUG-ELE-001",
+            "TECH-CEL-003"
+          ],
+          "p5": 0.6,
+          "r5": 0.75,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "TECH-CEL-001",
+            "TECH-CEL-004",
+            "JUG-ELE-001",
+            "TECH-CEL-003"
+          ],
+          "p5": 0.6,
+          "r5": 0.75,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "regalo para un niño de 6 años",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-MUÃ‘-001",
+            "JUG-ARM-001",
+            "JUG-MAD-001",
+            "HOGAR-DEC-002"
+          ],
+          "p5": 0.4,
+          "r5": 0.4,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-MUÃ‘-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-MUÃ‘-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        }
+      },
+      {
+        "q": "libro para aprender a programar",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "LIBRO-TEC-001",
+            "LIBRO-TEC-002",
+            "LIBRO-TEC-003",
+            "PCU-AB7CEE94",
+            "LIBRO-FIC-003"
+          ],
+          "p5": 0.6,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "LIBRO-TEC-001",
+            "LIBRO-TEC-002"
+          ],
+          "p5": 0.4,
+          "r5": 0.6666666666666666,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "LIBRO-TEC-001",
+            "LIBRO-TEC-002"
+          ],
+          "p5": 0.4,
+          "r5": 0.6666666666666666,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "novela de fantasía",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "HER-NIV-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "LIBRO-FIC-003",
+            "LIBRO-FIC-001",
+            "LIBRO-FIC-002",
+            "LUI-833084D6",
+            "LUI-6525CEC3"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "LIBRO-FIC-003",
+            "LIBRO-FIC-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "LIBRO-FIC-003",
+            "LIBRO-FIC-001",
+            "HER-NIV-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "algo para hacer ejercicio en casa",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "HOGAR-MUE-001",
+            "DEP-GIM-002",
+            "DEP-GIM-001",
+            "JUG-MUÃ‘-001",
+            "DEP-ROP-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HOGAR-MUE-001",
+            "DEP-GIM-002",
+            "DEP-GIM-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "HOGAR-MUE-001",
+            "DEP-GIM-002",
+            "DEP-GIM-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "preparar batidos",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-MAD-001",
+            "ALI-MIE-001",
+            "HOGAR-COC-003",
+            "DEP-ROP-002"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-MAD-001",
+            "ALI-MIE-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-MAD-001",
+            "ALI-MIE-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        }
+      },
+      {
+        "q": "desayuno saludable",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "ALI-GRA-001",
+            "ALI-MIE-001",
+            "HOGAR-COC-002",
+            "DEP-GIM-001",
+            "ALI-CAF-001"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "ALI-GRA-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "ALI-GRA-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "muebles para la oficina",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "HOGAR-MUE-001",
+            "HOGAR-MUE-002",
+            "HOGAR-DEC-002",
+            "PCU-050AB025",
+            "PCU-AB7CEE94"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HOGAR-MUE-001",
+            "HOGAR-MUE-002",
+            "HOGAR-DEC-002"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "HOGAR-MUE-001",
+            "HOGAR-MUE-002",
+            "HOGAR-DEC-002"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "iluminación para la sala",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "HOGAR-DEC-001",
+            "HOGAR-MUE-002",
+            "HOGAR-MUE-001",
+            "HER-ESM-001",
+            "LIBRO-TEC-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HOGAR-DEC-001",
+            "HOGAR-MUE-002",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "HOGAR-DEC-001",
+            "HOGAR-MUE-002",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "medir voltaje",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "ALI-CAF-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "HER-MED-001",
+            "HER-TAL-001",
+            "HOGAR-DEC-001",
+            "HER-NIV-001",
+            "HER-SAR-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HER-MED-001",
+            "HER-TAL-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "HER-MED-001",
+            "HER-TAL-001",
+            "ALI-CAF-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "cortar madera",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "HOGAR-MUE-002",
+            "JUG-MAD-001",
+            "HER-SIE-001",
+            "HOGAR-DEC-002"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "HER-SIE-001",
+            "JUG-MAD-001",
+            "HOGAR-MUE-002",
+            "HOGAR-DEC-002",
+            "HOGAR-DEC-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "HER-SIE-001",
+            "JUG-MAD-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "JUG-MAD-001",
+            "HER-SIE-001",
+            "HOGAR-MUE-002",
+            "HOGAR-DEC-002"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "accesorios para la computadora",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "TECH-LAP-001",
+            "TECH-RAT-001",
+            "TECH-LAP-005",
+            "TECH-LAP-002",
+            "TECH-MON-001"
+          ],
+          "p5": 0.4,
+          "r5": 0.6666666666666666,
+          "mrr": 0.5,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "HOGAR-MUE-001",
+            "TECH-RAT-001",
+            "TECH-LAP-002"
+          ],
+          "p5": 0.2,
+          "r5": 0.3333333333333333,
+          "mrr": 0.25,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "HOGAR-MUE-001",
+            "TECH-RAT-001",
+            "TECH-LAP-002"
+          ],
+          "p5": 0.2,
+          "r5": 0.3333333333333333,
+          "mrr": 0.25,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "PCU-AB7CEE94",
+            "PCU-050AB025",
+            "TECH-RAT-001",
+            "TECH-LAP-002",
+            "TECH-LAP-004"
+          ],
+          "p5": 0.2,
+          "r5": 0.3333333333333333,
+          "mrr": 0.3333333333333333,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "aprender sobre bases de datos",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "LIBRO-EDU-001"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "LIBRO-TEC-002",
+            "LIBRO-EDU-001",
+            "LIBRO-TEC-003",
+            "LIBRO-TEC-001",
+            "PCU-AB7CEE94"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "LIBRO-TEC-002"
+          ],
+          "p5": 0.2,
+          "r5": 0.5,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "LIBRO-EDU-001",
+            "LIBRO-TEC-002"
+          ],
+          "p5": 0.4,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "juguete que vuela",
+        "tipo": "natural",
+        "texto": {
+          "top5": [
+            "JUG-ELE-001",
+            "JUG-91EA5E10",
+            "JUG-ARM-001",
+            "JUG-CAR-001",
+            "JUG-MAD-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        },
+        "vector": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-ELE-001",
+            "JUG-MUÃ‘-001",
+            "JUG-ARM-001",
+            "HOGAR-MUE-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        },
+        "vector_umbral": {
+          "top5": [
+            "JUG-91EA5E10",
+            "JUG-ELE-001",
+            "JUG-MUÃ‘-001",
+            "JUG-ARM-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 0.5,
+          "exito5": 1.0
+        },
+        "hibrida": {
+          "top5": [
+            "JUG-ELE-001",
+            "JUG-91EA5E10",
+            "JUG-MUÃ‘-001",
+            "JUG-ARM-001",
+            "JUG-CAR-001"
+          ],
+          "p5": 0.2,
+          "r5": 1.0,
+          "mrr": 1.0,
+          "exito5": 1.0
+        }
+      },
+      {
+        "q": "cómo manejar mejor mi dinero",
+        "tipo": "natural",
+        "texto": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "vector": {
+          "top5": [
+            "HER-ESM-001",
+            "ROPA-PAN-003",
+            "JUG-91EA5E10",
+            "HOGAR-MUE-002",
+            "JUG-MAD-001"
+          ],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.1111111111111111,
+          "exito5": 0.0
+        },
+        "vector_umbral": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        },
+        "hibrida": {
+          "top5": [],
+          "p5": 0.0,
+          "r5": 0.0,
+          "mrr": 0.0,
+          "exito5": 0.0
+        }
+      }
+    ]
+  },
+  "similares": {
+    "more_like_this": {
+      "familia_p5": 0.143,
+      "departamento_p5": 0.286,
+      "con_resultados": 0.571,
+      "prueba_en_top5": 0.0
+    },
+    "knn": {
+      "familia_p5": 0.279,
+      "departamento_p5": 0.717,
+      "con_resultados": 1.0,
+      "prueba_en_top5": 0.044
+    },
+    "semillas": 63
+  },
+  "modelos": {
+    "MiniLM-L12 (384)": {
+      "dimensiones": 384,
+      "carga_s": 0.9,
+      "ms_por_producto": 8.1,
+      "metricas": {
+        "exacta": {
+          "p5": 0.28,
+          "r5": 0.627,
+          "mrr": 0.609,
+          "exito5": 0.7
+        },
+        "todas": {
+          "p5": 0.291,
+          "r5": 0.692,
+          "mrr": 0.664,
+          "exito5": 0.8
+        },
+        "tolerancia": {
+          "p5": 0.325,
+          "r5": 0.669,
+          "mrr": 0.646,
+          "exito5": 0.875
+        },
+        "natural": {
+          "p5": 0.282,
+          "r5": 0.742,
+          "mrr": 0.706,
+          "exito5": 0.824
+        }
+      },
+      "max_sin_sentido": 0.507,
+      "umbral": [
+        {
+          "umbral": 0.35,
+          "precision": 0.324,
+          "cobertura": 0.655,
+          "resultados_sin_sentido": 11
+        },
+        {
+          "umbral": 0.4,
+          "precision": 0.375,
+          "cobertura": 0.491,
+          "resultados_sin_sentido": 5
+        },
+        {
+          "umbral": 0.45,
+          "precision": 0.472,
+          "cobertura": 0.309,
+          "resultados_sin_sentido": 2
+        },
+        {
+          "umbral": 0.5,
+          "precision": 0.526,
+          "cobertura": 0.182,
+          "resultados_sin_sentido": 1
+        },
+        {
+          "umbral": 0.55,
+          "precision": 0.25,
+          "cobertura": 0.036,
+          "resultados_sin_sentido": 0
+        },
+        {
+          "umbral": 0.6,
+          "precision": 0.0,
+          "cobertura": 0.0,
+          "resultados_sin_sentido": 0
+        }
+      ]
+    },
+    "mpnet (768)": {
+      "dimensiones": 768,
+      "carga_s": 2.2,
+      "ms_por_producto": 21.7,
+      "metricas": {
+        "exacta": {
+          "p5": 0.36,
+          "r5": 0.935,
+          "mrr": 0.933,
+          "exito5": 1.0
+        },
+        "todas": {
+          "p5": 0.337,
+          "r5": 0.778,
+          "mrr": 0.745,
+          "exito5": 0.857
+        },
+        "tolerancia": {
+          "p5": 0.35,
+          "r5": 0.644,
+          "mrr": 0.617,
+          "exito5": 0.75
+        },
+        "natural": {
+          "p5": 0.318,
+          "r5": 0.749,
+          "mrr": 0.695,
+          "exito5": 0.824
+        }
+      },
+      "max_sin_sentido": 0.417,
+      "umbral": [
+        {
+          "umbral": 0.35,
+          "precision": 0.285,
+          "cobertura": 0.745,
+          "resultados_sin_sentido": 3
+        },
+        {
+          "umbral": 0.4,
+          "precision": 0.354,
+          "cobertura": 0.618,
+          "resultados_sin_sentido": 1
+        },
+        {
+          "umbral": 0.45,
+          "precision": 0.441,
+          "cobertura": 0.473,
+          "resultados_sin_sentido": 0
+        },
+        {
+          "umbral": 0.5,
+          "precision": 0.519,
+          "cobertura": 0.255,
+          "resultados_sin_sentido": 0
+        },
+        {
+          "umbral": 0.55,
+          "precision": 0.556,
+          "cobertura": 0.182,
+          "resultados_sin_sentido": 0
+        },
+        {
+          "umbral": 0.6,
+          "precision": 0.583,
+          "cobertura": 0.127,
+          "resultados_sin_sentido": 0
+        }
+      ],
+      "hnsw_int8": {
+        "recall_10": 0.974
+      }
+    }
+  }
+}

@@ -95,3 +95,10 @@ def test_umbral_y_base_garantizan_el_orden():
     # Una relacionada suma como mucho PESO_SEMANTICO; toda coincidencia de texto, BASE_TEXTO.
     assert search_service.PESO_SEMANTICO < search_service.BASE_TEXTO
     assert 0 < search_service.UMBRAL_SEMANTICO < 1
+
+
+def test_una_coincidencia_parcial_no_queda_antes_que_lo_relacionado():
+    # «novela» se parece a «nivel» (nivel láser), pero no coincide con todas las palabras.
+    resultado = buscar(q='novela de fantasía')
+    assert resultado['items'][0]['categoria']['slug'] == 'libros'
+    assert resultado['items'][0]['coincidencia'] == 'semantica'

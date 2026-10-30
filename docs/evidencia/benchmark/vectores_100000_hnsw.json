@@ -1,0 +1,86 @@
+{
+  "n": 100000,
+  "dims": 768,
+  "tipo": "hnsw",
+  "fecha": "2026-10-30 11:54",
+  "carga": {
+    "segundos": 56.7,
+    "docs_por_segundo": 1765,
+    "refresh_s": 0.3,
+    "errores": 0
+  },
+  "segmentos_tras_carga": 11,
+  "sin_fusionar": {
+    "latencia": {
+      "cliente_ms": {
+        "p50": 7.2,
+        "p95": 9.4,
+        "p99": 11.8
+      },
+      "elasticsearch_ms": {
+        "p50": 3.0,
+        "p95": 5.0,
+        "p99": 7.0
+      }
+    }
+  },
+  "fusion_s": 27.3,
+  "espacio": {
+    "disco_total_mb": 1331.0,
+    "disco_vector_mb": 296.5,
+    "memoria_knn_estimada_mb": 305.2,
+    "float32_crudo_mb": 293.0
+  },
+  "latencia": {
+    "cliente_ms": {
+      "p50": 8.7,
+      "p95": 11.3,
+      "p99": 13.6
+    },
+    "elasticsearch_ms": {
+      "p50": 5.0,
+      "p95": 7.0,
+      "p99": 9.0
+    }
+  },
+  "latencia_filtro_estado": {
+    "cliente_ms": {
+      "p50": 5.6,
+      "p95": 7.4,
+      "p99": 8.9
+    },
+    "elasticsearch_ms": {
+      "p50": 2.0,
+      "p95": 4.0,
+      "p99": 4.0
+    }
+  },
+  "latencia_filtro_categoria_1pct": {
+    "cliente_ms": {
+      "p50": 7.0,
+      "p95": 11.0,
+      "p99": 11.6
+    },
+    "elasticsearch_ms": {
+      "p50": 3.0,
+      "p95": 7.0,
+      "p99": 8.0
+    }
+  },
+  "rendimiento": {
+    "hilos": 8,
+    "consultas_por_segundo": 551.1
+  },
+  "memoria_contenedor": "1.183GiB / 5.788GiB",
+  "recall_10": {
+    "20": 0.805,
+    "50": 0.95,
+    "100": 0.98,
+    "200": 0.999,
+    "400": 1.0
+  },
+  "exacta_sin_hnsw": {
+    "consultas": 5,
+    "p50_ms": 30.5
+  }
+}
