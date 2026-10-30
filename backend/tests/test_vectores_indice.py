@@ -100,3 +100,22 @@ def test_busqueda_knn_encuentra_por_significado(es):
                           knn={'field': 'vector', 'query_vector': vector, 'k': 3, 'num_candidates': 50})
     nombres = ' '.join(h['_source']['nombre'].lower() for h in respuesta['hits']['hits'])
     assert any(palabra in nombres for palabra in ('audífonos', 'airpods', 'bocina'))
+
+
+def test_se_purgan_las_versiones_borradas_que_estorban_al_knn(es, producto):
+    # Reindexar deja la versión anterior como borrada dentro del grafo HNSW.
+    _indexar(es, producto)
+    _indexar(es, producto)
+    nombre = indice.indice_actual(es)
+
+    def borrados():
+        return es.indices.stats(index=nombre, metric='docs')['indices'][nombre]['primaries']['docs']['deleted']
+
+    antes = borrados()
+    assert antes > 0
+    assert indice.depurar_borrados(es, maximo=0) == antes
+    # Elasticsearch retiene unos segundos los borrados recientes (soft deletes para
+    # recuperar réplicas): la fusión inmediata puede no quitarlos todos, nunca suma.
+    assert borrados() <= antes
+    # Por debajo del máximo no se hace nada.
+    assert indice.depurar_borrados(es, maximo=1.0) == 0

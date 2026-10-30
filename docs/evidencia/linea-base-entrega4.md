@@ -62,3 +62,40 @@ Latencia de `search_service.buscar` (catálogo de 69 productos, una sola máquin
 | Híbrida con `highlight_query` solo de texto | 44 ms dentro de Elasticsearch |
 
 El resaltado intentaba usar también la consulta kNN y era el costo dominante; se limitó al texto.
+
+## Duplicados en solicitudes de catálogo (fase 6)
+
+Similitud por vector entre una propuesta (nombre, descripción y categoría) y su vecino más cercano:
+
+| Tipo | Propuesta | Vecino más cercano | Similitud |
+|---|---|---|---|
+| Mismo producto | Laptop Dell Inspiron 15 | Laptop Dell Inspiron 15 | 0.961 |
+| Mismo producto | Dell Inspiron 15 3520 laptop | Laptop Dell Inspiron 15 | 0.854 |
+| Mismo producto | Audifonos Sony WH1000XM5 | Audífonos Sony WH-1000XM5 | 0.838 |
+| Mismo producto | Licuadora Oster 600 W | Licuadora Oster 600W | 0.818 |
+| Mismo producto | Samsung Galaxy A54 5G 128GB | Samsung Galaxy A54 | 0.886 |
+| Misma familia | Audífonos Bose QuietComfort 45 | Audífonos Sony WH-1000XM5 | 0.788 |
+| Misma familia | Laptop HP Envy 13 | Laptop HP Pavilion 14 | 0.724 |
+| Misma familia | Samsung Galaxy S23 Ultra | Samsung Galaxy A54 | 0.707 |
+| Distinto | Bicicleta de montaña aro 29 | Casco ciclismo MTB | 0.678 |
+| Distinto | Taza de cerámica con diseño maya | Café molido artesanal | 0.584 |
+
+El mismo producto queda entre 0.82 y 0.96 y la misma familia hasta 0.79, pero no hay un corte limpio: frente a
+la propuesta de la Dell, la ASUS VivoBook (otro producto) da 0.835. Con solo el nombre, sin descripción, el
+nombre idéntico da 0.795. Por eso:
+
+- el aviso tiene dos niveles (posible ≥ 0.80, muy probable ≥ 0.90) y **nunca bloquea**: decide el administrador;
+- se suma el parecido del nombre (palabras en común o letra por letra sin espacios ni signos), con umbrales
+  0.80 y 0.95. «WH1000XM5» frente a «WH-1000XM5» da 1.00; Galaxy S23 Ultra frente a Galaxy A54, 0.76.
+
+## Hallazgo: documentos borrados y kNN vacío
+
+Durante la fase 6 algunas consultas kNN devolvieron **cero resultados** con 50 o 100 candidatos y resultados
+correctos con 400. El índice tenía 245 documentos borrados (versiones viejas de productos reindexados) frente a
+unos 66 vivos. El grafo HNSW sigue recorriendo esas versiones; si los vecinos más cercanos están borrados, se
+descartan y el kNN puede quedar vacío. Tras purgarlos (`_forcemerge?only_expunge_deletes=true`) las mismas
+consultas funcionaron con 50 candidatos.
+
+Corrección: `search_index_service.depurar_borrados()` purga cuando los borrados pasan del 20 % y corre con la
+reconciliación periódica (cada 10 minutos). Además, los kNN de la búsqueda híbrida y de «Te podría interesar»
+usan 100 candidatos.

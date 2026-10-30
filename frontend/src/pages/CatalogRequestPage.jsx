@@ -7,6 +7,7 @@ import api from '../api/client'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { formatQ, formatDate } from '../lib/utils'
+import { PossibleDuplicates } from '../components/PossibleDuplicates'
 
 export const requestType = type => ({
   producto_nuevo: 'Producto nuevo',
@@ -69,6 +70,14 @@ export default function CatalogRequestPage() {
               {r.estado}
             </Badge>
           </header>
+
+          {admin && (
+            <PossibleDuplicates
+              items={r.posibles_duplicados}
+              titulo="Posibles duplicados en el catálogo"
+              ayuda="Detectados por similitud de significado y de nombre. Revisa antes de aprobar: si es el mismo producto, el vendedor puede ofrecerlo como oferente."
+            />
+          )}
 
           <section className="border border-[var(--color-border)] rounded-xl p-6 bg-[var(--color-surface)] space-y-5">
             <h2 className="text-xl font-semibold font-display">{r.nombre || r.producto_nombre}</h2>

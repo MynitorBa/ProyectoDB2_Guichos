@@ -14,6 +14,10 @@ export const getCatalogRequests = (page = 1, pageSize = 20) =>
 export const proposeProduct = (data) =>
   api.post('/vendor/catalog-requests/products', data)
 
+// Productos del catálogo que parecen el mismo que se está proponiendo (solo un aviso).
+export const checkDuplicates = (data) =>
+  api.post('/vendor/catalog-requests/products/duplicados', data)
+
 export const proposeOffer = (data) =>
   api.post('/vendor/catalog-requests/offers', data)
 

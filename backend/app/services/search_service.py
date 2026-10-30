@@ -67,7 +67,7 @@ ERRORES_MOTOR = (TransportError, ApiError)
 # las consultas sin sentido no pasan de 0.41 y las útiles quedan entre 0.46 y
 # 0.77 (docs/evidencia/linea-base-entrega4.md).
 UMBRAL_SEMANTICO = 0.45
-CANDIDATOS_SEMANTICOS = 50
+CANDIDATOS_SEMANTICOS = 100
 # Puntaje fijo que suma toda coincidencia de texto: las relacionadas solo por
 # significado (como mucho ``PESO_SEMANTICO``) nunca quedan antes que ellas.
 BASE_TEXTO = 1000.0

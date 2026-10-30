@@ -505,9 +505,42 @@ def reconciliar_desfasados(es: Elasticsearch, mysql_db: Session, mongo: Database
     # Productos que se indexaron sin vector porque el servicio de embeddings no respondía.
     if salud.disponible('embeddings'):
         refs += [ref for ref in ids_sin_vector(es) if ref not in refs]
-    if not refs:
-        return {'indexados': 0, 'eliminados': 0, 'omitidos': 0}
-    return indexar_productos(es, mysql_db, mongo, refs, neo4j_driver, refrescar=True)
+    resumen = (
+        indexar_productos(es, mysql_db, mongo, refs, neo4j_driver, refrescar=True)
+        if refs else {'indexados': 0, 'eliminados': 0, 'omitidos': 0}
+    )
+    resumen['depurados'] = depurar_borrados(es)
+    return resumen
+
+
+# Proporción de documentos borrados a partir de la cual se purgan.
+MAX_BORRADOS = 0.2
+
+
+def depurar_borrados(es: Elasticsearch, *, maximo: float = MAX_BORRADOS) -> int:
+    """Purga del índice las versiones viejas de documentos ya reemplazados.
+
+    Cada reindexado de un producto deja su versión anterior marcada como
+    borrada hasta que Lucene fusiona segmentos. El grafo HNSW del kNN las sigue
+    recorriendo: si los vecinos más cercanos son versiones borradas, se
+    descartan y el kNN puede devolver menos resultados, o ninguno, aunque haya
+    productos parecidos. Se purgan cuando pasan de ``maximo`` del total.
+    Devuelve cuántos había (0 si no hizo falta).
+
+    Corre con la reconciliación (cada 10 minutos). Los borrados de los últimos
+    segundos los retiene Elasticsearch (soft deletes, para recuperar réplicas)
+    y se quitan en la siguiente pasada.
+    """
+    nombre = indice_actual(es)
+    if not nombre:
+        return 0
+    docs = es.indices.stats(index=nombre, metric='docs')['indices'][nombre]['primaries']['docs']
+    borrados = docs.get('deleted', 0)
+    if not borrados or borrados / (borrados + docs.get('count', 0)) <= maximo:
+        return 0
+    es.indices.forcemerge(index=nombre, only_expunge_deletes=True)
+    logger.info('Índice %s: se purgaron %s documentos borrados.', nombre, borrados)
+    return borrados
 
 
 def indexar_productos(

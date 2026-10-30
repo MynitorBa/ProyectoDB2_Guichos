@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { PossibleDuplicates } from '../PossibleDuplicates'
 import ProductPicker from '../ProductPicker'
 import { requestType } from '../../pages/CatalogRequestPage'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -8,7 +9,7 @@ import { toast } from 'sonner'
 
 import {
   cancelCatalogRequest, deleteRequestImage, getCatalogRequests,
-  proposeOffer, proposeProduct, proposeVariant, uploadRequestImage,
+  checkDuplicates, proposeOffer, proposeProduct, proposeVariant, uploadRequestImage,
 } from '../../api/vendor'
 import { getCategories, getCategorySchema, getProduct, getProducts } from '../../api/products'
 import { Badge } from '../ui/badge'
@@ -31,6 +32,21 @@ function ProductProposalDialog({ open, onOpenChange }) {
     imagenes: [], precio: '', stock: '', observaciones: '',
   })
   const [uploading, setUploading] = useState(false)
+  // Se consulta un momento después de que el vendedor deja de escribir.
+  const [duplicateQuery, setDuplicateQuery] = useState(null)
+  useEffect(() => {
+    const nombre = form.nombre.trim()
+    const timer = setTimeout(() => setDuplicateQuery(nombre.length >= 4
+      ? { nombre, descripcion: form.descripcion.trim() || null, categoria_slugs: form.categoria_slugs }
+      : null), 600)
+    return () => clearTimeout(timer)
+  }, [form.nombre, form.descripcion, form.categoria_slugs])
+  const { data: duplicateData } = useQuery({
+    queryKey: ['catalog-duplicates', duplicateQuery],
+    queryFn: () => checkDuplicates(duplicateQuery).then(r => r.data),
+    enabled: open && Boolean(duplicateQuery),
+    staleTime: 60_000,
+  })
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'], queryFn: () => getCategories().then(r => r.data),
   })
@@ -107,6 +123,11 @@ function ProductProposalDialog({ open, onOpenChange }) {
       <form onSubmit={submit} className="space-y-4">
         <div><Label>Nombre *</Label><Input value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} /></div>
         <div><Label>Descripción</Label><textarea rows={3} value={form.descripcion} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))} className="w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm" /></div>
+        <PossibleDuplicates
+          items={duplicateData?.duplicados}
+          titulo="Este producto podría ya existir en el catálogo"
+          ayuda="Si es el mismo, usa «Solicitar oferta» para venderlo como oferente; si es distinto, puedes continuar."
+        />
         <div>
           <Label>Categorías * <span className="font-normal text-xs">(la primera será principal)</span></Label>
           <div className="flex flex-wrap gap-1.5 my-2">{form.categoria_slugs.map((slug, index) => <Badge key={slug} variant="action">{index === 0 ? 'Principal · ' : ''}{categories.find(c => c.slug === slug)?.nombre || slug}<button type="button" className="ml-1" onClick={() => setForm(p => ({ ...p, categoria_slugs: p.categoria_slugs.filter(s => s !== slug) }))}><X size={10} /></button></Badge>)}</div>

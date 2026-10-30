@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
-from app.core.deps import get_admin_user, require_role
+from app.core.deps import get_admin_user, get_es, require_role
 from app.core.time import utc_now
 from app.models.categoria import Categoria
 from app.models.inventario import Inventario
@@ -25,7 +25,7 @@ from app.models.solicitud_catalogo import (
 )
 from app.models.usuario import Rol, Usuario, UsuarioRol
 from app.models.vendedor import Vendedor
-from app.services import catalog_service
+from app.services import catalog_service, duplicados_service
 from app.services.image_service import read_valid_image
 from app.services.category_attribute_service import (
     AttributeValidationError,
@@ -58,6 +58,14 @@ class ProductProposalCreate(BaseModel):
     precio: Decimal = Field(gt=0)
     stock: int = Field(ge=0)
     observaciones: str | None = Field(default=None, max_length=2000)
+
+
+class DuplicateCheck(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    nombre: str = Field(min_length=2, max_length=200)
+    descripcion: str | None = Field(default=None, max_length=5000)
+    categoria_slugs: list[str] = Field(default_factory=list, max_length=10)
+    atributos: dict = Field(default_factory=dict)
 
 
 class OfferProposalCreate(BaseModel):
@@ -241,6 +249,27 @@ def delete_pending_image(
     db.commit()
 
 
+def _nombres_categorias(db: Session, slugs: list[str]) -> list[str]:
+    if not slugs:
+        return []
+    return [nombre for (nombre,) in db.query(Categoria.nombre).filter(Categoria.slug.in_(slugs)).all()]
+
+
+# Aviso mientras el vendedor llena el formulario: productos del catálogo que parecen el mismo (vectores)
+@vendor_router.post('/products/duplicados')
+def check_duplicates(
+    payload: DuplicateCheck,
+    current_user: Usuario = Depends(get_vendor_user),
+    db: Session = Depends(get_db),
+    es=Depends(get_es),
+):
+    _get_vendor(db, current_user)
+    return {'duplicados': duplicados_service.posibles_duplicados(
+        es, nombre=payload.nombre, descripcion=payload.descripcion,
+        categorias=_nombres_categorias(db, payload.categoria_slugs), atributos=payload.atributos,
+    )}
+
+
 # El vendedor propone un producto nuevo: valida categorías, imágenes y atributos antes de crear la SolicitudCatalogo
 @vendor_router.post('/products', status_code=201)
 def propose_product(
@@ -420,11 +449,18 @@ def own_request_detail(request_id: int, current_user: Usuario = Depends(get_vend
 
 @admin_router.get('/{request_id}')
 def admin_request_detail(request_id: int, _: Usuario = Depends(get_admin_user),
-    db: Session = Depends(get_db), mongo: Database = Depends(get_mongo_db)):
+    db: Session = Depends(get_db), mongo: Database = Depends(get_mongo_db), es=Depends(get_es)):
     request = db.get(SolicitudCatalogo, request_id)
     if not request:
         raise HTTPException(404, 'Solicitud no encontrada.')
-    return _serialize_request(db, request, mongo)
+    detalle = _serialize_request(db, request, mongo)
+    # Al revisar un producto nuevo, el admin ve si ya existe algo muy parecido (solo un aviso).
+    if request.tipo == 'producto_nuevo' and request.estado == 'pendiente':
+        detalle['posibles_duplicados'] = duplicados_service.posibles_duplicados(
+            es, nombre=request.nombre, descripcion=request.descripcion,
+            categorias=[c['nombre'] for c in detalle['categorias']], atributos=request.atributos,
+        )
+    return detalle
 
 
 @vendor_router.patch('/{request_id}/cancel')
