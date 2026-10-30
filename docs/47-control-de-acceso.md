@@ -52,15 +52,59 @@ falla con `ACL failure in script`, así que las ventas flash no son una puerta t
 | Solo contraseña (como Redis Commander) lee / escribe | Lee / `NOPERM` |
 | Admin lista los usuarios y sus reglas | Permitido |
 
-### Instalación y equipos existentes
+## MongoDB
 
-`scripts/setup.ps1` llama a `generar-credenciales.ps1` antes de `docker compose up`. En un equipo que ya
-tenía el proyecto instalado, después de actualizar el repositorio:
+Rol y usuarios: `database/mongo/03_usuarios.js` (idempotente). Docker lo ejecuta al crear el volumen; en una
+base que ya existía lo ejecuta `scripts/configurar-acceso.ps1`. Las contraseñas llegan al contenedor por
+variables de entorno desde el `.env` de la raíz.
+
+| Usuario | Lo usa | Rol | Puede |
+|---|---|---|---|
+| `tiendaya_api` | Backend (API y workers) | `tiendaya_aplicacion` (a medida) | Solo sobre sus 5 colecciones (`productos`, `producto_variantes`, `producto_eventos`, `categoria_esquemas`, `tiendas_config`): `find`, `insert`, `update`, `remove`, `createIndex` (crea sus índices al arrancar) y `listIndexes`. Sin `drop`, sin crear colecciones, sin listar la base, sin `migraciones`, sin usuarios ni roles, sin otras bases |
+| `tiendaya_lectura` | Mongo Express, diagnóstico | `read` sobre `tiendaya` | Leer |
+| `tiendaya_admin` | Instalación y migraciones (`setup.ps1`) | `dbOwner` sobre `tiendaya` | Todo dentro de `tiendaya`; nada en `admin` ni en otras bases |
+| `admin` (root) | Solo para crear los usuarios anteriores | `root` | — |
+
+**Instalación con el usuario correcto.** Las migraciones de `setup.ps1` crean y modifican colecciones: el
+script les pasa la conexión de `tiendaya_admin` solo por variable de entorno del proceso y la quita antes de
+`verify_setup.py`, que corre con el usuario del backend. `backend/.env` nunca guarda la cuenta de
+administración.
+
+**Validación.** Igual que en Redis, el plan B podía esconder un permiso faltante (si Mongo rechaza, el
+catálogo sale de su copia en MySQL). Durante las 383 pruebas del backend se activó el registro de control de
+acceso de MongoDB (`setLogLevel(1, 'accessControl')`): todos los rechazos registrados son los que provocan a
+propósito las pruebas de permisos; la aplicación no tuvo ninguno.
+
+### Evidencia (`backend/tests/test_permisos_mongo.py`, 15 pruebas)
+
+| Intento | Resultado |
+|---|---|
+| Leer sin credenciales | `requires authentication` |
+| Contraseña incorrecta | `Authentication failed` |
+| Backend inserta, actualiza, lee y borra en `producto_eventos`; cuenta productos; lee índices | Permitido |
+| Privilegios del backend según MongoDB (`connectionStatus`) | Solo sus 5 colecciones y solo esas 6 acciones; nada sobre el servidor ni otras bases |
+| Backend lee `migraciones`, inserta en una colección nueva, lista las colecciones | `not authorized` |
+| Backend lee `admin.system.users` o la base `tiendaya_demo`; borra una base | `not authorized` |
+| Backend crea un usuario `root` o se asigna `dbOwner` | `not authorized` |
+| Lectura inserta, actualiza, borra o crea un índice | `not authorized` |
+| Admin crea y borra una colección en `tiendaya` / lee `admin` u otra base | Permitido / `not authorized` |
+
+`drop` sobre colecciones reales no se intenta en las pruebas: si el rol estuviera mal configurado, borraría
+datos. En su lugar se comprueba que el usuario no tenga esa acción.
+
+## Instalación y equipos existentes
+
+`scripts/setup.ps1` llama a `configurar-acceso.ps1` antes de instalar. En un equipo que ya tenía el proyecto,
+después de actualizar el repositorio basta con:
 
 ```powershell
-.\scripts\generar-credenciales.ps1   # crea las contraseñas que falten en .env y backend\.env
-docker compose up -d                 # recrea Redis con el control de acceso
+.\scripts\configurar-acceso.ps1
 ```
 
-Los datos de Redis no se pierden (volumen `redis_data`). Sin las contraseñas, el contenedor de Redis no
-arranca y su registro explica qué ejecutar.
+Ese script, idempotente:
+1. genera las contraseñas que falten en `.env` y `backend\.env` (`generar-credenciales.ps1`);
+2. recrea los contenedores para que las tomen (`docker compose up -d`);
+3. crea o actualiza los usuarios de MongoDB.
+
+Los datos no se pierden (volúmenes de Docker). Sin las contraseñas, Redis no arranca y su registro explica qué
+ejecutar; MongoDB arranca, pero el backend no puede conectarse hasta que existan sus usuarios.

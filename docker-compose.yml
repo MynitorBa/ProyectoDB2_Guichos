@@ -34,12 +34,17 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-adminpassword}
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-tiendaya}
+      # Usuarios por servicio (database/mongo/03_usuarios.js); contraseñas desde .env.
+      MONGO_API_PASSWORD: ${MONGO_API_PASSWORD:-}
+      MONGO_LECTURA_PASSWORD: ${MONGO_LECTURA_PASSWORD:-}
+      MONGO_ADMIN_PASSWORD: ${MONGO_ADMIN_PASSWORD:-}
     ports:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
       - ./database/mongo/01_init_collections.js:/docker-entrypoint-initdb.d/01_init_collections.js:ro
       - ./database/mongo/02_indexes.js:/docker-entrypoint-initdb.d/02_indexes.js:ro
+      - ./database/mongo/03_usuarios.js:/docker-entrypoint-initdb.d/03_usuarios.js:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
       interval: 10s
@@ -129,9 +134,10 @@ services:
       mongo:
         condition: service_healthy
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USER:-admin}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD:-adminpassword}
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-adminpassword}@mongo:27017/
+      # Solo lectura de la base tiendaya (usuario tiendaya_lectura, rol read).
+      ME_CONFIG_MONGODB_URL: mongodb://tiendaya_lectura:${MONGO_LECTURA_PASSWORD:-}@mongo:27017/tiendaya?authSource=tiendaya
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "false"
+      ME_CONFIG_MONGODB_AUTH_DATABASE: tiendaya
       ME_CONFIG_BASICAUTH: false
 
   neo4j:

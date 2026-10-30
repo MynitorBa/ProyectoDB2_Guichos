@@ -46,7 +46,10 @@ foreach ($archivo in @(@($EnvRaiz, '.env.example'), @($EnvBackend, 'backend\.env
 }
 
 # Contraseñas que viven en el .env de la raíz (una por usuario de cada componente).
-$secretos = @('REDIS_API_PASSWORD', 'REDIS_LECTURA_PASSWORD', 'REDIS_ADMIN_PASSWORD')
+$secretos = @(
+    'REDIS_API_PASSWORD', 'REDIS_LECTURA_PASSWORD', 'REDIS_ADMIN_PASSWORD',
+    'MONGO_API_PASSWORD', 'MONGO_LECTURA_PASSWORD', 'MONGO_ADMIN_PASSWORD'
+)
 $creadas = 0
 foreach ($nombre in $secretos) {
     if (-not (Get-EnvValue $EnvRaiz $nombre)) {
@@ -55,10 +58,15 @@ foreach ($nombre in $secretos) {
     }
 }
 
-# El backend se conecta con su usuario de menor privilegio.
+# El backend se conecta con su usuario de menor privilegio. Se conserva el servidor
+# que ya tuviera configurado MONGO_URI.
+$uriActual = Get-EnvValue $EnvBackend 'MONGO_URI'
+$servidorMongo = if ($uriActual -match '@([^/?]+)' -or $uriActual -match '^mongodb://([^/?@]+)') { $Matches[1] } else { 'localhost:27017' }
+$baseMongo = if (Get-EnvValue $EnvBackend 'MONGO_DB') { Get-EnvValue $EnvBackend 'MONGO_DB' } else { 'tiendaya' }
 $usuarioBackend = @{
     'REDIS_USERNAME' = 'tiendaya_api'
     'REDIS_PASSWORD' = (Get-EnvValue $EnvRaiz 'REDIS_API_PASSWORD')
+    'MONGO_URI'      = "mongodb://tiendaya_api:$(Get-EnvValue $EnvRaiz 'MONGO_API_PASSWORD')@$servidorMongo/$baseMongo" + "?authSource=$baseMongo"
 }
 foreach ($nombre in $usuarioBackend.Keys) {
     if ((Get-EnvValue $EnvBackend $nombre) -ne $usuarioBackend[$nombre]) {

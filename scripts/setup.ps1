@@ -49,10 +49,8 @@ if (-not $SkipDocker) {
         Copy-Item "$Root\.env.example" "$Root\.env"
         Write-Host "  Copiado .env.example → .env"
     }
-    # Contraseñas de los usuarios de Redis (y demás componentes NoSQL): se crean si faltan.
-    & "$PSScriptRoot\generar-credenciales.ps1"
-
-    docker compose up -d
+    # Contraseñas y usuarios de las bases NoSQL (se crean si faltan) y contenedores arriba.
+    & "$PSScriptRoot\configurar-acceso.ps1"
 
     Write-Host "  Esperando que MySQL esté saludable..." -ForegroundColor Yellow
     $maxWait = 60
@@ -151,6 +149,15 @@ if (-not (Test-Path "$Root\backend\.env")) {
 }
 
 Write-Host "  Python listo." -ForegroundColor Green
+
+# Las migraciones de la instalación crean y modifican colecciones: corren con el dueño de la
+# base (tiendaya_admin), no con el usuario del backend. Solo para este proceso; backend\.env
+# conserva el usuario de menor privilegio.
+$mongoUriBackend = (Get-Content "$Root\backend\.env" | Where-Object { $_ -match '^MONGO_URI=' } | Select-Object -Last 1) -replace '^MONGO_URI=', ''
+$mongoAdminPass = (Get-Content "$Root\.env" | Where-Object { $_ -match '^MONGO_ADMIN_PASSWORD=' } | Select-Object -Last 1) -replace '^MONGO_ADMIN_PASSWORD=', ''
+if ($mongoUriBackend -match 'tiendaya_api:' -and $mongoAdminPass) {
+    $env:MONGO_URI = $mongoUriBackend -replace 'tiendaya_api:[^@]+@', "tiendaya_admin:$mongoAdminPass@"
+}
 
 # ── 4. Migrar o reconocer el esquema instalado ───────────────────────────────
 Write-Host "`n[4/8] Preparando modelo relacional y catálogo..." -ForegroundColor Cyan
@@ -318,6 +325,8 @@ Set-Location $Root
 # ── 6. Verificar integridad ───────────────────────────────────────────────────
 Write-Host "`n[7/8] Verificando integridad del sistema..." -ForegroundColor Cyan
 Set-Location "$Root\backend"
+# La verificación final usa la configuración real del backend (su propio usuario).
+Remove-Item Env:MONGO_URI -ErrorAction SilentlyContinue
 & $python scripts\verify_setup.py
 if ($LASTEXITCODE -ne 0) {
     throw 'La verificación final detectó errores; la instalación no está completa.'
