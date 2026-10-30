@@ -124,3 +124,5 @@ Detalle técnico en [46](46-vectores-implementacion.md); decisión en [ADR-004](
 | 3 | Elasticsearch como proyección de búsqueda; checkout como saga con outbox por destino | [ADR-003](28-ADR-003-motor-busqueda.md), [30](30-estrategia-consistencia-checkout.md) |
 | Final | Vectores en Elasticsearch con un servicio de embeddings propio | [ADR-004](45-ADR-004-busqueda-vectorial.md) |
 | Final | Usuarios por servicio con mínimo privilegio en Redis, MongoDB y Elasticsearch | [ADR-005](48-ADR-005-control-de-acceso.md) |
+
+Qué decisiones se sostendrían y cuáles se replantearían, con su justificación: [retrospectiva](49-retrospectiva.md).
