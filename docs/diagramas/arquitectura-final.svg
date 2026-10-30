@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1010" width="1500" height="1010" font-family="Segoe UI, Arial, sans-serif">
+  <title>Arquitectura final de TiendaYa</title>
+  <defs>
+    <marker id="flecha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#374151"/>
+    </marker>
+    <marker id="flechaOutbox" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7C3AED"/>
+    </marker>
+    <marker id="flechaGris" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9CA3AF"/>
+    </marker>
+    <style>
+      .titulo { font-size: 26px; font-weight: 700; fill: #111827; }
+      .subtitulo { font-size: 14px; fill: #4B5563; }
+      .capa { font-size: 12px; font-weight: 700; fill: #6B7280; letter-spacing: 0.12em; }
+      .nombre { font-size: 17px; font-weight: 700; fill: #111827; }
+      .rol { font-size: 13px; font-weight: 600; fill: #0369A1; }
+      .linea { font-size: 13px; fill: #374151; }
+      .chico { font-size: 12px; fill: #4B5563; }
+      .etiqueta { font-size: 12px; fill: #374151; }
+      .acceso { font-size: 11.5px; font-weight: 600; fill: #065F46; }
+      .outbox { font-size: 12.5px; fill: #6D28D9; font-weight: 600; }
+      .caja { fill: #FFFFFF; stroke: #9CA3AF; stroke-width: 1.5; }
+      .cliente { fill: #EFF6FF; stroke: #0288D1; stroke-width: 1.5; }
+      .servicio { fill: #F9FAFB; stroke: #374151; stroke-width: 1.5; }
+      .nuevo { fill: #FEF3C7; stroke: #D97706; stroke-width: 1.5; }
+      .chip { fill: #FFFFFF; stroke: #D1D5DB; stroke-width: 1; }
+      .conexion { stroke: #374151; stroke-width: 1.6; fill: none; }
+      .proyeccion { stroke: #7C3AED; stroke-width: 1.8; fill: none; stroke-dasharray: 7 5; }
+      .consulta { stroke: #9CA3AF; stroke-width: 1.5; fill: none; stroke-dasharray: 3 4; }
+      .candado { fill: #D1FAE5; stroke: #10B981; stroke-width: 1; }
+      .sinacceso { fill: #F3F4F6; stroke: #9CA3AF; stroke-width: 1; }
+      .sinaccesotxt { font-size: 11.5px; font-weight: 600; fill: #6B7280; }
+    </style>
+  </defs>
+
+  <rect width="1500" height="1010" fill="#FFFFFF"/>
+  <text x="45" y="44" class="titulo">TiendaYa · arquitectura final</text>
+  <text x="45" y="68" class="subtitulo">Persistencia políglota: MySQL decide el dinero y el inventario; los demás motores son proyecciones reconstruibles o estado efímero.</text>
+
+  <!-- ══ Clientes ══ -->
+  <text x="45" y="104" class="capa">CLIENTES</text>
+  <rect x="45" y="114" width="320" height="76" rx="10" class="cliente" stroke-dasharray="6 4"/>
+  <text x="65" y="142" class="nombre">Laboratorio de consistencia</text>
+  <text x="65" y="164" class="chico">:5174 · solo desarrollo: inyecta fallas</text>
+  <text x="65" y="180" class="chico">y revisa los invariantes I1–I7</text>
+
+  <rect x="425" y="114" width="650" height="76" rx="10" class="cliente"/>
+  <text x="750" y="145" class="nombre" text-anchor="middle">Tienda y panel administrativo</text>
+  <text x="750" y="168" class="linea" text-anchor="middle">React + Vite :5173 · TanStack Query · catálogo, carrito, checkout, vendedores, admin</text>
+
+  <rect x="1135" y="114" width="320" height="76" rx="10" class="cliente"/>
+  <text x="1155" y="142" class="nombre">Herramientas de consulta</text>
+  <text x="1155" y="164" class="chico">Adminer :8080 · Mongo Express :8081</text>
+  <text x="1155" y="180" class="chico">Redis Commander :8082 · Elasticvue :8083</text>
+
+  <!-- ══ Servicios ══ -->
+  <text x="45" y="236" class="capa">SERVICIOS</text>
+  <rect x="45" y="246" width="320" height="150" rx="10" class="nuevo"/>
+  <text x="65" y="274" class="nombre">Servicio de embeddings</text>
+  <text x="65" y="294" class="rol">:8002 · nuevo en la entrega final</text>
+  <text x="65" y="318" class="linea">mpnet multilingüe (fastembed, ONNX)</text>
+  <text x="65" y="338" class="linea">texto → vector de 768 números</text>
+  <text x="65" y="358" class="linea">sin estado: se reinicia sin perder nada</text>
+  <text x="65" y="380" class="chico">si cae: búsqueda solo de texto</text>
+
+  <rect x="425" y="246" width="650" height="150" rx="10" class="servicio"/>
+  <text x="750" y="274" class="nombre" text-anchor="middle">FastAPI :8000 · API REST y workers en segundo plano</text>
+  <text x="750" y="296" class="linea" text-anchor="middle">Lógica en app/services · JWT · circuito por motor (core/salud) · plan B si un motor no responde</text>
+  <rect x="445" y="312" width="200" height="34" rx="6" class="chip"/>
+  <text x="545" y="334" class="chico" text-anchor="middle">Outbox: 1 consumidor × destino</text>
+  <rect x="655" y="312" width="200" height="34" rx="6" class="chip"/>
+  <text x="755" y="334" class="chico" text-anchor="middle">Saga: reconciliador y recolector</text>
+  <rect x="865" y="312" width="190" height="34" rx="6" class="chip"/>
+  <text x="960" y="334" class="chico" text-anchor="middle">Ventas flash (Redis ↔ MySQL)</text>
+  <rect x="445" y="352" width="300" height="34" rx="6" class="chip"/>
+  <text x="595" y="374" class="chico" text-anchor="middle">Reconciliación del índice y purga de borrados (10 min)</text>
+  <rect x="755" y="352" width="300" height="34" rx="6" class="chip"/>
+  <text x="905" y="374" class="chico" text-anchor="middle">Cola de pedidos (plan B si MySQL cae)</text>
+
+  <rect x="1135" y="246" width="320" height="150" rx="10" class="servicio"/>
+  <text x="1155" y="274" class="nombre">Pasarela de pagos simulada</text>
+  <text x="1155" y="294" class="rol">:8001 · sistema externo</text>
+  <text x="1155" y="318" class="linea">cobro, consulta y reembolso</text>
+  <text x="1155" y="338" class="linea">idempotentes por Idempotency-Key</text>
+  <path d="M1305,352 a40,8 0 0,0 80,0 v28 a40,8 0 0,1 -80,0 z" fill="#F3F4F6" stroke="#6B7280"/>
+  <ellipse cx="1345" cy="352" rx="40" ry="8" fill="#FFFFFF" stroke="#6B7280"/>
+  <text x="1345" y="376" class="chico" text-anchor="middle">SQLite (libro)</text>
+
+  <!-- Conexiones entre clientes y servicios -->
+  <line x1="750" y1="190" x2="750" y2="244" class="conexion" marker-end="url(#flecha)"/>
+  <text x="760" y="222" class="etiqueta">HTTP / JSON + JWT</text>
+  <path d="M365,165 C400,165 400,265 423,268" class="consulta" marker-end="url(#flechaGris)"/>
+  <line x1="423" y1="300" x2="367" y2="300" class="conexion" marker-end="url(#flecha)"/>
+  <text x="371" y="292" class="chico">texto</text>
+  <line x1="1075" y1="300" x2="1133" y2="300" class="conexion" marker-end="url(#flecha)"/>
+  <text x="1080" y="292" class="chico">cobro</text>
+
+  <!-- ══ Persistencia ══ -->
+  <text x="45" y="452" class="capa">PERSISTENCIA</text>
+  <g id="bases">
+    <!-- MySQL -->
+    <path d="M45,480 a105,16 0 0,0 210,0 v222 a105,16 0 0,1 -210,0 z" fill="#E0F2FE" stroke="#0369A1" stroke-width="2"/>
+    <ellipse cx="150" cy="480" rx="105" ry="16" fill="#F0F9FF" stroke="#0369A1" stroke-width="2"/>
+    <text x="150" y="518" class="nombre" text-anchor="middle">MySQL 8 · :3307</text>
+    <text x="150" y="538" class="rol" text-anchor="middle">Autoridad ACID</text>
+    <text x="62" y="562" class="linea">usuarios, ofertas, precios</text>
+    <text x="62" y="580" class="linea">inventario, pedidos, pagos</text>
+    <text x="62" y="598" class="linea">reseñas, fraude, saga</text>
+    <text x="62" y="616" class="linea">outbox_eventos</text>
+    <text x="62" y="634" class="linea">copias del plan B</text>
+    <rect x="58" y="652" width="184" height="24" rx="12" class="candado"/>
+    <text x="150" y="669" class="acceso" text-anchor="middle">🔒 tiendaya (usuario propio)</text>
+
+    <!-- MongoDB -->
+    <path d="M285,480 a105,16 0 0,0 210,0 v222 a105,16 0 0,1 -210,0 z" fill="#ECFDF5" stroke="#047857" stroke-width="1.6"/>
+    <ellipse cx="390" cy="480" rx="105" ry="16" fill="#F0FDF4" stroke="#047857" stroke-width="1.6"/>
+    <text x="390" y="518" class="nombre" text-anchor="middle">MongoDB 7 · :27017</text>
+    <text x="390" y="538" class="rol" text-anchor="middle">Catálogo documental</text>
+    <text x="302" y="562" class="linea">productos y variantes</text>
+    <text x="302" y="580" class="linea">esquemas por categoría</text>
+    <text x="302" y="598" class="linea">historial de eventos</text>
+    <text x="302" y="616" class="linea">configuración de tiendas</text>
+    <rect x="298" y="652" width="184" height="24" rx="12" class="candado"/>
+    <text x="390" y="669" class="acceso" text-anchor="middle">🔒 tiendaya_api · rol a medida</text>
+
+    <!-- Redis -->
+    <path d="M525,480 a105,16 0 0,0 210,0 v222 a105,16 0 0,1 -210,0 z" fill="#FEF2F2" stroke="#B91C1C" stroke-width="1.6"/>
+    <ellipse cx="630" cy="480" rx="105" ry="16" fill="#FFF5F5" stroke="#B91C1C" stroke-width="1.6"/>
+    <text x="630" y="518" class="nombre" text-anchor="middle">Redis 7 · :6379</text>
+    <text x="630" y="538" class="rol" text-anchor="middle">Estado efímero y cachés</text>
+    <text x="542" y="562" class="linea">carritos (expiran en 30 min)</text>
+    <text x="542" y="580" class="linea">ventas flash (scripts Lua)</text>
+    <text x="542" y="598" class="linea">cachés semánticas y vistos</text>
+    <text x="542" y="616" class="linea">autocompletado de respaldo</text>
+    <text x="542" y="634" class="linea">cola de pedidos (plan B)</text>
+    <rect x="538" y="652" width="184" height="24" rx="12" class="candado"/>
+    <text x="630" y="669" class="acceso" text-anchor="middle">🔒 tiendaya_api · ACL</text>
+
+    <!-- Elasticsearch -->
+    <path d="M765,480 a105,16 0 0,0 210,0 v222 a105,16 0 0,1 -210,0 z" fill="#FFFBEB" stroke="#B45309" stroke-width="2"/>
+    <ellipse cx="870" cy="480" rx="105" ry="16" fill="#FFFDF5" stroke="#B45309" stroke-width="2"/>
+    <text x="870" y="518" class="nombre" text-anchor="middle">Elasticsearch 8.15</text>
+    <text x="870" y="538" class="rol" text-anchor="middle">Búsqueda: texto + vectores</text>
+    <text x="782" y="562" class="linea">BM25, errores, facetas</text>
+    <text x="782" y="580" class="linea">vector 768 · int8 HNSW</text>
+    <text x="782" y="598" class="linea">búsqueda híbrida</text>
+    <text x="782" y="616" class="linea">similares · para ti</text>
+    <text x="782" y="634" class="linea">aviso de duplicados</text>
+    <rect x="778" y="652" width="184" height="24" rx="12" class="candado"/>
+    <text x="870" y="669" class="acceso" text-anchor="middle">🔒 tiendaya_api · rol</text>
+
+    <!-- Cassandra -->
+    <path d="M1005,480 a105,16 0 0,0 210,0 v222 a105,16 0 0,1 -210,0 z" fill="#F5F3FF" stroke="#5B21B6" stroke-width="1.6"/>
+    <ellipse cx="1110" cy="480" rx="105" ry="16" fill="#FAF5FF" stroke="#5B21B6" stroke-width="1.6"/>
+    <text x="1110" y="518" class="nombre" text-anchor="middle">Cassandra 4.1 · :9042</text>
+    <text x="1110" y="538" class="rol" text-anchor="middle">Analítica semanal</text>
+    <text x="1022" y="562" class="linea">ventas por producto</text>
+    <text x="1022" y="580" class="linea">por oferta y vendedor</text>
+    <text x="1022" y="598" class="linea">una tabla por consulta</text>
+    <text x="1022" y="616" class="linea">(sin JOIN al abrir paneles)</text>
+    <rect x="1018" y="652" width="184" height="24" rx="12" class="sinacceso"/>
+    <text x="1110" y="669" class="sinaccesotxt" text-anchor="middle">sin control de acceso</text>
+
+    <!-- Neo4j -->
+    <path d="M1245,480 a105,16 0 0,0 210,0 v222 a105,16 0 0,1 -210,0 z" fill="#F0FDFA" stroke="#0F766E" stroke-width="1.6"/>
+    <ellipse cx="1350" cy="480" rx="105" ry="16" fill="#F5FFFD" stroke="#0F766E" stroke-width="1.6"/>
+    <text x="1350" y="518" class="nombre" text-anchor="middle">Neo4j 5.26 · :7687</text>
+    <text x="1350" y="538" class="rol" text-anchor="middle">Grafo de compras</text>
+    <text x="1262" y="562" class="linea">compras pagadas</text>
+    <text x="1262" y="580" class="linea">«también compraron»</text>
+    <text x="1262" y="598" class="linea">patrones de fraude</text>
+    <text x="1262" y="616" class="linea">reseñas verificadas</text>
+    <rect x="1258" y="652" width="184" height="24" rx="12" class="sinacceso"/>
+    <text x="1350" y="669" class="sinaccesotxt" text-anchor="middle">usuario neo4j (admin)</text>
+  </g>
+
+  <!-- API → bases -->
+  <g class="conexion">
+    <path d="M520,396 C520,430 150,430 150,462" class="conexion" marker-end="url(#flecha)"/>
+    <path d="M600,396 C600,430 390,430 390,462" class="conexion" marker-end="url(#flecha)"/>
+    <path d="M680,396 C680,430 630,430 630,462" class="conexion" marker-end="url(#flecha)"/>
+    <path d="M820,396 C820,430 870,430 870,462" class="conexion" marker-end="url(#flecha)"/>
+    <path d="M900,396 C900,430 1110,430 1110,462" class="conexion" marker-end="url(#flecha)"/>
+    <path d="M980,396 C980,430 1350,430 1350,462" class="conexion" marker-end="url(#flecha)"/>
+  </g>
+  <!-- Herramientas de consulta: solo lectura -->
+  <path d="M1455,170 C1492,170 1492,420 1462,456" class="consulta" marker-end="url(#flechaGris)"/>
+  <text x="1210" y="214" class="chico">a cada base, con usuarios de solo lectura</text>
+
+  <!-- ══ Outbox: MySQL → proyecciones ══ -->
+  <path d="M150,718 V760 H1350" class="proyeccion"/>
+  <line x1="390" y1="760" x2="390" y2="720" class="proyeccion" marker-end="url(#flechaOutbox)"/>
+  <line x1="630" y1="760" x2="630" y2="720" class="proyeccion" marker-end="url(#flechaOutbox)"/>
+  <line x1="870" y1="760" x2="870" y2="720" class="proyeccion" marker-end="url(#flechaOutbox)"/>
+  <line x1="1110" y1="760" x2="1110" y2="720" class="proyeccion" marker-end="url(#flechaOutbox)"/>
+  <line x1="1350" y1="760" x2="1350" y2="720" class="proyeccion" marker-end="url(#flechaOutbox)"/>
+  <text x="400" y="750" class="outbox">mongo</text>
+  <text x="640" y="750" class="outbox">redis</text>
+  <text x="880" y="750" class="outbox">busqueda</text>
+  <text x="1120" y="750" class="outbox">cassandra</text>
+  <text x="1360" y="750" class="outbox">neo4j</text>
+  <text x="160" y="750" class="outbox">+ catalogo (copia en MySQL)</text>
+  <text x="45" y="786" class="outbox">Outbox por destino: la escritura en MySQL y una fila por destino en la misma transacción; un consumidor por destino, idempotente, con reintentos de 2ⁿ s (máx. 300 s).</text>
+
+  <!-- ══ Plan B y leyenda ══ -->
+  <rect x="45" y="808" width="900" height="182" rx="10" class="caja"/>
+  <text x="65" y="834" class="nombre">Plan B: si un motor no responde</text>
+  <text x="65" y="860" class="linea"><tspan font-weight="700">Redis</tspan> → carrito copiado en MySQL; flash con FOR UPDATE en MySQL</text>
+  <text x="65" y="882" class="linea"><tspan font-weight="700">MongoDB</tspan> → copia del catálogo en MySQL (destino catalogo); Elasticsearch como último recurso</text>
+  <text x="65" y="904" class="linea"><tspan font-weight="700">Elasticsearch</tspan> → MongoDB → copia en MySQL; autocompletado con prefijos en Redis</text>
+  <text x="65" y="926" class="linea"><tspan font-weight="700">Neo4j</tspan> → caché horaria de recomendaciones en MySQL → más vendidos</text>
+  <text x="65" y="948" class="linea"><tspan font-weight="700">MySQL</tspan> → solo lectura (JWT, copias en Redis) y pedidos en cola sin cobrar</text>
+  <text x="65" y="970" class="linea"><tspan font-weight="700">Embeddings</tspan> → búsqueda solo de texto; consultas repetidas con su vector guardado en Redis</text>
+
+  <rect x="975" y="808" width="480" height="182" rx="10" class="caja"/>
+  <text x="995" y="834" class="nombre">Leyenda</text>
+  <line x1="995" y1="858" x2="1055" y2="858" class="conexion" marker-end="url(#flecha)"/>
+  <text x="1068" y="862" class="linea">lectura y escritura del backend</text>
+  <line x1="995" y1="884" x2="1055" y2="884" class="proyeccion" marker-end="url(#flechaOutbox)"/>
+  <text x="1068" y="888" class="linea">proyección asíncrona por outbox</text>
+  <line x1="995" y1="910" x2="1055" y2="910" class="consulta" marker-end="url(#flechaGris)"/>
+  <text x="1068" y="914" class="linea">acceso de herramientas / desarrollo</text>
+  <rect x="995" y="926" width="60" height="20" rx="10" class="candado"/>
+  <text x="1068" y="941" class="linea">usuario del backend (mínimo privilegio)</text>
+  <rect x="995" y="954" width="60" height="22" rx="5" class="nuevo"/>
+  <text x="1068" y="970" class="linea">componente nuevo de la entrega final</text>
+</svg>
