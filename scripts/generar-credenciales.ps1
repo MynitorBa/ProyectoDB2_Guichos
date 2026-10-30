@@ -13,30 +13,7 @@ $Root = Split-Path $PSScriptRoot -Parent
 $EnvRaiz = Join-Path $Root '.env'
 $EnvBackend = Join-Path $Root 'backend\.env'
 
-function Get-EnvValue([string]$Path, [string]$Name) {
-    if (-not (Test-Path $Path)) { return $null }
-    $linea = Get-Content $Path | Where-Object { $_ -match "^\s*$Name\s*=" } | Select-Object -Last 1
-    if (-not $linea) { return $null }
-    $valor = ($linea -split '=', 2)[1].Trim()
-    if ($valor) { return $valor } else { return $null }
-}
-
-function Set-EnvValue([string]$Path, [string]$Name, [string]$Value) {
-    $lineas = @(if (Test-Path $Path) { Get-Content $Path } else { @() })
-    $encontrada = $false
-    $nuevas = foreach ($linea in $lineas) {
-        if ($linea -match "^\s*$Name\s*=") { $encontrada = $true; "$Name=$Value" } else { $linea }
-    }
-    if (-not $encontrada) { $nuevas = @($nuevas) + "$Name=$Value" }
-    [System.IO.File]::WriteAllLines($Path, [string[]]$nuevas, (New-Object System.Text.UTF8Encoding $false))
-}
-
-function New-Secret {
-    $bytes = New-Object byte[] 24
-    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    # Solo letras y números: se usan en URLs de conexión y en archivos de configuración.
-    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
-}
+. "$PSScriptRoot\credenciales-comun.ps1"
 
 foreach ($archivo in @(@($EnvRaiz, '.env.example'), @($EnvBackend, 'backend\.env.example'))) {
     if (-not (Test-Path $archivo[0])) {
@@ -48,12 +25,6 @@ foreach ($archivo in @(@($EnvRaiz, '.env.example'), @($EnvBackend, 'backend\.env
 # Una instalación existente ya creó sus volúmenes con las contraseñas de antes (venían fijas en
 # el ejemplo o como valor por defecto): se adoptan, nunca se cambian. Primero la de backend\.env;
 # si no está, la del contenedor ya creado. Solo en una instalación nueva se genera una.
-function Get-ContainerEnv([string]$Contenedor, [string]$Variable) {
-    $valores = docker inspect $Contenedor --format '{{range .Config.Env}}{{println .}}{{end}}' 2>$null
-    if ($LASTEXITCODE -ne 0) { return $null }
-    $linea = $valores | Where-Object { $_ -like "$Variable=*" } | Select-Object -First 1
-    if ($linea) { return ($linea -split '=', 2)[1] } else { return $null }
-}
 foreach ($nombre in @('MYSQL_PASSWORD', 'NEO4J_PASSWORD')) {
     $enBackend = Get-EnvValue $EnvBackend $nombre
     if (-not (Get-EnvValue $EnvRaiz $nombre) -and $enBackend) { Set-EnvValue $EnvRaiz $nombre $enBackend }

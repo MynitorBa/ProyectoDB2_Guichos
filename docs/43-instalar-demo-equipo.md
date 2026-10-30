@@ -13,6 +13,20 @@ La pila DEMO consume varios GB adicionales. El instalador comprueba Docker,
 herramientas, puertos y recursos antes de crear bases; no apaga procesos ajenos.
 Mantener apagada la instancia PRINCIPAL. No usar datos personales reales.
 
+## DEMO ya instalada: actualización a la Entrega final (una sola vez)
+
+Si la DEMO se instaló antes de la Entrega final, sus motores no tienen control de acceso
+y su índice de búsqueda no tiene vectores. Con la PRINCIPAL apagada:
+
+```powershell
+.\scripts\configurar-acceso-demo.ps1   # contraseñas (adopta las existentes), usuarios y roles
+.\scripts\migrar-indice-demo.ps1       # índice v2 con vectores, sin cortar la búsqueda
+```
+
+Ambos son idempotentes y conservan los datos. Sin el primero, la presentación no arranca
+(el backend DEMO heredaría las credenciales de PRINCIPAL); sin el segundo, arranca pero
+avisa que la búsqueda por significado no tiene vectores.
+
 ## Primera instalación (una sola vez)
 
 ```powershell
@@ -22,11 +36,11 @@ Copy-Item backend\.env.demo.example backend\.env.demo
 ```
 
 Revisar `backend/.env.demo`: debe conservar `TIENDAYA_DEMO=true`, los puertos
-DEMO 3317/27117/6389/9142/7787/9210 y los nombres terminados en `_demo`.
-Cambiar `SECRET_KEY` por un valor local privado. Si se cambian las contraseñas
-del ejemplo, `MYSQL_PASSWORD`, la contraseña del URI MongoDB y
-`NEO4J_PASSWORD` deben ser coherentes con la instalación Docker nueva. No
-publicar este archivo. Nunca usar `backend/.env` de PRINCIPAL.
+DEMO 3317/27117/6389/9142/7787/9210 y los nombres terminados en `_demo`. Las
+contraseñas y el `SECRET_KEY` van **vacíos**: el instalador los genera al azar
+(`configurar-acceso-demo.ps1`), incluidos los usuarios de Redis, MongoDB y
+Elasticsearch con control de acceso. No publicar este archivo. Nunca usar
+`backend/.env` de PRINCIPAL.
 
 ```powershell
 .\scripts\prepare-presentation-data.ps1 -PreflightOnly

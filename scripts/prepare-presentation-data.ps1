@@ -45,6 +45,8 @@ if (-not (Test-Path -LiteralPath $envFile)) {
     if ($PreflightOnly) { Write-Host 'Falta backend/.env.demo: se creará desde el ejemplo al instalar.' }
     else { Copy-Item -LiteralPath $example -Destination $envFile }
 }
+# Contraseñas de los motores y usuarios DEMO (control de acceso), generadas antes de crear nada.
+if (-not $PreflightOnly) { & (Join-Path $PSScriptRoot 'configurar-acceso-demo.ps1') -SoloCredenciales }
 if (Test-Path -LiteralPath $envFile) {
     $settings = @{}
     foreach ($line in Get-Content -LiteralPath $envFile) {
@@ -78,10 +80,8 @@ if (Test-Path -LiteralPath $envFile) {
         $settings['FAULT_INJECTION_ENABLED'] -ne 'false') {
         throw 'Desactive el worker automático y la inyección de fallas antes de instalar.'
     }
+    # Incluye las DEMO_* que usa docker-compose.demo.yml (configurar-acceso-demo.ps1).
     foreach ($key in $settings.Keys) { [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process') }
-    $env:DEMO_MYSQL_PASSWORD = $settings['MYSQL_PASSWORD']
-    $env:DEMO_MONGO_PASSWORD = [uri]::UnescapeDataString($mongoUri.UserInfo.Split(':', 2)[1])
-    $env:DEMO_NEO4J_PASSWORD = $settings['NEO4J_PASSWORD']
 }
 if ($PreflightOnly) {
     Write-Host "Preflight OK. RAM libre: $freeRamGb GB; disco libre: $freeDiskGb GB. No se inició ni modificó ningún servicio."
@@ -104,11 +104,18 @@ foreach ($folder in @('frontend','laboratorio')) {
 
 # No repetir el bootstrap si falló a mitad: una recuperación requiere auditoría
 # de los seis motores. Este bloqueo protege contra un seed duplicado.
-& (Join-Path $PSScriptRoot 'demo-environment.ps1') -Action start
+# Crea los motores con el control de acceso ya activo y sus usuarios.
+& (Join-Path $PSScriptRoot 'configurar-acceso-demo.ps1')
 & (Join-Path $PSScriptRoot 'demo-environment.ps1') -Action bootstrap
+# La carga usa la cuenta de administración de MongoDB solo en este proceso.
+$env:DEMO_MONGO_URI_INSTALACION = $env:MONGO_URI -replace 'tiendaya_api:[^@]*@', "tiendaya_admin:$($env:DEMO_MONGO_ADMIN_PASSWORD)@"
 & $python (Join-Path $root 'backend\scripts\seed_demo_large.py') --env-file $envFile `
     --profile $Profile --run-id $RunId --seed 20261018 --batch-size 500 --confirm-demo --project
 if ($LASTEXITCODE -ne 0) { throw 'Falló la carga sintética; no vuelva a ejecutar el instalador sobre estos volúmenes.' }
+Remove-Item Env:DEMO_MONGO_URI_INSTALACION -ErrorAction SilentlyContinue
+# Índice v2 con vectores (usa el usuario indexador y el servicio de embeddings).
+& (Join-Path $PSScriptRoot 'migrar-indice-demo.ps1')
+foreach ($key in $settings.Keys) { [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process') }
 
 $env:PASARELA_DB = $ledger
 Push-Location $root

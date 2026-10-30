@@ -48,8 +48,20 @@ function Import-DemoEnv {
     }
 }
 
+# Las migraciones y la carga crean colecciones e índices: corren con los usuarios de
+# administración de la DEMO solo en este proceso. La aplicación usa los de menor privilegio.
+function Use-DemoInstallerCredentials {
+    $mongoServer = if ($env:MONGO_URI -match '@([^/?]+)') { $Matches[1] } else { '127.0.0.1:27117' }
+    $env:MONGO_URI = "mongodb://tiendaya_admin:$($env:DEMO_MONGO_ADMIN_PASSWORD)@$mongoServer/tiendaya_demo?authSource=tiendaya_demo"
+    $env:REDIS_USERNAME = 'tiendaya_admin'
+    $env:REDIS_PASSWORD = $env:DEMO_REDIS_ADMIN_PASSWORD
+    $env:ES_USERNAME = 'tiendaya_indexador'
+    $env:ES_PASSWORD = $env:DEMO_ES_INDEXADOR_PASSWORD
+}
+
 function Invoke-DemoCompose([string[]]$Arguments) {
-    & docker compose -f $Compose --project-name tiendaya_demo @Arguments
+    # Las contraseñas de los motores DEMO están en backend\.env.demo (configurar-acceso-demo.ps1).
+    & docker compose -f $Compose --env-file $EnvFile --project-name tiendaya_demo @Arguments
     if ($LASTEXITCODE -ne 0) { throw "docker compose falló: $($Arguments -join ' ')" }
 }
 
@@ -87,7 +99,8 @@ function Wait-DemoHttp([string]$Url, [int]$Seconds = 90) {
 function Bootstrap-Demo {
     Import-DemoEnv
     $rootPassword = $env:DEMO_MYSQL_ROOT_PASSWORD
-    if (-not $rootPassword) { $rootPassword = 'demo-root-local' }
+    if (-not $rootPassword) { throw 'Falta DEMO_MYSQL_ROOT_PASSWORD. Ejecute .\scripts\configurar-acceso-demo.ps1' }
+    Use-DemoInstallerCredentials
     # Solo se cargan directamente el esquema y seed heredados. Las fases 1+
     # deben pasar por sus migradores oficiales porque varias coordinan MySQL
     # con MongoDB y no son correctas si se ejecutan como SQL aislado.
@@ -181,6 +194,7 @@ function Bootstrap-Demo {
 
 function Seed-Demo([string]$Profile) {
     Import-DemoEnv
+    Use-DemoInstallerCredentials
     & $Python (Join-Path $Root 'backend\scripts\seed_demo_large.py') `
         --env-file $EnvFile --profile $Profile --run-id $RunId `
         --seed 20261018 --batch-size 500 --confirm-demo --project

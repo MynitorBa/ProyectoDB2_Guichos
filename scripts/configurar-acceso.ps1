@@ -13,6 +13,7 @@
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path $PSScriptRoot -Parent
 
+. "$PSScriptRoot\credenciales-comun.ps1"
 & "$PSScriptRoot\generar-credenciales.ps1"
 
 Push-Location $Root
@@ -20,47 +21,15 @@ try {
     docker compose up -d
     if ($LASTEXITCODE -ne 0) { throw 'docker compose up falló.' }
 
+    $envRaiz = Read-EnvFile (Join-Path $Root '.env')
     Write-Host '  Esperando MongoDB...' -ForegroundColor Yellow
-    $intentos = 0
-    while ((docker inspect tiendaya_mongo --format '{{.State.Health.Status}}') -ne 'healthy') {
-        if (++$intentos -gt 60) { throw 'MongoDB no quedó saludable.' }
-        Start-Sleep 2
-    }
-
-    $envRaiz = @{}
-    Get-Content (Join-Path $Root '.env') | Where-Object { $_ -match '^\s*[A-Z_]+\s*=' } | ForEach-Object {
-        $nombre, $valor = $_ -split '=', 2
-        $envRaiz[$nombre.Trim()] = $valor.Trim()
-    }
+    Wait-ContainerHealthy 'tiendaya_mongo' 120
     $rootUser = if ($envRaiz['MONGO_ROOT_USER']) { $envRaiz['MONGO_ROOT_USER'] } else { 'admin' }
-    $rootPass = $envRaiz['MONGO_ROOT_PASSWORD']
-    if (-not $rootPass) { throw 'Falta MONGO_ROOT_PASSWORD en .env.' }
-    docker exec tiendaya_mongo mongosh --quiet -u $rootUser -p $rootPass --authenticationDatabase admin `
-        /docker-entrypoint-initdb.d/03_usuarios.js
-    if ($LASTEXITCODE -ne 0) { throw 'No se pudieron crear los usuarios de MongoDB.' }
+    Set-MongoUsuarios 'tiendaya_mongo' $rootUser $envRaiz['MONGO_ROOT_PASSWORD']
 
     Write-Host '  Esperando Elasticsearch...' -ForegroundColor Yellow
-    $intentos = 0
-    while ((docker inspect tiendaya_elasticsearch --format '{{.State.Health.Status}}') -ne 'healthy') {
-        if (++$intentos -gt 90) { throw 'Elasticsearch no quedó saludable.' }
-        Start-Sleep 2
-    }
-    $par = "elastic:$($envRaiz['ELASTIC_PASSWORD'])"
-    $cabeceras = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($par)) }
-    $seguridad = Get-Content (Join-Path $Root 'database\elasticsearch\seguridad.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    foreach ($rol in $seguridad.roles.PSObject.Properties) {
-        $cuerpo = $rol.Value | Select-Object cluster, indices | ConvertTo-Json -Depth 6
-        Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:9200/_security/role/$($rol.Name)" -Headers $cabeceras `
-            -ContentType 'application/json' -Body $cuerpo | Out-Null
-    }
-    foreach ($usuario in $seguridad.usuarios.PSObject.Properties) {
-        $clave = $envRaiz[$usuario.Value.variable]
-        if (-not $clave) { throw "Falta $($usuario.Value.variable) en .env." }
-        $cuerpo = @{ password = $clave; roles = @($usuario.Value.roles) } | ConvertTo-Json
-        Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:9200/_security/user/$($usuario.Name)" -Headers $cabeceras `
-            -ContentType 'application/json' -Body $cuerpo | Out-Null
-    }
-    Write-Host "  Usuarios de Elasticsearch: $(($seguridad.usuarios.PSObject.Properties.Name) -join ', ')"
+    Wait-ContainerHealthy 'tiendaya_elasticsearch' 180
+    Set-ElasticsearchSeguridad 'http://127.0.0.1:9200' $envRaiz['ELASTIC_PASSWORD'] $envRaiz $Root
 } finally {
     Pop-Location
 }

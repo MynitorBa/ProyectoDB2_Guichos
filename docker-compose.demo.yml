@@ -2,15 +2,21 @@ name: tiendaya_demo
 
 # Entorno completamente aislado para datos sintéticos. Nunca comparte
 # contenedores, volúmenes, puertos ni nombres de base con la instancia principal.
+#
+# Control de acceso (Entrega final): las mismas reglas que la instancia principal
+# (database/redis/acl.conf, database/mongo/03_usuarios.js, database/elasticsearch/
+# seguridad.json). Las contraseñas están en backend/.env.demo (fuera del repositorio):
+#   docker compose -f docker-compose.demo.yml --env-file backend/.env.demo ...
+# Si falta alguna, compose se niega a arrancar: Ejecute scripts/configurar-acceso-demo.ps1
 services:
   mysql-demo:
     image: mysql:8.0
     container_name: tiendaya_demo_mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${DEMO_MYSQL_ROOT_PASSWORD:-demo-root-local}
+      MYSQL_ROOT_PASSWORD: ${DEMO_MYSQL_ROOT_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
       MYSQL_DATABASE: tiendaya_demo
       MYSQL_USER: tiendaya_demo
-      MYSQL_PASSWORD: ${DEMO_MYSQL_PASSWORD:-demo-only-local}
+      MYSQL_PASSWORD: ${DEMO_MYSQL_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
     ports: ["3317:3306"]
     volumes:
       - demo_mysql_data:/var/lib/mysql
@@ -19,7 +25,7 @@ services:
     mem_limit: 768m
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=256M --performance-schema=OFF
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DEMO_MYSQL_ROOT_PASSWORD:-demo-root-local}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DEMO_MYSQL_ROOT_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -30,14 +36,20 @@ services:
     container_name: tiendaya_demo_mongo
     environment:
       MONGO_INITDB_ROOT_USERNAME: demo_admin
-      MONGO_INITDB_ROOT_PASSWORD: ${DEMO_MONGO_PASSWORD:-demo-only-local}
+      MONGO_INITDB_ROOT_PASSWORD: ${DEMO_MONGO_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
       MONGO_INITDB_DATABASE: tiendaya_demo
+      MONGO_API_PASSWORD: ${DEMO_MONGO_API_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
+      MONGO_LECTURA_PASSWORD: ${DEMO_MONGO_LECTURA_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
+      MONGO_ADMIN_PASSWORD: ${DEMO_MONGO_ADMIN_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
     ports: ["27117:27017"]
     mem_limit: 768m
     command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     volumes:
       - demo_mongo_data:/data/db
-      - ./database/mongo:/docker-entrypoint-initdb.d:ro
+      # Archivo por archivo: la carpeta tiene otros scripts que no son de inicialización.
+      - ./database/mongo/01_init_collections.js:/docker-entrypoint-initdb.d/01_init_collections.js:ro
+      - ./database/mongo/02_indexes.js:/docker-entrypoint-initdb.d/02_indexes.js:ro
+      - ./database/mongo/03_usuarios.js:/docker-entrypoint-initdb.d/03_usuarios.js:ro
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
       interval: 10s
@@ -49,11 +61,19 @@ services:
     image: redis:7.2-alpine
     container_name: tiendaya_demo_redis
     ports: ["6389:6379"]
-    volumes: ["demo_redis_data:/data"]
+    volumes:
+      - demo_redis_data:/data
+      - ./database/redis/acl.conf:/etc/redis/acl.conf:ro
+      - ./database/redis/iniciar-redis.sh:/usr/local/bin/iniciar-redis.sh:ro
+    environment:
+      REDIS_API_PASSWORD: ${DEMO_REDIS_API_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
+      REDIS_LECTURA_PASSWORD: ${DEMO_REDIS_LECTURA_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
+      REDIS_ADMIN_PASSWORD: ${DEMO_REDIS_ADMIN_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
     mem_limit: 256m
-    command: redis-server --save 60 1 --loglevel warning --maxmemory 192mb --maxmemory-policy noeviction
+    entrypoint: ["sh", "/usr/local/bin/iniciar-redis.sh"]
+    command: ["--maxmemory", "192mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning --user tiendaya_lectura --pass \"$$REDIS_LECTURA_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -82,7 +102,7 @@ services:
     container_name: tiendaya_demo_neo4j
     ports: ["7574:7474", "7787:7687"]
     environment:
-      NEO4J_AUTH: neo4j/${DEMO_NEO4J_PASSWORD:-demo-only-local}
+      NEO4J_AUTH: neo4j/${DEMO_NEO4J_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_server_memory_heap_initial__size: 256m
@@ -103,7 +123,10 @@ services:
     ports: ["9210:9200"]
     environment:
       discovery.type: single-node
-      xpack.security.enabled: "false"
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${DEMO_ELASTIC_PASSWORD:?Ejecute scripts/configurar-acceso-demo.ps1}
       xpack.ml.enabled: "false"
       ES_JAVA_OPTS: -Xms512m -Xmx512m
       cluster.name: tiendaya-demo-busqueda
@@ -113,7 +136,7 @@ services:
     mem_limit: 1280m
     volumes: ["demo_es_data:/usr/share/elasticsearch/data"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fs -u \"elastic:$$ELASTIC_PASSWORD\" 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 24

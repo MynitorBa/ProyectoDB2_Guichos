@@ -5,13 +5,26 @@ $root = Split-Path -Parent $PSScriptRoot
 $compose = Join-Path $root 'docker-compose.demo.yml'
 $runtime = Join-Path (Split-Path -Parent $root) '_runtime\tiendaya-demo'
 $manifestPath = Join-Path $runtime 'presentation-processes.json'
+$envFile = Join-Path $root 'backend\.env.demo'
+
+# Proceso que escucha en un puerto local. En algunos equipos Windows reporta el socket que
+# escucha con estado CLOSED aunque atiende conexiones; se identifica por el extremo remoto
+# vacío (0.0.0.0:0) y se prefiere el que está en Listen.
+function Get-ListenerPid([int]$Port) {
+    $conexion = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+        Where-Object { $_.RemotePort -eq 0 -and $_.OwningProcess -gt 0 } |
+        Sort-Object { $_.State -ne 'Listen' } | Select-Object -First 1
+    if ($conexion) { return [int]$conexion.OwningProcess } else { return $null }
+}
 
 if (-not (Test-Path -LiteralPath $manifestPath)) {
     throw 'No existe el registro de procesos de esta presentación; no se detendrá nada automáticamente.'
 }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$expectedPorts = @(5173, 5174, 8000, 8001)
-if (@($manifest.app).Count -ne 4 -or @($manifest.app.port | Sort-Object) -join ',' -ne '5173,5174,8000,8001') {
+# Desde la Entrega final la presentación también registra el servicio de embeddings (8002);
+# se acepta el registro anterior (sin 8002) de una presentación iniciada antes del cambio.
+$expectedPorts = @($manifest.app.port | ForEach-Object { [int]$_ } | Sort-Object)
+if (($expectedPorts -join ',') -notin @('5173,5174,8000,8001', '5173,5174,8000,8001,8002')) {
     throw 'El registro de procesos no coincide con la arquitectura de presentación.'
 }
 
@@ -36,11 +49,12 @@ $patterns = @{
     5174 = 'vite\.js.*--port\s+5174'
     8000 = 'uvicorn app\.main:app.*--port 8000'
     8001 = 'uvicorn payment_simulator\.app:app.*--port 8001'
+    8002 = 'uvicorn embeddings_service\.app:app.*--port 8002'
 }
 foreach ($entry in $manifest.app) {
     $port = [int]$entry.port
-    $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $listener -or $listener.OwningProcess -ne [int]$entry.pid) {
+    $listenerPid = Get-ListenerPid $port
+    if (-not $listenerPid -or $listenerPid -ne [int]$entry.pid) {
         throw "El puerto $port ya no pertenece al proceso registrado; no se detendrá nada."
     }
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($entry.pid)"
@@ -76,10 +90,10 @@ if ($manifest.recovery_launcher) {
 foreach ($entry in $manifest.app) { Stop-Process -Id $entry.pid -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 2
 foreach ($port in $expectedPorts) {
-    if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+    if (Get-ListenerPid $port) {
         throw "El puerto $port continúa ocupado; los motores permanecen encendidos."
     }
 }
-& docker compose -f $compose --project-name tiendaya_demo stop --timeout 60
+& docker compose -f $compose --env-file $envFile --project-name tiendaya_demo stop --timeout 60
 if ($LASTEXITCODE -ne 0) { throw 'No se pudieron detener todos los motores DEMO.' }
 Write-Host 'Presentación detenida. Los seis volúmenes originales se conservaron.' -ForegroundColor Green

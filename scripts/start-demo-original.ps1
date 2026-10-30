@@ -26,8 +26,18 @@ function Invoke-Docker([string[]]$Arguments) {
     return $result
 }
 
+# Proceso que escucha en un puerto local. En algunos equipos Windows reporta el socket que
+# escucha con estado CLOSED aunque atiende conexiones; se identifica por el extremo remoto
+# vacío (0.0.0.0:0) y se prefiere el que está en Listen.
+function Get-ListenerPid([int]$Port) {
+    $conexion = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+        Where-Object { $_.RemotePort -eq 0 -and $_.OwningProcess -gt 0 } |
+        Sort-Object { $_.State -ne 'Listen' } | Select-Object -First 1
+    if ($conexion) { return [int]$conexion.OwningProcess } else { return $null }
+}
+
 function Assert-FreePort([int]$Port) {
-    if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) {
+    if (Get-ListenerPid $Port) {
         throw "El puerto $Port ya está ocupado. No se detendrá ningún proceso ajeno."
     }
 }
@@ -91,7 +101,7 @@ $main = @(Invoke-Docker -Arguments @('ps', '--filter', 'label=com.docker.compose
 if ($main.Count -gt 0 -and $main[0]) { throw 'La instancia PRINCIPAL tiene contenedores activos; no se iniciará una segunda pila.' }
 $clean = @(Invoke-Docker -Arguments @('ps', '--filter', 'label=com.docker.compose.project=tiendaya_demo_clean', '--format', '{{.Names}}'))
 if ($clean.Count -gt 0 -and $clean[0]) { throw 'La DEMO limpia incompleta está activa; no se iniciará la original.' }
-foreach ($port in @(5173, 5174, 5175, 8000, 8001, 8005, 8006)) { Assert-FreePort $port }
+foreach ($port in @(5173, 5174, 5175, 8000, 8001, 8002, 8005, 8006)) { Assert-FreePort $port }
 $motorPorts = @(
     @{ Port = 3317; Name = 'mysql' }, @{ Port = 27117; Name = 'mongo' },
     @{ Port = 6389; Name = 'redis' }, @{ Port = 9142; Name = 'cassandra' },
@@ -143,6 +153,11 @@ if ($mongoUri.Port -ne 27117 -or $neoUri.Port -ne 7787 -or $esUri.Port -ne 9210 
     $esUri.Host -notin @('127.0.0.1', 'localhost')) {
     throw 'Una conexión de MongoDB, Neo4j o Elasticsearch no apunta a los puertos locales de DEMO.'
 }
+# Control de acceso (Entrega final): sin sus credenciales, el backend DEMO heredaría las de la
+# instancia principal (backend\.env) y los motores DEMO lo rechazarían.
+foreach ($key in @('REDIS_USERNAME', 'REDIS_PASSWORD', 'ES_USERNAME', 'ES_PASSWORD', 'DEMO_ELASTIC_PASSWORD')) {
+    if (-not $settings[$key]) { throw "Falta $key en backend/.env.demo. Ejecute una vez .\scripts\configurar-acceso-demo.ps1" }
+}
 foreach ($key in $settings.Keys) { [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process') }
 $env:FRAUD_ANALYSIS_ENABLED = 'false'
 $env:FAULT_INJECTION_ENABLED = 'false'
@@ -157,7 +172,7 @@ $env:PAYMENT_GATEWAY_URL = 'http://127.0.0.1:8001'
 $env:PASARELA_DB = $ledger
 
 Write-Host 'Iniciando únicamente los seis motores DEMO originales...' -ForegroundColor Cyan
-Invoke-Docker -Arguments @('compose', '-f', $compose, '--project-name', 'tiendaya_demo', 'up', '-d', '--no-recreate') | Out-Host
+Invoke-Docker -Arguments @('compose', '-f', $compose, '--env-file', $envFile, '--project-name', 'tiendaya_demo', 'up', '-d', '--no-recreate') | Out-Host
 foreach ($service in $services) {
     $container = "tiendaya_demo_$service"
     $deadline = (Get-Date).AddMinutes(7)
@@ -179,6 +194,16 @@ foreach ($service in $services) {
 }
 
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
+# Búsqueda semántica y recomendaciones por vectores (Entrega final): el índice DEMO debe ser v2.
+try {
+    $par = "$($settings['ES_USERNAME']):$($settings['ES_PASSWORD'])"
+    $cabeceras = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($par)) }
+    $indiceDemo = @((Invoke-RestMethod -Uri "$($settings['ES_URL'])/_alias/productos_demo" -Headers $cabeceras -TimeoutSec 10).PSObject.Properties.Name)[0]
+    if ($indiceDemo -notlike 'productos_v2_*') {
+        Write-Warning "El índice DEMO ($indiceDemo) no tiene vectores. Ejecute .\scripts\migrar-indice-demo.ps1"
+    }
+} catch { Write-Warning 'No se pudo revisar la versión del índice DEMO.' }
+Start-Process -FilePath $python -ArgumentList '-m','uvicorn','embeddings_service.app:app','--host','127.0.0.1','--port','8002' -WorkingDirectory $root -RedirectStandardOutput (Join-Path $runtime 'embeddings.out.log') -RedirectStandardError (Join-Path $runtime 'embeddings.err.log') -WindowStyle Hidden
 Start-Process -FilePath $python -ArgumentList '-m','uvicorn','payment_simulator.app:app','--host','127.0.0.1','--port','8001' -WorkingDirectory $root -RedirectStandardOutput (Join-Path $runtime 'gateway.out.log') -RedirectStandardError (Join-Path $runtime 'gateway.err.log') -WindowStyle Hidden
 Start-Process -FilePath $python -ArgumentList '-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8000','--lifespan','off' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'backend.out.log') -RedirectStandardError (Join-Path $runtime 'backend.err.log') -WindowStyle Hidden
 $outboxProcess = Start-Process -FilePath $python -ArgumentList 'scripts\run_demo_outbox.py' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'outbox.out.log') -RedirectStandardError (Join-Path $runtime 'outbox.err.log') -WindowStyle Hidden -PassThru
@@ -194,10 +219,12 @@ Wait-Http 'http://127.0.0.1:8001/docs'
 Wait-Http 'http://127.0.0.1:8000/docs'
 Wait-Http 'http://127.0.0.1:5173/'
 Wait-Http 'http://127.0.0.1:5174/'
+Wait-Http 'http://127.0.0.1:8002/health'
 $owned = @()
-foreach ($port in @(5173, 5174, 8000, 8001)) {
-    $listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -First 1
-    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
+foreach ($port in @(5173, 5174, 8000, 8001, 8002)) {
+    $listenerPid = Get-ListenerPid $port
+    if (-not $listenerPid) { throw "No se encontró el proceso que atiende el puerto $port. Revise los logs en $runtime." }
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid"
     $owned += @{ port = $port; pid = $process.ProcessId; created = $process.CreationDate.ToString('o') }
 }
 @{ app = $owned; outbox_launcher = $outboxProcess.Id; recovery_launcher = $recoveryProcess.Id } | ConvertTo-Json -Depth 4 |
@@ -205,4 +232,5 @@ foreach ($port in @(5173, 5174, 8000, 8001)) {
 Write-Host 'TiendaYa con DEMO original: http://localhost:5173' -ForegroundColor Green
 Write-Host 'Laboratorio original: http://localhost:5174'
 Write-Host 'API: http://localhost:8000/docs | Pasarela: http://localhost:8001/docs'
-Write-Host 'Outbox y recuperación del checkout activos. No se ejecutaron seeds, migraciones, backfills ni otros workers.'
+Write-Host 'Embeddings: http://localhost:8002/health (el modelo termina de cargar en segundo plano)'
+Write-Host 'Outbox, recuperación del checkout y servicio de embeddings activos. No se ejecutaron seeds, migraciones, backfills ni otros workers.'

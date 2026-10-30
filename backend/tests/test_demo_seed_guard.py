@@ -126,3 +126,18 @@ def test_medium_fraud_scenarios_are_distinct_and_exclusive():
     assert len({choices[0] for _, choices in plans[65:71]}) == 6
     assert demo_product_name(0).startswith('Laptop DEMO')
     assert demo_product_name(1).startswith('Teléfono DEMO')
+
+
+def test_un_mongo_uri_del_entorno_no_cambia_el_destino_de_la_carga(tmp_path, monkeypatch):
+    # Un proceso que cargó backend/.env tiene el MONGO_URI de PRINCIPAL: no debe usarse.
+    monkeypatch.setenv('MONGO_URI', 'mongodb://tiendaya_api:x@localhost:27017/tiendaya')
+    config = load_demo_env(write_env(tmp_path, SAFE_ENV))
+    assert ':27117/' in config['MONGO_URI']
+
+
+def test_la_cuenta_del_instalador_tampoco_puede_apuntar_a_principal(tmp_path, monkeypatch):
+    monkeypatch.setenv('DEMO_MONGO_URI_INSTALACION', 'mongodb://tiendaya_admin:x@localhost:27017/tiendaya')
+    with pytest.raises(SystemExit):
+        load_demo_env(write_env(tmp_path, SAFE_ENV))
+    monkeypatch.setenv('DEMO_MONGO_URI_INSTALACION', 'mongodb://tiendaya_admin:x@127.0.0.1:27117/tiendaya_demo')
+    assert load_demo_env(write_env(tmp_path, SAFE_ENV))['MONGO_URI'].startswith('mongodb://tiendaya_admin:')

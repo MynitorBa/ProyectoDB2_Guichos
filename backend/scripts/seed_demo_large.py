@@ -64,6 +64,11 @@ def load_demo_env(path: Path) -> dict[str, str]:
     if not path.is_file():
         raise SystemExit(f'No existe el archivo DEMO: {path}')
     values = {k: str(v) for k, v in dotenv_values(path).items() if v is not None}
+    # El instalador corre la carga con la cuenta de administración de MongoDB de la DEMO
+    # (control de acceso). Variable propia del instalador: un MONGO_URI cualquiera del entorno
+    # podría ser el de PRINCIPAL. Las comprobaciones de abajo se aplican igual.
+    if os.environ.get('DEMO_MONGO_URI_INSTALACION'):
+        values['MONGO_URI'] = os.environ['DEMO_MONGO_URI_INSTALACION']
     required = {
         'TIENDAYA_DEMO', 'MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_DB', 'MYSQL_USER',
         'MYSQL_PASSWORD', 'MONGO_URI', 'MONGO_DB', 'REDIS_PORT',

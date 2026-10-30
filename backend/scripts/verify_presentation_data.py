@@ -104,32 +104,34 @@ def main() -> int:
             rules = {
                 'F01': '''MATCH (u:Usuario)-[:ESCRIBIO]->(r:Reseña)-[:SOBRE]->(p:Producto)
                     WHERE r.verificada=true AND r.estado='aprobada' AND datetime(r.fecha)>=datetime()-duration({hours:24})
-                    WITH p,count(DISTINCT r) n WHERE n>=5 RETURN p.ref ref,n LIMIT 10''',
+                    WITH p,count(DISTINCT r) AS n WHERE n>=5 RETURN p.ref AS ref,n LIMIT 10''',
                 'F02': '''MATCH (u:Usuario)-[:ESCRIBIO]->(r:Reseña)-[:CALIFICA_A]->(v:Vendedor)
                     WHERE r.verificada=true AND r.estado='aprobada'
-                    WITH u,count(DISTINCT r) n,count(DISTINCT v) sellers
-                    WHERE n>=3 AND sellers=1 RETURN u.id ref,n LIMIT 10''',
+                    WITH u,count(DISTINCT r) AS n,count(DISTINCT v) AS sellers
+                    WHERE n>=3 AND sellers=1 RETURN u.id AS ref,n LIMIT 10''',
                 'F03': '''MATCH (u1:Usuario)-[:ESCRIBIO]->(r1:Reseña)-[:SOBRE]->(p:Producto)<-[:SOBRE]-(r2:Reseña)<-[:ESCRIBIO]-(u2:Usuario)
                     WHERE u1.id<u2.id AND r1.verificada=true AND r2.verificada=true
                       AND r1.estado='aprobada' AND r2.estado='aprobada'
-                    WITH u1,u2,count(DISTINCT p) n WHERE n>=3
-                    RETURN toString(u1.id)+'-'+toString(u2.id) ref,n LIMIT 15''',
+                    WITH u1,u2,count(DISTINCT p) AS n WHERE n>=3
+                    RETURN toString(u1.id)+'-'+toString(u2.id) AS ref,n LIMIT 15''',
             }
             for key, cypher in rules.items():
                 rows = [dict(r) for r in neo.run(cypher)]
                 report['fraude'][key] = {'total': len(rows), 'ejemplos': rows}
                 if len(rows) < {'F01':5,'F02':5,'F03':10}[key]:
                     report['errores'].append(f'{key}: {len(rows)} bajo el mínimo')
-            report['proyecciones']['neo4j_compras'] = neo.run('MATCH (c:Compra) RETURN count(c) n').single()['n']
+            report['proyecciones']['neo4j_compras'] = neo.run('MATCH (c:Compra) RETURN count(c) AS n').single()['n']
             if report['proyecciones']['neo4j_compras'] != neo4j_lines:
                 report['errores'].append('Neo4j Compra no coincide con líneas pagadas elegibles')
         with MongoClient(cfg['MONGO_URI'], serverSelectionTimeoutMS=5000) as mongo:
             report['proyecciones']['mongo_productos'] = mongo[cfg['MONGO_DB']].productos.count_documents({})
-        with Elasticsearch(cfg['ES_URL']) as es:
+        credenciales_es = (cfg['ES_USERNAME'], cfg['ES_PASSWORD']) if cfg.get('ES_USERNAME') else None
+        with Elasticsearch(cfg['ES_URL'], basic_auth=credenciales_es) as es:
             report['proyecciones']['elasticsearch_documentos'] = es.count(index=cfg['ES_INDEX_ALIAS'])['count']
         if report['proyecciones']['mongo_productos'] != report['proyecciones']['elasticsearch_documentos']:
             report['advertencias'].append('Conteos MongoDB/Elasticsearch diferentes; revisar estados e índice')
-        r = redis.Redis(host=cfg['REDIS_HOST'], port=int(cfg['REDIS_PORT']), socket_timeout=3)
+        r = redis.Redis(host=cfg['REDIS_HOST'], port=int(cfg['REDIS_PORT']), socket_timeout=3,
+                        username=cfg.get('REDIS_USERNAME') or None, password=cfg.get('REDIS_PASSWORD') or None)
         report['proyecciones']['redis_ping'] = bool(r.ping())
         cluster = Cluster([cfg['CASSANDRA_HOST']], port=int(cfg['CASSANDRA_PORT']))
         try:
