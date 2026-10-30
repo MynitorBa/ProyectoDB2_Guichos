@@ -13,6 +13,10 @@ export const getProduct = (id) =>
 export const getProductRecommendations = (id, limite = 8) =>
   api.get(`/products/${id}/recommendations`, { params: { limite } })
 
+// Parecidos por significado (vectores); `excluir` evita repetir lo de la sección de compras.
+export const getProductSimilares = (id, excluir = [], limite = 8) =>
+  api.get(`/products/${id}/similares`, { params: { limite, excluir: excluir.join(',') || undefined } })
+
 export const getActiveFlashSales = (ofertaId) =>
   api.get('/flash-sales/active', { params: { oferta_id: ofertaId } })
 

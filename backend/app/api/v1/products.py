@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
-from app.core.deps import get_optional_user
+from app.core.deps import get_es, get_optional_user
 from app.models.usuario import Usuario
 from app.models.producto_imagen import ProductoImagen
 from app.services import catalog_service
 from app.services import recommendation_service
+from app.services import similares_service
 
 router = APIRouter(prefix='/products', tags=['Productos'])
 
@@ -78,6 +79,25 @@ def recomendaciones_producto(
         usuario_id=user.id if user else None, limite=limite,
     )
     # origen: 'grafo' (Neo4j), 'cache' (copia horaria en MySQL) o 'mas_vendidos'.
+    return {'items': items, 'origen': origen}
+
+
+@router.get('/{producto_id}/similares')
+def productos_similares(
+    producto_id: str,
+    excluir: str | None = Query(None, description='Referencias separadas por coma que ya se muestran'),
+    limite: int = Query(8, ge=1, le=20),
+    db: Database = Depends(get_mongo_db),
+    mysql_db: Session = Depends(get_db),
+    redis_db=Depends(get_redis),
+    es=Depends(get_es),
+):
+    """«También te podría interesar»: vecinos por vector (kNN en Elasticsearch)."""
+    items, origen = similares_service.similares(
+        mysql_db, db, es, redis_db, producto_ref=producto_id,
+        excluir=[r for r in (excluir or '').split(',') if r], limite=limite,
+    )
+    # origen: 'vectores' o 'mas_vendidos' (respaldo si el índice no responde).
     return {'items': items, 'origen': origen}
 
 

@@ -6,7 +6,7 @@ import { motion, useInView } from 'motion/react'
 import { toast } from 'sonner'
 import { EstadoError, esNoEncontrado } from '../components/EstadoError'
 import { mensajeError } from '../lib/errors'
-import { getProduct, getProductRecommendations, getActiveFlashSales, reserveFlashSale } from '../api/products'
+import { getProduct, getProductRecommendations, getProductSimilares, getActiveFlashSales, reserveFlashSale } from '../api/products'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { ProductImage } from '../components/product/ProductImage'
@@ -80,10 +80,18 @@ export default function ProductDetailPage() {
     queryKey: ['product', id],
     queryFn: () => getProduct(id).then((r) => r.data),
   })
-  const { data: recommendationData } = useQuery({
+  const { data: recommendationData, isFetched: recommendationsFetched } = useQuery({
     queryKey: ['product-recommendations', id, user?.id],
     queryFn: () => getProductRecommendations(id, 8).then((r) => r.data),
     enabled: Boolean(id),
+    staleTime: 60_000,
+  })
+  // Se pide después de las recomendaciones por compras para no repetir sus productos.
+  const shownByPurchases = (recommendationData?.items || []).map((item) => item._id)
+  const { data: similarData } = useQuery({
+    queryKey: ['product-similares', id, shownByPurchases.join(',')],
+    queryFn: () => getProductSimilares(id, shownByPurchases, 8).then((r) => r.data),
+    enabled: Boolean(id) && recommendationsFetched,
     staleTime: 60_000,
   })
   const { data: allFlashRows = [], refetch: refetchFlash } = useQuery({
@@ -628,7 +636,7 @@ export default function ProductDetailPage() {
                   <h2 className="font-display font-bold text-xl text-[var(--color-text-primary)] mb-1">
                     {recommendationData.origen === 'mas_vendidos'
                       ? 'Más vendidos de esta categoría'
-                      : 'Quienes compraron este producto también compraron'}
+                      : 'Las personas que han comprado este artículo también han comprado estos otros:'}
                   </h2>
                   <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
                     {{
@@ -639,6 +647,29 @@ export default function ProductDetailPage() {
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {recommendationData.items.map(item => (
+                      <ProductCard key={item._id} product={item} />
+                    ))}
+                  </div>
+                </section>
+              </Reveal>
+              <Separator />
+            </>
+          )}
+
+          {(similarData?.items?.length || 0) > 0 && (
+            <>
+              <Reveal>
+                <section>
+                  <h2 className="font-display font-bold text-xl text-[var(--color-text-primary)] mb-1">
+                    También te podría interesar:
+                  </h2>
+                  <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
+                    {similarData.origen === 'mas_vendidos'
+                      ? 'Algunos de los más vendidos de esta categoría; precio y existencia se validan en tiempo real.'
+                      : 'Productos parecidos por su descripción y características; precio y existencia se validan en tiempo real.'}
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {similarData.items.map(item => (
                       <ProductCard key={item._id} product={item} />
                     ))}
                   </div>
