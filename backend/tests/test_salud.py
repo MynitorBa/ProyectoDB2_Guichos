@@ -70,3 +70,12 @@ def test_un_error_de_infraestructura_alimenta_el_detector():
     for _ in range(salud.UMBRAL):
         asyncio.run(manejador(peticion, redis_err.ConnectionError('caído')))
     assert salud.estado('redis') == 'caido'
+
+
+def test_el_sondeo_de_cassandra_no_deja_la_sesion_sin_keyspace():
+    # Si el sondeo de salud abría la sesión compartida sin keyspace, el outbox fallaba después.
+    from app.core import db_cassandra
+    from app.core.config import settings
+    db_cassandra._session = None
+    salud._ping_cassandra()
+    assert db_cassandra.get_cassandra_session().keyspace == settings.CASSANDRA_KEYSPACE

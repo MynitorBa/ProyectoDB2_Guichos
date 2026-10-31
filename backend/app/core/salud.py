@@ -133,7 +133,9 @@ def _ping_neo4j():
 
 def _ping_cassandra():
     from app.core.db_cassandra import get_cassandra_session
-    get_cassandra_session(initialize=False).execute('SELECT release_version FROM system.local')
+    # Con la sesión normal: la sesión se comparte y, si el sondeo la creara sin keyspace, las
+    # proyecciones del outbox fallarían después con «No keyspace has been specified».
+    get_cassandra_session().execute('SELECT release_version FROM system.local')
 
 
 def _ping_embeddings():

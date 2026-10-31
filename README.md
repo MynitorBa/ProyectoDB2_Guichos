@@ -253,6 +253,9 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Control de acceso en Redis, MongoDB y Elasticsearch](docs/47-control-de-acceso.md)
 - [ADR-005: control de acceso](docs/48-ADR-005-control-de-acceso.md) y [evidencia de permisos](docs/evidencia/permisos.md)
 - [Retrospectiva de la arquitectura](docs/49-retrospectiva.md)
+- [ADR-006: clave-valor, grafos y columnar (Entrega 2)](docs/51-ADR-006-clave-valor-grafos-columnar.md)
+- [ADR-007: evaluación de NewSQL para pagos (opcional)](docs/52-ADR-007-evaluacion-newsql-pagos.md)
+- [Verificación final contra el enunciado](docs/50-verificacion-final.md) y [matriz de requisitos](docs/evidencia/requisitos.md)
 
 El checkout es una saga con una pasarela de pagos externa simulada
 (`payment_simulator/`): reserva el inventario, cobra fuera de la transacción y

@@ -120,8 +120,9 @@ Detalle técnico en [46](46-vectores-implementacion.md); decisión en [ADR-004](
 | Entrega | Decisión | Documento |
 |---|---|---|
 | 1 | Catálogo documental en MongoDB | [ADR-001](03-ADR-001-catalogo-documental.md), [ADR-002](04-ADR-002-embeber-vs-referenciar.md) |
-| 2 | Redis para carritos y flash; Cassandra para tendencias y Neo4j para recomendaciones y fraude | [26](26-decision-grafos-columnar.md), [27](27-analitica-cassandra.md) |
+| 2 | Redis para carritos y flash; Cassandra para tendencias y Neo4j para recomendaciones y fraude | [ADR-006](51-ADR-006-clave-valor-grafos-columnar.md), [26](26-decision-grafos-columnar.md), [27](27-analitica-cassandra.md) |
 | 3 | Elasticsearch como proyección de búsqueda; checkout como saga con outbox por destino | [ADR-003](28-ADR-003-motor-busqueda.md), [30](30-estrategia-consistencia-checkout.md) |
+| 3 (opcional) | Mantener los pagos en MySQL: evaluación de NewSQL, decisión de no migrar | [ADR-007](52-ADR-007-evaluacion-newsql-pagos.md) |
 | Final | Vectores en Elasticsearch con un servicio de embeddings propio | [ADR-004](45-ADR-004-busqueda-vectorial.md) |
 | Final | Usuarios por servicio con mínimo privilegio en Redis, MongoDB y Elasticsearch | [ADR-005](48-ADR-005-control-de-acceso.md) |
 

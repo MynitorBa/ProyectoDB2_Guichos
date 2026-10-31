@@ -123,14 +123,9 @@ def reset_stock():
         # Los IDs provienen de objetos Pedido creados dentro de esta prueba.
         order_ids = ','.join(str(int(order_id)) for order_id in created_order_ids)
         with engine.connect() as conn:
-            # Un backend de desarrollo en ejecución pudo proyectar ya estas
-            # ventas en Cassandra con su worker del outbox.
-            proyectados_en_cassandra = conn.execute(text(f"""
-                SELECT COUNT(*) FROM outbox_eventos
-                WHERE agregado_tipo = 'pedido'
-                  AND CAST(agregado_id AS UNSIGNED) IN ({order_ids})
-                  AND destino = 'cassandra' AND estado IN ('procesando', 'procesado')
-            """)).scalar_one()
+            # Primero se retiran los eventos que nadie tomó; contar antes dejaba
+            # una carrera: un evento reclamado entre el conteo y el borrado se
+            # proyectaba sin que la limpieza lo supiera.
             conn.execute(text(f"""
                 DELETE FROM outbox_eventos
                 WHERE agregado_tipo = 'pedido'
@@ -151,6 +146,14 @@ def reset_stock():
                 break
             time.sleep(0.05)
         with engine.connect() as conn:
+            # Un backend de desarrollo en ejecución pudo proyectar ya estas
+            # ventas en Cassandra con su worker del outbox.
+            proyectados_en_cassandra = conn.execute(text(f"""
+                SELECT COUNT(*) FROM outbox_eventos
+                WHERE agregado_tipo = 'pedido'
+                  AND CAST(agregado_id AS UNSIGNED) IN ({order_ids})
+                  AND destino = 'cassandra' AND estado IN ('procesando', 'procesado')
+            """)).scalar_one()
             conn.execute(text(f"""
                 DELETE FROM outbox_eventos
                 WHERE agregado_tipo = 'pedido'
@@ -175,6 +178,16 @@ def reset_stock():
                     rebuild_all(session)
             except Exception:
                 pass  # Cassandra caído: backfill_cassandra_analytics lo resuelve después.
+        # El worker del outbox también pudo proyectar la compra en Neo4j; sin
+        # el pedido en MySQL ese nodo quedaría huérfano para siempre.
+        try:
+            from app.core.db_neo4j import get_driver
+
+            with get_driver().session() as s:
+                s.run('MATCH (c:Compra) WHERE c.pedido_id IN $ids DETACH DELETE c',
+                      ids=[int(order_id) for order_id in created_order_ids])
+        except Exception:
+            pass  # Neo4j caído: no llegó a proyectar nada.
 
     with engine.connect() as conn:
         conn.execute(
@@ -469,6 +482,17 @@ def test_checkout_flash_convierte_reserva_y_descuenta_pool(reset_stock):
             """),
             {'offer_id': OFERTA_TEST_ID},
         )
+        # Como al crear la promoción por la API (flash_sales.py): el movimiento de reserva
+        # identifica de qué inventario (bodega) sale el cupo flash.
+        db.execute(
+            text("""
+                INSERT INTO movimientos_inventario (inventario_id, tipo, cantidad, motivo, usuario_id, fecha)
+                SELECT id, 'reserva', 1, :motivo, :usuario, :fecha
+                FROM inventario WHERE oferta_id = :offer_id AND bodega = 'principal'
+            """),
+            {'offer_id': OFERTA_TEST_ID, 'motivo': f'Promoción flash #{promotion.id}',
+             'usuario': seller_user_id, 'fecha': now},
+        )
         db.commit()
 
         pedido = procesar_checkout(
@@ -509,6 +533,10 @@ def test_checkout_flash_convierte_reserva_y_descuenta_pool(reset_stock):
             db.delete(reservation)
             db.commit()
         if promotion is not None:
+            db.execute(
+                text("DELETE FROM movimientos_inventario WHERE pedido_id IS NULL AND motivo = :motivo"),
+                {'motivo': f'Promoción flash #{promotion.id}'},
+            )
             db.delete(promotion)
             db.commit()
         db.close()

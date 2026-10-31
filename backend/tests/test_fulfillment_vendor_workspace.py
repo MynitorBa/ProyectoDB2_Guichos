@@ -50,6 +50,12 @@ def example_order(db):
             vendedor_nombre_snapshot='Prueba', cantidad=quantity, precio_unitario=10, subtotal_linea=quantity*10)
         db.add(line)
         db.flush()
+        # Como en el checkout real: la venta deja un movimiento de salida en la bodega de la
+        # que sale el stock (al cancelar se repone en esa misma fila).
+        inventory = db.query(Inventario).filter_by(oferta_id=offer.id, bodega='principal').one()
+        db.add(MovimientoInventario(inventario_id=inventory.id, tipo='salida', cantidad=quantity,
+            motivo='Venta de prueba', pedido_id=order.id, usuario_id=admin.id))
+        db.flush()
         parts.append(part)
         lines.append(line)
     db.commit()
