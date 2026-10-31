@@ -63,6 +63,47 @@ cobros de la pasarela.
 En E10 la búsqueda (`busqueda`) también espera, porque sus documentos se arman con el
 catálogo de MongoDB: es una dependencia de datos, no un bloqueo del outbox.
 
+## Casos específicos: una falla en un instante exacto (C01–C12)
+
+Detener un contenedor no permite elegir el momento de la caída: Redis puede caer antes de que
+el usuario presione «Comprar» o un minuto después. Para responder preguntas como «¿qué pasa si
+Redis se cae justo cuando presiono Comprar?», cada caso arma un punto de falla
+(`app/core/fault_injection.py`) que lanza **el mismo error que el driver del motor caído**
+(`redis.ConnectionError`, `OperationalError` 2013 o 1213 de MySQL,
+`ServerSelectionTimeoutError` de MongoDB, `httpx.ConnectError`) en ese instante preciso. Así se
+ejecuta exactamente el camino de recuperación de una caída real.
+
+Los casos están en el **laboratorio de consistencia**, en el panel «Casos específicos». El
+botón «Preparar caso» deja el entorno limpio (sin otros puntos activos y con la pasarela
+aprobando) y arma la falla para la próxima acción en la tienda. Cada caso tiene una prueba de
+integración en `backend/tests/test_casos_falla.py` y una corrida contra el sistema vivo con
+`scripts/demo_fallas.py C01 … C12`.
+
+| # | Pregunta | Qué vio el cliente | Cómo terminó | Medido |
+|---|---|---|---|---|
+| [C01](evidencia/fallas/C01.md) | ¿Redis cae justo al presionar «Comprar»? | 201 | El carrito se leyó de su copia en MySQL; un solo cargo; al volver Redis el carrito sigue vacío | Checkout 0.25 s |
+| [C02](evidencia/fallas/C02.md) | ¿MySQL deja de responder justo al recibir la compra? | 202 `ORDER_QUEUED` | Nada reservado ni cobrado; la cola la confirmó por la saga al volver MySQL | 17.1 s |
+| [C03](evidencia/fallas/C03.md) | ¿MySQL cae a mitad de la reserva, con las filas bloqueadas? | 202 `ORDER_QUEUED` | Rollback completo (sin pedido ni stock retenido); la cola la confirmó al volver | 13.1 s |
+| [C04](evidencia/fallas/C04.md) | ¿Deadlock con otra compra en el mismo instante? | 201 | La reserva se reintentó sola; un pedido y un cargo | — |
+| [C05](evidencia/fallas/C05.md) | ¿Se pierde la respuesta justo después de pagar? | 500, y al reintentar 200 `IDEMPOTENT_REPLAY` | El mismo pedido: ni duplicado ni cobro doble | — |
+| [C06](evidencia/fallas/C06.md) | ¿Redis cae al vaciar el carrito, con la venta hecha? | 201 | `carrito.limpiar` del outbox lo retiró; lo comprado no reaparece | 1.0 s |
+| [C07](evidencia/fallas/C07.md) | ¿Redis cae al cerrar la reserva flash, con la venta hecha? | 201 | `flash.consumir` del outbox cerró la reserva; la unidad no volvió al cupo | 0.5 s |
+| [C08](evidencia/fallas/C08.md) | ¿Redis cae al validar la reserva flash al comprar? | 201 | La reserva se validó en MySQL; compra al precio promocional | — |
+| [C09](evidencia/fallas/C09.md) | ¿MongoDB cae al armar las líneas del pedido? | 201 | Nombre del producto desde la copia del catálogo en MySQL, no el SKU | — |
+| [C10](evidencia/fallas/C10.md) | ¿Redis cae justo al agregar al carrito? | 201 | Guardado en la copia en MySQL; al volver Redis el carrito se reconstruye | — |
+| [C11](evidencia/fallas/C11.md) | ¿Redis aparta la unidad flash pero no responde? | 201 | Reserva en MySQL; la promoción se reconstruyó y la unidad no contó dos veces | — |
+| [C12](evidencia/fallas/C12.md) | ¿El servicio de embeddings cae justo al buscar? | 200 (`semantica: false`) | Búsqueda solo de texto, sin esperar timeout; híbrida otra vez al volver | 0.2 s |
+
+Los casos encontraron cuatro respuestas que no eran las correctas. Se corrigieron antes de
+generar esta evidencia:
+
+| Caso | Antes | Ahora |
+|---|---|---|
+| C04 | Un deadlock al reservar llegaba al cliente como 409 «intenta de nuevo» | La reserva (T1, sin nada escrito ni cobrado) se reintenta hasta 3 veces (`checkout_service._reservar_con_reintentos`) |
+| C03 | Una caída de MySQL a mitad de la reserva respondía 503 y el cliente perdía la compra | `ReservaInterrumpida`: la compra sigue el plan B y queda en cola como si MySQL hubiera caído antes |
+| C05 | Ante un 500, la tienda descartaba la clave de idempotencia; al reintentar, el cliente veía «carrito vacío» aunque su pedido existía | Un 5xx sin resultado definitivo se trata como «sin respuesta»: se conserva la clave y el reintento devuelve el mismo pedido (`CheckoutPage.jsx`) |
+| — | El laboratorio se quedaba en blanco al aparecer el destino `catalogo` del outbox | El panel del outbox lo muestra y tolera destinos nuevos |
+
 ## Defectos encontrados por las pruebas
 
 La primera corrida (9 de 14) encontró problemas reales, corregidos antes de esta evidencia:

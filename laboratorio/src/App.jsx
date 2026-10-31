@@ -5,7 +5,7 @@ import { FlaskConical, LogOut, ExternalLink, ShieldAlert } from 'lucide-react'
 import { API_URL, TIENDA_URL, cerrarSesion, iniciarSesion, obtenerToken, api } from './api'
 import { Boton } from './ui'
 import {
-  PanelBitacora, PanelComponentes, PanelInvariantes, PanelOutbox, PanelPasarela,
+  PanelBitacora, PanelCasos, PanelComponentes, PanelInvariantes, PanelOutbox, PanelPasarela,
   PanelPuntosFalla, PanelRecuperacion,
 } from './paneles'
 
@@ -142,6 +142,7 @@ export default function App() {
           los reintentos idempotentes evitan cobros dobles, el outbox retiene y reenvía los eventos, y los invariantes confirman
           que nada quedó inconsistente.
         </p>
+        <PanelCasos habilitado={fallas.data?.habilitada} />
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <PanelPasarela estado={fallas.data} habilitado={fallas.data?.habilitada} />
           <PanelPuntosFalla estado={fallas.data} habilitado={fallas.data?.habilitada} />

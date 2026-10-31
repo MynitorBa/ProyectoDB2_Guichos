@@ -285,6 +285,13 @@ export default function CheckoutPage() {
           : Array.isArray(raw)
           ? 'Datos de envío inválidos. Verifica tu dirección y método de pago.'
           : 'No se pudo procesar el pedido. Intenta de nuevo.'
+      if (err.response.status >= 500 && !TIPO_ERROR[code]) {
+        // El servidor falló sin un resultado definitivo (pudo caer después de
+        // confirmar): igual que sin respuesta, se conserva la clave y reintentar
+        // devuelve el pedido ya creado en lugar de crear otro o cobrar dos veces.
+        setError({ tipo: 'red', mensaje: 'No pudimos confirmar el resultado de tu compra. Pudo haberse registrado; reintentar es seguro y no generará un cobro doble.' })
+        return
+      }
       const tipo = TIPO_ERROR[code] || 'generico'
       // La compra sigue en curso: la misma clave permite consultar su resultado.
       if (tipo !== 'en_proceso') descartarIntento()

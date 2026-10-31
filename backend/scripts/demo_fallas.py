@@ -17,12 +17,18 @@ detenido, la función sigue respondiendo desde otro (carrito en MySQL, catálogo
 desde su copia, búsqueda hasta MySQL, recomendaciones desde su caché, pedidos
 en cola sin MySQL).
 
+C01–C12 son los casos específicos del laboratorio («¿qué pasa si Redis se cae
+justo cuando presiono Comprar?»): cada uno arma su punto de falla con
+``POST /admin/fallas/casos/{id}/preparar`` y hace la operación real; el motor
+falla en ese instante exacto sin detener contenedores.
+
 ATENCIÓN: crea pedidos reales (de la cuenta comprador1) y detiene/arranca
 contenedores. Úsese solo en desarrollo.
 
 Uso (desde backend/):
     .\\venv\\Scripts\\python.exe scripts\\demo_fallas.py               # todos
     .\\venv\\Scripts\\python.exe scripts\\demo_fallas.py E01 E03       # algunos
+    .\\venv\\Scripts\\python.exe scripts\\demo_fallas.py C01 C05       # casos específicos
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -45,14 +51,18 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
-from sqlalchemy import text  # noqa: E402
+from bson import ObjectId  # noqa: E402
+from sqlalchemy import bindparam, text  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.db_elastic import get_es  # noqa: E402
 from app.core.db_mongo import get_mongo_db  # noqa: E402
 from app.core.db_mysql import SessionLocal  # noqa: E402
 from app.core.db_redis import get_redis  # noqa: E402
+from app.core.time import utc_now  # noqa: E402
+from app.models.promocion_flash import PromocionFlash  # noqa: E402
 from app.services import consistency_service  # noqa: E402
+from app.services import flash_sale_service as flash  # noqa: E402
 from app.services import redis_cart_service as rcs  # noqa: E402
 
 API = 'http://127.0.0.1:8000/api/v1'
@@ -798,6 +808,372 @@ def e17_pedido_en_cola_sin_mysql(c: Cliente) -> Escenario:
     return e
 
 
+# ── Casos específicos del laboratorio (C01–C12) ───────────────────────────────
+# Cada caso arma su punto de falla con POST /admin/fallas/casos/{id}/preparar,
+# igual que el botón «Preparar caso» del laboratorio, y hace la operación real.
+
+def _preparar_caso(c: Cliente, caso_id: str) -> dict:
+    r = c.http.post(f'/admin/fallas/casos/{caso_id}/preparar', headers=c.admin)
+    r.raise_for_status()
+    return r.json()
+
+
+_DISPAROS_ANTES: dict[str, int] = {}
+
+
+def _disparos(c: Cliente, caso_id: str) -> int:
+    """Veces que se disparó el caso desde que se preparó (el backend acumula desde que arrancó)."""
+    total = next(x for x in c.http.get('/admin/fallas/casos', headers=c.admin).json() if x['id'] == caso_id)['disparos']
+    return total - _DISPAROS_ANTES.get(caso_id, 0)
+
+
+def _circuitos_cerrados(c: Cliente) -> float | None:
+    """Espera a que el detector de fallas confirme que todos los motores responden.
+
+    /salud/motores reutiliza su último sondeo 5 s; pasado ese tiempo hace un ping
+    real y, si el motor responde, cierra su circuito (como al volver de una caída).
+    """
+    time.sleep(6)
+    restante = esperar(lambda: not c.http.get('/salud/motores').json()['degradados'], 30, 1)
+    return None if restante is None else round(6 + restante, 1)
+
+
+def _cerrar_promociones_de_prueba() -> None:
+    """Promociones que un caso anterior dejó vigentes: se vencen y el worker las finaliza
+    como a cualquier otra (libera el cupo no vendido con su movimiento)."""
+    vigentes = sql("""SELECT id FROM promociones_flash WHERE oferta_id = :o AND estado IN ('programada', 'activa')
+                      AND precio_promocional = 1.00""", o=OFERTA)
+    if not vigentes:
+        return
+    with SessionLocal() as db:
+        db.execute(text("""UPDATE promociones_flash SET finaliza_en = :a WHERE id IN :ids""").bindparams(
+            bindparam('ids', expanding=True)), {'a': utc_now() - timedelta(seconds=1), 'ids': [v['id'] for v in vigentes]})
+        db.commit()
+    esperar(lambda: not sql("""SELECT 1 FROM promociones_flash WHERE oferta_id = :o
+                               AND estado IN ('programada', 'activa')""", o=OFERTA), 30)
+
+
+def _previo(c: Cliente) -> None:
+    """Punto de partida limpio para cada caso: la compra anterior ya terminó de proyectarse
+    (su «carrito.limpiar» no puede borrar el carrito del caso siguiente), los circuitos
+    cerrados, sin promociones de prueba vigentes y stock suficiente."""
+    esperar(lambda: not sql("""SELECT 1 FROM outbox_eventos WHERE destino = 'redis'
+                               AND estado IN ('pendiente', 'procesando', 'error') LIMIT 1"""), 60)
+    _circuitos_cerrados(c)
+    _cerrar_promociones_de_prueba()
+    if inventario()['disponible'] < 20:
+        # Como un administrador desde el panel: queda el movimiento «ajuste» y el outbox proyecta el stock.
+        c.http.patch(f'/admin/offers/{OFERTA}', headers=c.admin, json={'stock': 60}).raise_for_status()
+
+
+def _con_previo(funcion):
+    def caso(c: Cliente) -> Escenario:
+        _previo(c)
+        return funcion(c)
+    caso.__name__ = funcion.__name__
+    return caso
+
+
+def _carrito_api(c: Cliente) -> list[int]:
+    return [i['oferta_id'] for i in c.http.get('/cart/', headers=c.comprador).json()['items']]
+
+
+def _caso(c: Cliente, caso_id: str) -> Escenario:
+    caso = _preparar_caso(c, caso_id)
+    _DISPAROS_ANTES[caso_id] = caso['disparos']
+    e = Escenario(caso_id, caso['pregunta'], f"{caso['componente']} · {caso['momento']}",
+                  f"Caso preparado desde el laboratorio: punto(s) {', '.join(f'`{p}`' for p in caso['puntos'])} "
+                  'armado(s) una vez.', ' '.join(caso['esperado']))
+    return e
+
+
+def _un_cobro(pid: int) -> bool:
+    p = pedido(pid)
+    return p.get('estado') == 'confirmado' and p.get('pago') == 'aprobado' and len(cobros(p['clave_idempotencia'])) == 1
+
+
+def _esperar_solicitud(c: Cliente, solicitud_id: str) -> dict | None:
+    def procesada():
+        for s in c.http.get('/orders/cola', headers=c.comprador).json():
+            if s['id'] == solicitud_id and s['estado'] != 'en_cola':
+                return s
+        return None
+    return esperar(procesada, 90, 1) and procesada()
+
+
+def c01_redis_al_leer_carrito(c: Cliente) -> Escenario:
+    preparar_carrito()
+    e = _caso(c, 'C01')
+    antes = inventario()
+    estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
+    e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+    e.seccion('Respuesta al cliente', cuerpo)
+    pid = cuerpo.get('pedido_id') if isinstance(cuerpo, dict) else None
+    e.metricas['Respuesta del checkout sin Redis en ese instante'] = f'{segundos} s'
+    foto(e, 'después', pid)
+    e.comprobar('El punto se disparó una vez', _disparos(c, 'C01') == 1)
+    e.comprobar('HTTP 201: compra confirmada leyendo el carrito de su copia en MySQL', estado == 201)
+    e.comprobar('Un solo cargo en la pasarela', bool(pid) and _un_cobro(pid))
+    e.comprobar('Stock descontado en 1 unidad', inventario()['disponible'] == antes['disponible'] - 1)
+    e.paso(f'Circuito de Redis cerrado de nuevo tras {_circuitos_cerrados(c)} s')
+    e.comprobar('Al volver Redis el carrito sigue vacío', _carrito_api(c) == [])
+    cierre(e, pid)
+    return e
+
+
+def _mysql_en_cola(c: Cliente, caso_id: str) -> Escenario:
+    preparar_carrito()
+    e = _caso(c, caso_id)
+    antes, ultimo = inventario(), ultimo_pedido_del_comprador()
+    estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
+    e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+    e.seccion('Respuesta al cliente', cuerpo)
+    sin_cambios = ultimo_pedido_del_comprador() == ultimo and inventario() == antes
+    inicio = time.monotonic()
+    final = _esperar_solicitud(c, cuerpo.get('solicitud_id')) if isinstance(cuerpo, dict) else None
+    e.metricas['Procesada por la cola tras volver MySQL'] = f'{round(time.monotonic() - inicio, 1)} s'
+    e.paso('La cola procesó la solicitud' if final else 'La cola no procesó la solicitud a tiempo')
+    pid = (final or {}).get('pedido_id')
+    foto(e, 'después', pid)
+    e.comprobar('El punto se disparó una vez', _disparos(c, caso_id) == 1)
+    e.comprobar('HTTP 202 ORDER_QUEUED, sin error para el cliente',
+                estado == 202 and cuerpo.get('codigo') == 'ORDER_QUEUED')
+    e.comprobar('Nada quedó a medias: sin pedido nuevo ni stock retenido', sin_cambios)
+    e.comprobar('Al volver MySQL la saga normal la confirmó con un solo cargo', bool(pid) and _un_cobro(pid))
+    e.comprobar('Stock descontado en 1 unidad', inventario()['disponible'] == antes['disponible'] - 1)
+    cierre(e, pid)
+    return e
+
+
+def c02_mysql_al_recibir(c):
+    return _mysql_en_cola(c, 'C02')
+
+
+def c03_mysql_durante_reserva(c):
+    return _mysql_en_cola(c, 'C03')
+
+
+def c04_deadlock(c: Cliente) -> Escenario:
+    preparar_carrito()
+    e = _caso(c, 'C04')
+    clave = str(uuid.uuid4())
+    estado, cuerpo, segundos = c.checkout(clave)
+    e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+    e.seccion('Respuesta al cliente', cuerpo)
+    pedidos = sql('SELECT id FROM pedidos WHERE clave_idempotencia = :c', c=clave)
+    pid = pedidos[0]['id'] if pedidos else None
+    foto(e, 'después', pid)
+    e.comprobar('MySQL eligió la compra como víctima una vez', _disparos(c, 'C04') == 1)
+    e.comprobar('La reserva se reintentó sola: HTTP 201', estado == 201)
+    e.comprobar('Un solo pedido con esa clave y un solo cargo', len(pedidos) == 1 and _un_cobro(pid))
+    cierre(e, pid)
+    return e
+
+
+def c05_respuesta_perdida(c: Cliente) -> Escenario:
+    preparar_carrito()
+    e = _caso(c, 'C05')
+    clave = str(uuid.uuid4())
+    perdida = c.checkout(clave)
+    e.paso(f'POST /orders/checkout → HTTP {perdida[0]} (la respuesta no llega al navegador)')
+    reintento = c.checkout(clave)
+    e.paso(f'Reintento con la misma clave → HTTP {reintento[0]}')
+    e.seccion('Respuestas', {'perdida': perdida[:2], 'reintento': reintento[:2]})
+    pedidos = sql('SELECT id FROM pedidos WHERE clave_idempotencia = :c', c=clave)
+    pid = pedidos[0]['id'] if pedidos else None
+    foto(e, 'después', pid)
+    e.comprobar('La primera respuesta se perdió (HTTP 500)', perdida[0] == 500)
+    e.comprobar('El reintento devolvió el mismo pedido (200, IDEMPOTENT_REPLAY)',
+                reintento[0] == 200 and reintento[1].get('codigo') == 'IDEMPOTENT_REPLAY'
+                and reintento[1].get('pedido_id') == pid)
+    e.comprobar('Un solo pedido y un solo cargo', len(pedidos) == 1 and _un_cobro(pid))
+    cierre(e, pid)
+    return e
+
+
+def c06_redis_al_vaciar(c: Cliente) -> Escenario:
+    preparar_carrito()
+    e = _caso(c, 'C06')
+    estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
+    e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+    e.seccion('Respuesta al cliente', cuerpo)
+    pid = cuerpo.get('pedido_id') if isinstance(cuerpo, dict) else None
+    limpieza = esperar(lambda: any(f['estado'] == 'procesado' for f in sql(
+        """SELECT estado FROM outbox_eventos WHERE agregado_tipo = 'pedido' AND agregado_id = :p
+           AND tipo_evento = 'carrito.limpiar'""", p=str(pid))), 30)
+    e.metricas['Limpieza del carrito por el outbox'] = f'{limpieza} s'
+    e.paso(f'Circuito de Redis cerrado de nuevo tras {_circuitos_cerrados(c)} s')
+    foto(e, 'después', pid)
+    e.comprobar('El punto se disparó una vez', _disparos(c, 'C06') == 1)
+    e.comprobar('La compra se informó como exitosa (HTTP 201)', estado == 201 and _un_cobro(pid))
+    e.comprobar('El evento carrito.limpiar del outbox se procesó', limpieza is not None)
+    e.comprobar('Lo comprado no reapareció en el carrito', _carrito_api(c) == [])
+    cierre(e, pid)
+    return e
+
+
+def _promocion_flash(unidades: int = 1) -> int:
+    """Promoción activa sobre la oferta de prueba, con su cupo reservado como al crearla por la API."""
+    with SessionLocal() as db:
+        vendedor = db.execute(text("""
+            SELECT v.usuario_id FROM ofertas o JOIN vendedores v ON v.id = o.vendedor_id WHERE o.id = :o
+        """), {'o': OFERTA}).scalar_one()
+        ahora = utc_now()
+        promo = PromocionFlash(
+            oferta_id=OFERTA, creado_por=vendedor, precio_promocional=Decimal('1.00'),
+            unidades_totales=unidades, unidades_vendidas=0, max_por_usuario=1, segundos_reserva=300,
+            inicia_en=ahora - timedelta(seconds=5), finaliza_en=ahora + timedelta(minutes=10), estado='activa',
+        )
+        db.add(promo)
+        db.flush()
+        db.execute(text("""UPDATE inventario SET cantidad_reservada = cantidad_reservada + :u
+                           WHERE oferta_id = :o AND bodega = 'principal'"""), {'u': unidades, 'o': OFERTA})
+        db.execute(text("""
+            INSERT INTO movimientos_inventario (inventario_id, tipo, cantidad, motivo, usuario_id, fecha)
+            SELECT id, 'reserva', :u, :m, :usuario, :f FROM inventario WHERE oferta_id = :o AND bodega = 'principal'
+        """), {'u': unidades, 'm': f'Promoción flash #{promo.id}', 'usuario': vendedor, 'f': ahora, 'o': OFERTA})
+        db.commit()
+        return promo.id
+
+
+def _reservar_flash(c: Cliente, promo_id: int):
+    r = c.http.post(f'/flash-sales/{promo_id}/reserve', headers=c.comprador, json={'cantidad': 1})
+    return r.status_code, r.json()
+
+
+def _flash(promo_id: int) -> dict:
+    promo = sql('SELECT estado, unidades_totales, unidades_vendidas FROM promociones_flash WHERE id = :p', p=promo_id)[0]
+    reservas = sql('SELECT token, estado, pedido_id FROM reservas_flash WHERE promocion_id = :p', p=promo_id)
+    try:
+        redis = flash.obtener_estado(get_redis(), promo_id)
+    except Exception as exc:
+        redis = f'no disponible ({exc.__class__.__name__})'
+    return {'promocion': promo, 'reservas': reservas, 'estado_en_redis': redis}
+
+
+def _caso_flash_compra(c: Cliente, caso_id: str) -> Escenario:
+    get_redis().delete(f'carrito:{COMPRADOR_ID}')
+    promo_id = _promocion_flash()
+    reserva = _reservar_flash(c, promo_id)
+    e = _caso(c, caso_id)
+    e.paso(f'Promoción flash #{promo_id} de 1 unidad; reserva → HTTP {reserva[0]}')
+    estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
+    e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+    e.seccion('Respuesta al cliente', cuerpo)
+    pid = cuerpo.get('pedido_id') if isinstance(cuerpo, dict) else None
+    if caso_id == 'C07':
+        cerrado = esperar(lambda: flash.obtener_reserva(get_redis(), promo_id, COMPRADOR_ID) is None, 30)
+        e.metricas['Reserva cerrada en Redis por el outbox'] = f'{cerrado} s'
+    e.seccion('Venta flash después', _flash(promo_id))
+    datos = _flash(promo_id)
+    e.comprobar('El punto se disparó una vez', _disparos(c, caso_id) == 1)
+    e.comprobar('Compra confirmada al precio promocional (HTTP 201, Q1.00)',
+                estado == 201 and Decimal(str(cuerpo.get('total'))) == Decimal('1.00'))
+    e.comprobar('Reserva convertida y promoción agotada en MySQL',
+                [r['estado'] for r in datos['reservas']] == ['convertida']
+                and datos['promocion']['unidades_vendidas'] == 1)
+    if caso_id == 'C07':
+        e.comprobar('El outbox cerró la reserva en Redis', cerrado is not None)
+    e.comprobar('Un solo cargo en la pasarela', bool(pid) and _un_cobro(pid))
+    cierre(e, pid)
+    return e
+
+
+def c07_redis_al_cerrar_flash(c):
+    return _caso_flash_compra(c, 'C07')
+
+
+def c08_redis_al_validar_flash(c):
+    return _caso_flash_compra(c, 'C08')
+
+
+def c09_mongo_al_armar_lineas(c: Cliente) -> Escenario:
+    preparar_carrito()
+    ref = sql('SELECT producto_ref FROM ofertas WHERE id = :o', o=OFERTA)[0]['producto_ref']
+    nombre = get_mongo_db().productos.find_one({'_id': ObjectId(ref)})['nombre']
+    e = _caso(c, 'C09')
+    estado, cuerpo, segundos = c.checkout(str(uuid.uuid4()))
+    e.paso(f'POST /orders/checkout → HTTP {estado} en {segundos} s')
+    pid = cuerpo.get('pedido_id') if isinstance(cuerpo, dict) else None
+    lineas = sql('SELECT producto_nombre, sku_snapshot FROM pedido_lineas WHERE pedido_id = :p', p=pid)
+    e.seccion('Líneas del pedido', lineas)
+    e.paso(f'Circuito de MongoDB cerrado de nuevo tras {_circuitos_cerrados(c)} s')
+    e.comprobar('El punto se disparó una vez', _disparos(c, 'C09') == 1)
+    e.comprobar('Compra confirmada con un solo cargo', estado == 201 and _un_cobro(pid))
+    e.comprobar(f'La línea lleva el nombre real («{nombre}»), no el SKU',
+                [l['producto_nombre'] for l in lineas] == [nombre])
+    cierre(e, pid)
+    return e
+
+
+def c10_redis_al_agregar(c: Cliente) -> Escenario:
+    get_redis().delete(f'carrito:{COMPRADOR_ID}')
+    rcs.vaciar_carrito(get_redis(), COMPRADOR_ID)
+    e = _caso(c, 'C10')
+    r = c.http.post('/cart/items', headers=c.comprador, json={'oferta_id': OFERTA, 'cantidad': 1})
+    e.paso(f'POST /cart/items → HTTP {r.status_code}')
+    con_respaldo = _carrito_api(c)
+    e.paso(f'Circuito de Redis cerrado de nuevo tras {_circuitos_cerrados(c)} s')
+    de_vuelta = _carrito_api(c)
+    e.seccion('Carrito', {'durante_la_falla': con_respaldo, 'al_volver_redis': de_vuelta,
+                          'clave_en_redis': sorted(get_redis().hgetall(f'carrito:{COMPRADOR_ID}'))})
+    e.comprobar('El punto se disparó una vez', _disparos(c, 'C10') == 1)
+    e.comprobar('El producto se agregó (HTTP 201) sobre la copia en MySQL', r.status_code == 201)
+    e.comprobar('El carrito lo mostró de inmediato', con_respaldo == [OFERTA])
+    e.comprobar('Al volver Redis el carrito se reconstruyó con el producto',
+                de_vuelta == [OFERTA] and str(OFERTA) in get_redis().hgetall(f'carrito:{COMPRADOR_ID}'))
+    get_redis().delete(f'carrito:{COMPRADOR_ID}')
+    rcs.vaciar_carrito(get_redis(), COMPRADOR_ID)
+    cierre(e, None)
+    return e
+
+
+def c11_redis_reserva_flash_sin_responder(c: Cliente) -> Escenario:
+    get_redis().delete(f'carrito:{COMPRADOR_ID}')
+    promo_id = _promocion_flash()
+    e = _caso(c, 'C11')
+    reserva = _reservar_flash(c, promo_id)
+    e.paso(f'Promoción flash #{promo_id} de 1 unidad; POST /reserve → HTTP {reserva[0]}')
+    reconstruida = esperar(lambda: not sql('SELECT 1 FROM flash_resincronizar WHERE promocion_id = :p', p=promo_id), 30)
+    e.paso(f'El worker reconstruyó la promoción en Redis desde MySQL tras {reconstruida} s')
+    tras_reserva = _flash(promo_id)
+    e.seccion('Venta flash tras la reserva', tras_reserva)
+    estado, cuerpo, _ = c.checkout(str(uuid.uuid4()))
+    e.paso(f'El comprador paga su reserva → HTTP {estado}')
+    pid = cuerpo.get('pedido_id') if isinstance(cuerpo, dict) else None
+    e.comprobar('El punto se disparó una vez', _disparos(c, 'C11') == 1)
+    e.comprobar('El usuario recibió su reserva (HTTP 201)', reserva[0] == 201)
+    e.comprobar('Una sola reserva, en MySQL, con el token entregado',
+                [(r['token'], r['estado']) for r in tras_reserva['reservas']] == [(reserva[1].get('token'), 'reservada')])
+    e.comprobar('La unidad huérfana de Redis no contó dos veces (0 libres de 1)',
+                reconstruida is not None and isinstance(tras_reserva['estado_en_redis'], dict)
+                and tras_reserva['estado_en_redis'].get('disponibles') == 0)
+    e.comprobar('La reserva hecha en MySQL se pudo pagar', estado == 201 and _un_cobro(pid))
+    cierre(e, pid)
+    return e
+
+
+def c12_embeddings_al_buscar(c: Cliente) -> Escenario:
+    sufijo = uuid.uuid4().hex[:6]
+    e = _caso(c, 'C12')
+    inicio = time.monotonic()
+    sin_vector = c.buscar(f'audífonos para correr {sufijo}')
+    segundos = round(time.monotonic() - inicio, 2)
+    e.paso(f'GET /search → semantica={sin_vector.get("semantica")} en {segundos} s')
+    e.metricas['Búsqueda sin el servicio de embeddings'] = f'{segundos} s'
+    e.paso(f'Circuito de embeddings cerrado de nuevo tras {_circuitos_cerrados(c)} s')
+    con_vector = c.buscar(f'mouse inalámbrico ergonómico {sufijo}')
+    e.paso(f'GET /search al volver → semantica={con_vector.get("semantica")}')
+    e.seccion('Búsquedas', {'sin_servicio': {k: sin_vector.get(k) for k in ('semantica', 'degradado', 'total')},
+                            'al_volver': {k: con_vector.get(k) for k in ('semantica', 'degradado', 'total')}})
+    e.comprobar('El punto se disparó una vez', _disparos(c, 'C12') == 1)
+    e.comprobar('La búsqueda respondió solo con texto, sin error', sin_vector.get('semantica') is False
+                and sin_vector.get('degradado') is False)
+    e.comprobar('Al volver el servicio la búsqueda es híbrida otra vez', con_vector.get('semantica') is True)
+    cierre(e, None)
+    return e
+
+
 ESCENARIOS = {
     'E00': e00_linea_base, 'E01': e01_rechazo, 'E02': e02_cobrar_y_fallar, 'E03': e03_timeout,
     'E04': e04_error_sin_cobro, 'E05': e05_caida_antes_de_cobrar, 'E06': e06_caida_despues_de_cobrar,
@@ -805,6 +1181,10 @@ ESCENARIOS = {
     'E10': e10_mongo, 'E11': e11_elasticsearch, 'E12': e12_neo4j, 'E13': e13_cassandra,
     'E14': e14_catalogo_sin_mongo, 'E15': e15_busqueda_sin_elasticsearch_ni_mongo,
     'E16': e16_recomendaciones_sin_neo4j, 'E17': e17_pedido_en_cola_sin_mysql,
+    'C01': _con_previo(c01_redis_al_leer_carrito), 'C02': _con_previo(c02_mysql_al_recibir), 'C03': _con_previo(c03_mysql_durante_reserva),
+    'C04': _con_previo(c04_deadlock), 'C05': _con_previo(c05_respuesta_perdida), 'C06': _con_previo(c06_redis_al_vaciar),
+    'C07': _con_previo(c07_redis_al_cerrar_flash), 'C08': _con_previo(c08_redis_al_validar_flash), 'C09': _con_previo(c09_mongo_al_armar_lineas),
+    'C10': _con_previo(c10_redis_al_agregar), 'C11': _con_previo(c11_redis_reserva_flash_sin_responder), 'C12': _con_previo(c12_embeddings_al_buscar),
 }
 
 
@@ -843,7 +1223,7 @@ def main() -> int:
     filas = {}
     if indice.exists():
         for linea in indice.read_text(encoding='utf-8').splitlines():
-            if m := re.match(r'\| \[(E\d+) ', linea):
+            if m := re.match(r'\| \[([EC]\d+) ', linea):
                 filas[m.group(1)] = linea
     for e in resultados:
         clave = next(iter(e.metricas.items()), ('', ''))
@@ -855,8 +1235,10 @@ def main() -> int:
         f'Actualizado el {datetime.now():%Y-%m-%d %H:%M} con `backend/scripts/demo_fallas.py` contra el sistema '
         'en ejecución (API, pasarela simulada y contenedores Docker reales). Cada escenario tiene la hora '
         'exacta de su corrida en su propio archivo.', '',
+        'E00–E17 provocan la falla deteniendo contenedores o con la pasarela; C01–C12 son los casos '
+        'específicos del laboratorio, que hacen fallar un motor en un instante exacto.', '',
         '| Escenario | Falla | Resultado | Métrica clave |', '|---|---|---|---|',
-        *(filas[c] for c in sorted(filas)),
+        *(filas[c] for c in sorted(filas, key=lambda c: (c[0] != 'E', c))),
     ]
     indice.write_text('\n'.join(resumen) + '\n', encoding='utf-8')
     superados = sum(e.ok for e in resultados)

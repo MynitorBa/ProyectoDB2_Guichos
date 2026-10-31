@@ -17,6 +17,7 @@ from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
 from app.core.deps import get_current_user
+from app.core.fault_injection import punto_de_falla
 from app.models.direccion import Direccion
 from app.models.usuario import Usuario
 from app.models.pedido import Pedido
@@ -26,7 +27,7 @@ from app.models.notificacion import Notificacion
 from app.schemas.checkout import CheckoutItem, CheckoutRequest, CheckoutResponse
 from app.models.pago import Pago
 from app.services.checkout_service import (
-    MENSAJES_CANCELACION, CheckoutError, huella_solicitud, procesar_checkout,
+    MENSAJES_CANCELACION, CheckoutError, ReservaInterrumpida, huella_solicitud, procesar_checkout,
 )
 from app.services.invoice_service import generar_factura_pdf
 from app.services.email_service import enviar_factura_por_correo
@@ -163,7 +164,7 @@ def checkout(
     # La selección comprable se obtiene del carrito del usuario autenticado.
     # Nunca se confía en una lista de ofertas enviada por el navegador.
     try:
-        redis_items = rcs.obtener_carrito(r, current_user.id)
+        redis_items = rcs.obtener_carrito(r, current_user.id, punto_falla='checkout.redis_leer_carrito')
     except redis_lib.RedisError as exc:
         logger.error('Redis no disponible antes del checkout: %s', exc)
         raise HTTPException(
@@ -203,7 +204,8 @@ def checkout(
                 status_code=409,
                 detail={'detail': 'La reserva flash del carrito es inválida.', 'code': 'FLASH_RESERVATION_INVALID'},
             )
-        reservation = flash.reserva_vigente(r, db, int(promotion_id), current_user.id)
+        reservation = flash.reserva_vigente(r, db, int(promotion_id), current_user.id,
+                                            punto_falla='checkout.redis_validar_flash')
         if (
             not reservation
             or reservation.get('token') != token
@@ -257,6 +259,11 @@ def checkout(
             clave_idempotencia=idempotency_key,
             huella=huella,
         )
+    except ReservaInterrumpida as exc:
+        # MySQL cayó a mitad de la reserva: no quedó nada escrito ni cobrado,
+        # así que la compra sigue el plan B como si MySQL hubiera caído antes.
+        lectura.registrar_caida(exc.__cause__ or exc)
+        return _encolar(r, current_user.id, redis_items, payload, idempotency_key)
     except IntegrityError:
         # Dos solicitudes simultáneas con la misma clave: solo una crea el pedido.
         db.rollback()
@@ -282,6 +289,7 @@ def checkout(
             # El evento flash.consumir del outbox lo aplicará cuando Redis vuelva.
             continue
         try:
+            punto_de_falla('checkout.redis_consumir_flash')
             consumed = flash.consumir(
                 r, context['promocion_id'], current_user.id, context['token']
             )
@@ -296,7 +304,7 @@ def checkout(
     # MySQL ya confirmó el pedido. Una falla al limpiar Redis se registra, pero
     # nunca convierte una compra exitosa en un 500 engañoso para el usuario.
     try:
-        rcs.vaciar_carrito(r, current_user.id)
+        rcs.vaciar_carrito(r, current_user.id, punto_falla='checkout.redis_vaciar_carrito')
     except redis_lib.RedisError as exc:
         logger.error(
             'Pedido #%d confirmado, pero no se pudo limpiar carrito Redis del usuario %d: %s',
@@ -346,6 +354,9 @@ def checkout(
         direccion_snapshot=direccion_snapshot,
     )
 
+    # Laboratorio: todo quedó confirmado, pero la respuesta no llega al
+    # navegador. Al reintentar con la misma clave recibe el mismo pedido.
+    punto_de_falla('checkout.respuesta_perdida')
     return CheckoutResponse(
         pedido_id=pedido.id,
         total=pedido.total,
@@ -359,6 +370,7 @@ def _mysql_responde(db: Session) -> bool:
     if not lectura.disponible():
         return False
     try:
+        punto_de_falla('checkout.mysql_al_recibir')
         db.execute(text('SELECT 1'))
         return True
     except (OperationalError, InterfaceError) as exc:

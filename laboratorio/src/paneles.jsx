@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CreditCard, FlaskConical, PlayCircle, ShieldCheck, ScrollText, Network, Container,
   CheckCircle2, XCircle, MinusCircle, PauseCircle, RotateCw, Copy, Database, Search, BarChart2,
-  GitBranch, Zap,
+  GitBranch, Zap, Target, ListChecks,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { api } from './api'
+import { TIENDA_URL, api } from './api'
 import { Boton, Cargando, Etiqueta, Panel, cn, duracion, horaLocal } from './ui'
 
 const mensajeDe = (err, porDefecto) => err?.message || porDefecto
@@ -58,6 +58,15 @@ export function PanelPasarela({ estado, habilitado = true }) {
 
 // ── Puntos de falla ───────────────────────────────────────────────────────────
 
+const GRUPOS_PUNTOS = [
+  ['proceso', 'Caída del proceso del backend'],
+  ['redis', 'Redis cae en un instante preciso'],
+  ['mysql', 'MySQL cae en un instante preciso'],
+  ['mongo', 'MongoDB cae en un instante preciso'],
+  ['embeddings', 'Servicio de embeddings'],
+  ['outbox', 'Destinos del outbox'],
+]
+
 export function PanelPuntosFalla({ estado, habilitado = true }) {
   const queryClient = useQueryClient()
   const refrescar = () => queryClient.invalidateQueries({ queryKey: ['fallas'] })
@@ -72,8 +81,15 @@ export function PanelPuntosFalla({ estado, habilitado = true }) {
       descripcion="Simulan que el proceso del backend cae en un punto exacto del flujo. «Una vez» se desactiva tras dispararse."
       acciones={<Boton variante="secondary" disabled={!habilitado} onClick={() => limpiar.mutate()}>Desactivar todos</Boton>}>
       {!estado ? <Cargando className="h-48" /> : (
-        <ul className="space-y-1.5">
-          {estado.puntos.map((p) => (
+        <div className="space-y-3 max-h-[34rem] overflow-y-auto pr-1">
+          {GRUPOS_PUNTOS.map(([grupo, titulo]) => {
+            const puntos = estado.puntos.filter((p) => (p.grupo || 'proceso') === grupo)
+            if (!puntos.length) return null
+            return (
+              <div key={grupo}>
+                <p className="text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1">{titulo}</p>
+                <ul className="space-y-1.5">
+          {puntos.map((p) => (
             <li key={p.punto} className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2">
               <div className="flex-1 min-w-0">
                 <p className="font-mono text-xs">{p.punto}</p>
@@ -95,7 +111,87 @@ export function PanelPuntosFalla({ estado, habilitado = true }) {
               </div>
             </li>
           ))}
-        </ul>
+                </ul>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+// ── Casos específicos ─────────────────────────────────────────────────────────
+
+const COMPONENTES_CASO = ['Todos', 'Redis', 'MySQL', 'MongoDB', 'Red / navegador', 'Embeddings']
+
+function EstadoCaso({ caso }) {
+  if (caso.armado) return <Etiqueta tono="warning">Armado · haz la acción en la tienda</Etiqueta>
+  if (caso.disparos > 0) return <Etiqueta tono="success">Disparado {caso.disparos}×</Etiqueta>
+  return null
+}
+
+export function PanelCasos({ habilitado = true }) {
+  const queryClient = useQueryClient()
+  const [filtro, setFiltro] = useState('Todos')
+  const casos = useQuery({ queryKey: ['casos'], queryFn: api.casos, refetchInterval: 3000 })
+  const preparar = useMutation({
+    mutationFn: api.prepararCaso,
+    onSuccess: (caso) => {
+      toast.success(`Caso ${caso.id} armado. ${caso.como_probar}`, { duration: 8000 })
+      queryClient.invalidateQueries({ queryKey: ['casos'] })
+      queryClient.invalidateQueries({ queryKey: ['fallas'] })
+    },
+    onError: (err) => toast.error(mensajeDe(err, 'No se pudo preparar el caso.')),
+  })
+  const lista = (casos.data || []).filter((c) => filtro === 'Todos' || c.componente === filtro)
+  return (
+    <Panel icono={Target} titulo="Casos específicos: ¿qué pasa si…?"
+      descripcion="Cada caso simula que un componente falla en un instante exacto de una operación real. «Preparar» desactiva los demás puntos, deja la pasarela aprobando y arma la falla para la próxima acción en la tienda; después revisa la bitácora, el outbox y los invariantes."
+      acciones={<a href={TIENDA_URL} target="_blank" rel="noreferrer"
+        className="inline-flex items-center h-8 px-3 rounded-md text-sm font-semibold border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">Abrir la tienda</a>}>
+      <div className="flex flex-wrap gap-1.5 mb-3" role="group" aria-label="Filtrar por componente">
+        {COMPONENTES_CASO.map((c) => (
+          <button key={c} type="button" aria-pressed={filtro === c} onClick={() => setFiltro(c)}
+            className={cn('px-2.5 py-1 rounded-full text-xs border',
+              filtro === c ? 'bg-[var(--color-action)] text-white border-[var(--color-action)]' : 'border-[var(--color-border)] hover:border-[var(--color-action)]/40')}>
+            {c}
+          </button>
+        ))}
+      </div>
+      {casos.isLoading ? <Cargando className="h-48" /> : casos.error ? (
+        <p className="text-sm text-[var(--color-error)]">{mensajeDe(casos.error, 'No se pudieron cargar los casos.')}</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {lista.map((caso) => (
+            <article key={caso.id} className={cn('rounded-lg border p-3 flex flex-col gap-2',
+              caso.armado ? 'border-[var(--color-warning)] bg-[var(--color-warning-light)]/40' : 'border-[var(--color-border)]')}>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono text-xs font-semibold">{caso.id}</span>
+                <Etiqueta>{caso.componente}</Etiqueta>
+                <span className="text-[11px] text-[var(--color-text-muted)]">{caso.momento}</span>
+              </div>
+              <h3 className="text-sm font-semibold leading-snug">{caso.pregunta}</h3>
+              <p className="text-xs text-[var(--color-text-secondary)]"><span className="font-semibold">Cómo probarlo: </span>{caso.como_probar}</p>
+              <div>
+                <p className="flex items-center gap-1 text-[11px] uppercase tracking-wider text-[var(--color-text-muted)] mb-1"><ListChecks size={12} /> Debe pasar</p>
+                <ul className="space-y-1">
+                  {caso.esperado.map((e) => (
+                    <li key={e} className="flex gap-1.5 text-xs"><CheckCircle2 size={13} className="text-[var(--color-success)] shrink-0 mt-0.5" />{e}</li>
+                  ))}
+                </ul>
+              </div>
+              <p className="text-[11px] font-mono text-[var(--color-text-muted)] break-all" title="Prueba de integración que lo verifica">{caso.prueba}</p>
+              <div className="mt-auto flex items-center justify-between gap-2 flex-wrap pt-1">
+                <EstadoCaso caso={caso} />
+                <Boton className="ml-auto" disabled={!habilitado} cargando={preparar.isPending && preparar.variables === caso.id}
+                  onClick={() => preparar.mutate(caso.id)}>
+                  {caso.armado ? 'Volver a preparar' : 'Preparar caso'}
+                </Boton>
+              </div>
+            </article>
+          ))}
+        </div>
       )}
     </Panel>
   )
@@ -149,6 +245,7 @@ const DESTINOS = {
   cassandra: { label: 'Cassandra', Icono: BarChart2 },
   neo4j: { label: 'Neo4j', Icono: GitBranch },
   redis: { label: 'Redis', Icono: Zap },
+  catalogo: { label: 'Copia del catálogo', Icono: Database },
 }
 
 function estadoDestino(d) {
@@ -173,9 +270,9 @@ export function PanelOutbox({ habilitado = true }) {
       acciones={problemas.length > 0 && <Boton variante="secondary" disabled={!habilitado} onClick={() => reintentar.mutate({})}><RotateCw size={13} /> Reintentar ya</Boton>}>
       {outbox.isLoading ? <Cargando className="h-28" /> : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {destinos.map((d) => {
-              const { label, Icono } = DESTINOS[d.destino]
+              const { label, Icono } = DESTINOS[d.destino] || { label: d.destino, Icono: Network }
               const [texto, tono] = estadoDestino(d)
               return (
                 <div key={d.destino} className="rounded-lg border border-[var(--color-border)] p-2.5 space-y-1.5">

@@ -27,6 +27,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import salud
 from app.core.config import settings
+from app.core.fault_injection import punto_de_falla
 from app.services import carrito_respaldo_service as respaldo
 
 logger = logging.getLogger(__name__)
@@ -164,9 +165,15 @@ def en_respaldo() -> bool:
 # ── Lectura ──────────────────────────────────────────────────────────────────
 
 
-def obtener_carrito(r: redis.Redis, usuario_id: int) -> list[dict]:
-    """Devuelve los ítems del carrito y renueva el TTL."""
+def obtener_carrito(r: redis.Redis, usuario_id: int, *, punto_falla: str | None = None) -> list[dict]:
+    """Devuelve los ítems del carrito y renueva el TTL.
+
+    ``punto_falla`` identifica al llamador para el laboratorio de fallas (el
+    checkout simula que Redis cae justo en su lectura, no en cualquier otra).
+    """
     def en_redis():
+        if punto_falla:
+            punto_de_falla(punto_falla)
         _resincronizar(r, usuario_id)
         flat = r.eval(_GET_CART_LUA, 1, _key(usuario_id), _TTL)
         return _como_items(dict(zip(flat[0::2], flat[1::2])))
@@ -191,6 +198,7 @@ def agregar_item(
 ) -> int:
     """Acumula cantidad si el ítem ya existe; lo crea si no. Renueva TTL."""
     def en_redis():
+        punto_de_falla('carrito.redis_agregar')
         _resincronizar(r, usuario_id)
         total = int(r.eval(
             _ADD_ITEM_LUA,
@@ -298,9 +306,11 @@ def eliminar_item(r: redis.Redis, usuario_id: int, oferta_id: int) -> bool:
     return _ejecutar(en_redis, lambda: respaldo.modificar(usuario_id, cambio))
 
 
-def vaciar_carrito(r: redis.Redis, usuario_id: int) -> None:
+def vaciar_carrito(r: redis.Redis, usuario_id: int, *, punto_falla: str | None = None) -> None:
     """Elimina toda la clave del carrito (p. ej. después del checkout)."""
     def en_redis():
+        if punto_falla:
+            punto_de_falla(punto_falla)
         r.delete(_key(usuario_id))
         try:
             respaldo.vaciar(usuario_id, pendiente=False)

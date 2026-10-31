@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.core import salud
 from app.core.db_mysql import SessionLocal
+from app.core.fault_injection import punto_de_falla
 from app.core.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -218,11 +219,14 @@ def producto(mongo: Database, producto_id: str) -> tuple[dict | None, bool]:
     return _ejecutar(en_mongo, en_respaldo)
 
 
-def productos_por_ids(mongo: Database, ids: list[str]) -> tuple[dict[str, dict], bool]:
+def productos_por_ids(mongo: Database, ids: list[str], *,
+                      punto_falla: str | None = None) -> tuple[dict[str, dict], bool]:
     """Documentos por ObjectId (texto), como diccionario id → documento."""
     validos = [i for i in ids if ObjectId.is_valid(i)]
 
     def en_mongo():
+        if punto_falla:
+            punto_de_falla(punto_falla)
         return {str(d['_id']): d for d in mongo.productos.find({'_id': {'$in': [ObjectId(i) for i in validos]}})}
 
     def en_respaldo():

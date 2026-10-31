@@ -422,7 +422,7 @@ def vector_consulta(texto: str, redis_db=None) -> list[float] | None:
     # Sin servicio de embeddings, las consultas ya vistas siguen usando su vector guardado.
     if not salud.disponible('embeddings'):
         return None
-    vectores = embeddings_client.generar([consulta])
+    vectores = embeddings_client.generar([consulta], punto_falla='busqueda.embeddings')
     if not vectores:
         return None
     if redis_db is not None:

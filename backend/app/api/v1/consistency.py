@@ -15,7 +15,7 @@ from app.models.checkout_saga import CheckoutSagaPaso
 from app.models.pago import Pago
 from app.models.pedido import Pedido
 from app.models.usuario import Usuario
-from app.services import consistency_service
+from app.services import casos_falla_service, consistency_service
 from app.services.checkout_recovery_worker import reconcile_once
 
 # Diagnóstico de solo lectura (invariantes y bitácora de la saga): siempre disponible para admin.
@@ -99,6 +99,24 @@ def configurar_pasarela(payload: PasarelaPayload, _: Usuario = Depends(get_admin
     except httpx.HTTPError as exc:
         raise HTTPException(503, f'Pasarela simulada no disponible: {exc.__class__.__name__}') from exc
     return respuesta.json()
+
+
+# Casos de falla específicos («¿qué pasa si Redis se cae justo al comprar?»)
+@router_fallas.get('/fallas/casos')
+def casos_falla(_: Usuario = Depends(get_admin_user)):
+    return casos_falla_service.listar()
+
+
+# Prepara un caso: limpia los demás puntos, pasarela aprobando y arma los del caso una vez
+@router_fallas.post('/fallas/casos/{caso_id}/preparar')
+def preparar_caso(caso_id: str, _: Usuario = Depends(get_admin_user)):
+    _exigir_fallas_habilitadas()
+    try:
+        return casos_falla_service.preparar(caso_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, f'Pasarela simulada no disponible: {exc.__class__.__name__}') from exc
 
 
 # Ejecuta ya el reconciliador y el recolector (sin esperar al ciclo del worker)

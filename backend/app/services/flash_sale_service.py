@@ -8,6 +8,7 @@ import redis
 from sqlalchemy import func, text
 
 from app.core import salud
+from app.core.fault_injection import punto_de_falla
 from app.core.time import utc_now
 from app.models.promocion_flash import PromocionFlash, ReservaFlash
 
@@ -278,11 +279,14 @@ def _reserva_mysql(db, promocion_id: int, usuario_id: int) -> dict | None:
     return {'token': fila.token, 'cantidad': fila.cantidad, 'expira_ts': _ts(fila.expira_en)}
 
 
-def reserva_vigente(r: redis.Redis, db, promocion_id: int, usuario_id: int) -> dict | None:
+def reserva_vigente(r: redis.Redis, db, promocion_id: int, usuario_id: int, *,
+                    punto_falla: str | None = None) -> dict | None:
     """La reserva del usuario: de Redis si responde; si no, o si la promoción
     cambió solo en MySQL y aún no se reconstruye en Redis, desde MySQL."""
     if salud.disponible('redis'):
         try:
+            if punto_falla:
+                punto_de_falla(punto_falla)
             reserva = obtener_reserva(r, promocion_id, usuario_id)
             salud.registrar_exito('redis')
             if reserva or not pendiente_resincronizar(db, promocion_id):

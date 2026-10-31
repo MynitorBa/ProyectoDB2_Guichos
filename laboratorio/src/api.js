@@ -70,6 +70,8 @@ export const api = {
   activarFalla: (punto, modo) => pedir('POST', '/admin/fallas', { cuerpo: { punto, modo } }),
   desactivarFallas: () => pedir('DELETE', '/admin/fallas'),
   modoPasarela: (modo) => pedir('POST', '/admin/fallas/pasarela', { cuerpo: { modo } }),
+  casos: () => pedir('GET', '/admin/fallas/casos'),
+  prepararCaso: (id) => pedir('POST', `/admin/fallas/casos/${id}/preparar`),
   recuperar: () => pedir('POST', '/admin/checkout/recuperar'),
   bitacora: (limite = 80) => pedir('GET', '/admin/checkout/saga', { params: { limite } }),
   consistencia: () => pedir('GET', '/admin/consistencia'),

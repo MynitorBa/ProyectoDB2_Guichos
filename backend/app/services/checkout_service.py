@@ -30,6 +30,7 @@ no tiene efecto. Cada transición queda en ``checkout_saga_pasos``.
 import hashlib
 import json
 import logging
+import time
 import uuid
 from collections import defaultdict
 from datetime import timedelta
@@ -37,6 +38,7 @@ from decimal import Decimal
 
 from bson import ObjectId
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -56,6 +58,7 @@ from app.models.vendedor import Vendedor
 from app.schemas.checkout import CheckoutItem
 from app.services import carrito_respaldo_service as carrito_respaldo
 from app.services import catalogo_respaldo_service as catalogo_respaldo
+from app.services import lectura_respaldo_service as lectura
 from app.services import payment_gateway_client as pg
 from app.services.offer_history_service import registrar_saldo_inventario
 from app.services.offer_service import (
@@ -86,6 +89,26 @@ class CheckoutError(Exception):
 
 class PedidoNoCumplible(Exception):
     """El cobro se aprobó pero el pedido ya no puede confirmarse."""
+
+
+class ReservaInterrumpida(lectura.MySQLNoDisponible):
+    """MySQL dejó de responder durante la reserva (T1).
+
+    La transacción se deshizo: no hay pedido, ni reserva, ni cobro. El llamador
+    puede tratar la compra como si MySQL estuviera caído desde el principio; la
+    cola de pedidos la reconoce como caída y la deja pendiente hasta que vuelva.
+    """
+
+
+# Deadlock (1213) o espera de bloqueo vencida (1205): otra transacción ganó la
+# carrera. La reserva aún no escribió nada ni cobró, así que repetirla es seguro.
+_BLOQUEOS_MYSQL = {1205, 1213}
+INTENTOS_RESERVA = 3
+
+
+def _codigo_mysql(exc: OperationalError) -> int | None:
+    orig = getattr(exc, 'orig', None)
+    return orig.args[0] if orig is not None and getattr(orig, 'args', None) else None
 
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
@@ -295,6 +318,8 @@ def reservar_pedido(
         .scalars()
         .all()
     )
+    # Laboratorio: MySQL elige esta transacción como víctima de un deadlock.
+    punto_de_falla('checkout.mysql_deadlock')
     offers = {offer.id: offer for offer in locked_offers}
     if len(offers) != len(offer_ids):
         raise CheckoutError('Una oferta dejó de estar disponible.', 'OFFER_NOT_FOUND')
@@ -474,7 +499,8 @@ def reservar_pedido(
     if mongo_db is not None:
         refs = [offers[o].producto_ref for o in quantities if offers[o].producto_ref]
         try:
-            productos_doc, _ = catalogo_respaldo.productos_por_ids(mongo_db, refs)
+            productos_doc, _ = catalogo_respaldo.productos_por_ids(
+                mongo_db, refs, punto_falla='checkout.mongo_lineas')
         except Exception:
             productos_doc = {}
 
@@ -532,8 +558,32 @@ def reservar_pedido(
         'total': str(total),
         'flash': sorted(flash_context),
     })
+    # Laboratorio: la conexión con MySQL se corta antes del commit, con las
+    # ofertas e inventarios bloqueados. Nada de lo anterior queda escrito.
+    punto_de_falla('checkout.mysql_durante_reserva')
     db.commit()
     return pedido
+
+
+def _reservar_con_reintentos(db: Session, mongo_db, **datos) -> Pedido:
+    """T1 con reintentos ante deadlocks; una caída de MySQL sale como ``ReservaInterrumpida``."""
+    for intento in range(1, INTENTOS_RESERVA + 1):
+        try:
+            return reservar_pedido(db, mongo_db, **datos)
+        except OperationalError as exc:
+            try:
+                db.rollback()
+            except SQLAlchemyError:
+                pass  # sin conexión no hay nada que deshacer en el servidor
+            if _codigo_mysql(exc) in _BLOQUEOS_MYSQL and intento < INTENTOS_RESERVA:
+                logger.warning('Conflicto de bloqueo al reservar (intento %d de %d); se reintenta.',
+                               intento, INTENTOS_RESERVA)
+                time.sleep(0.05 * intento)
+                continue
+            if lectura.es_caida(exc):
+                raise ReservaInterrumpida(str(exc)) from exc
+            raise
+    raise AssertionError('inalcanzable')
 
 
 # ── Paso 2: cobrar (fuera de transacción) ─────────────────────────────────────
@@ -790,7 +840,7 @@ def procesar_checkout(
     pasarela: 'pg.PasarelaPagos | None' = None,
 ) -> Pedido:
     """Ejecuta la saga completa. Devuelve el pedido confirmado o lanza CheckoutError."""
-    pedido = reservar_pedido(
+    pedido = _reservar_con_reintentos(
         db, mongo_db,
         usuario_id=usuario_id,
         direccion_id=direccion_id,

@@ -14,6 +14,7 @@ import httpx
 
 from app.core import salud
 from app.core.config import settings
+from app.core.fault_injection import punto_de_falla
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,8 @@ def texto_producto(doc: dict) -> str:
     return '. '.join(p.strip().rstrip('.') for p in partes if p and p.strip().rstrip('.'))
 
 
-def generar(textos: list[str], *, http: httpx.Client | None = None) -> list[list[float]] | None:
+def generar(textos: list[str], *, http: httpx.Client | None = None,
+            punto_falla: str | None = None) -> list[list[float]] | None:
     """Vectores normalizados de ``textos`` (en el mismo orden) o ``None`` si el servicio no responde."""
     if not textos:
         return []
@@ -50,6 +52,8 @@ def generar(textos: list[str], *, http: httpx.Client | None = None) -> list[list
         return None
     cliente = http or httpx.Client(base_url=settings.EMBEDDINGS_URL, timeout=settings.EMBEDDINGS_TIMEOUT)
     try:
+        if punto_falla:
+            punto_de_falla(punto_falla)
         vectores: list[list[float]] = []
         for inicio in range(0, len(textos), LOTE):
             respuesta = cliente.post('/embeddings', json={'textos': textos[inicio:inicio + LOTE]})

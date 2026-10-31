@@ -13,6 +13,7 @@ from app.core import salud
 from app.core.db_mysql import get_db
 from app.core.db_redis import get_redis
 from app.core.deps import get_current_user, require_role
+from app.core.fault_injection import punto_de_falla
 from app.core.time import utc_now
 from app.models.inventario import Inventario, MovimientoInventario
 from app.models.oferta import Oferta
@@ -325,6 +326,10 @@ def reserve_flash_sale(
                 ahora_ts=int(time.time()),
                 segundos_reserva=promotion.segundos_reserva,
             )
+            # Laboratorio: el script ya apartó la unidad en Redis, pero la
+            # respuesta se pierde. Se reserva en MySQL y la promoción queda
+            # marcada para reconstruirse, así la unidad huérfana no cuenta dos veces.
+            punto_de_falla('flash.redis_tras_reservar')
             salud.registrar_exito('redis')
         except redis_lib.RedisError as exc:
             salud.registrar_falla('redis', exc)
