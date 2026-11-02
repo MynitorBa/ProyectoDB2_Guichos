@@ -200,6 +200,7 @@ export default function VendorPage() {
             </div>
           </div>
           <div className="flex gap-2"><Button variant={!onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(false)}>Con actividad</Button><Button variant={onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(true)}>Sin ventas</Button></div>
+          {trends?.fuente_datos === 'mysql_respaldo' && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Cassandra no está disponible. Mostramos el respaldo de tendencias en MySQL; puede tener un breve retraso.</p>}
           {trendsLoading ? <p className="text-sm text-[var(--color-text-muted)]">Cargando tendencias…</p> : trendsError ? (
             <p role="alert" className="text-sm text-[var(--color-error)]">{trendsError.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
           ) : trends?.items?.length && onlyWithoutSales ? (

@@ -1,0 +1,48 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: tiendaya_benchmark_mysql
+    restart: "no"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Falta MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: tiendaya_benchmark_20261101
+      MYSQL_USER: ${MYSQL_USER:?Falta MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Falta MYSQL_PASSWORD}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=mysql_native_password
+    ports:
+      - "127.0.0.1:3337:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  cassandra:
+    image: cassandra:4.1.12
+    container_name: tiendaya_benchmark_cassandra
+    restart: "no"
+    environment:
+      CASSANDRA_CLUSTER_NAME: TiendaYa Benchmark
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    ports:
+      - "127.0.0.1:9242:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SELECT release_version FROM system.local' >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+      start_period: 60s
+
+volumes:
+  mysql_data:
+  cassandra_data:

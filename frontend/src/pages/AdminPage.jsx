@@ -736,6 +736,7 @@ function AnalyticsSection() {
         <Button variant={!onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(false)}>Con actividad</Button>
         <Button variant={onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(true)}>Sin ventas</Button>
       </div>
+      {data?.fuente_datos === 'mysql_respaldo' && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Cassandra no está disponible. Mostramos el respaldo de tendencias en MySQL; puede tener un breve retraso.</p>}
       {isLoading ? <Skeleton className="h-72 w-full" /> : isError ? (
         <p role="alert" className="text-sm text-[var(--color-error)]">{error?.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
       ) : rows.length === 0 ? (

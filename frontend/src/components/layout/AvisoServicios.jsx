@@ -11,7 +11,7 @@ const MENSAJES = {
   mongo: 'El catálogo se muestra desde una copia de respaldo: la información puede estar desactualizada y por ahora no se pueden editar productos.',
   elasticsearch: 'La búsqueda funciona en modo básico: sin corrección de errores ni filtros.',
   neo4j: 'Las recomendaciones se muestran desde su último cálculo guardado.',
-  cassandra: 'Los paneles de tendencias de ventas no están disponibles temporalmente.',
+  cassandra: 'Las tendencias se consultan desde el respaldo MySQL mientras Cassandra se recupera. Los datos pueden tener un breve retraso.',
 }
 const SOLO_GESTION = new Set(['cassandra'])
 

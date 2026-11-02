@@ -1,0 +1,27 @@
+{
+  "semana": "2026-09-14",
+  "mysql_db": "tiendaya_benchmark_20261101",
+  "mysql_port": 3337,
+  "cassandra_port": 9242,
+  "resultados_iguales": true,
+  "filas_cassandra": 26,
+  "filas_mysql": 26,
+  "latencia": {
+    "cassandra": {
+      "promedio_ms": 71.43802,
+      "mediana_ms": 71.92699999999999,
+      "p95_ms": 74.7774,
+      "p99_ms": 77.55696999999999,
+      "muestras": 50
+    },
+    "mysql_respaldo": {
+      "promedio_ms": 5.43518,
+      "mediana_ms": 5.379,
+      "p95_ms": 6.19025,
+      "p99_ms": 6.551769999999999,
+      "muestras": 50
+    },
+    "diferencia_promedio_porcentaje": -92.39
+  },
+  "alcance": "consulta semanal con 4 comparaciones, sin carga comercial concurrente"
+}

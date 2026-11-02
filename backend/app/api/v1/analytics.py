@@ -1,4 +1,4 @@
-"""Consultas de tendencias servidas desde Cassandra."""
+"""Consultas de tendencias: Cassandra y respaldo derivado en MySQL."""
 
 from datetime import date
 
@@ -7,10 +7,12 @@ from cassandra import DriverException
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db_cassandra import cassandra_health
 from app.core.db_mongo import get_mongo_db
 from app.core.db_mysql import get_db
+from app.core import salud
 from app.core.deps import get_admin_user, require_role
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
@@ -23,6 +25,7 @@ from app.services.analytics_service import (
     vendor_offer_summary,
     vendor_product_weekly_trend,
 )
+from app.services.analytics_mysql_backup import MySQLAnalyticsAdapter
 
 
 router = APIRouter(prefix='/analytics', tags=['Analítica Cassandra'])
@@ -43,6 +46,23 @@ def _unavailable(exc: Exception) -> HTTPException:
     )
 
 
+def _analytics_call(func, db: Session, *args, **kwargs):
+    if salud.disponible('cassandra'):
+        try:
+            result = func(*args, **kwargs)
+            salud.registrar_exito('cassandra')
+            return result, 'cassandra', None
+        except DriverException as exc:
+            salud.registrar_falla('cassandra', exc, confirmada=True)
+    adapter = MySQLAnalyticsAdapter(db)
+    try:
+        if not adapter.ready():
+            raise _unavailable(RuntimeError('Respaldo analítico sin backfill completo'))
+        return func(*args, cassandra=adapter, **kwargs), 'mysql_respaldo', adapter
+    except SQLAlchemyError as exc:
+        raise _unavailable(exc) from exc
+
+
 @router.get('/health')
 def health(_: Usuario = Depends(get_admin_user)):
     try:
@@ -58,15 +78,16 @@ def admin_trends(
     solo_sin_ventas: bool = Query(False),
     _: Usuario = Depends(get_admin_user),
     mongo: Database = Depends(get_mongo_db),
+    db: Session = Depends(get_db),
 ):
     selected = _week(semana_inicio)
-    try:
-        items = product_trends(selected, comparison_weeks=semanas_comparacion)
-    except DriverException as exc:
-        raise _unavailable(exc) from exc
+    items, fuente, _ = _analytics_call(
+        product_trends, db, selected, comparison_weeks=semanas_comparacion)
     if solo_sin_ventas:
+        sold_items, fuente, _ = _analytics_call(
+            product_trends, db, selected, comparison_weeks=0)
         sold_refs = {
-            item['producto_ref'] for item in product_trends(selected, comparison_weeks=0)
+            item['producto_ref'] for item in sold_items
             if item['unidades'] > 0
         }
         items = []
@@ -91,6 +112,7 @@ def admin_trends(
         'semana_inicio': selected.isoformat(),
         'semanas_comparacion': semanas_comparacion,
         'solo_sin_ventas': solo_sin_ventas,
+        'fuente_datos': fuente,
         'items': items,
     }
 
@@ -102,6 +124,7 @@ def admin_product_trend(
     hasta: date = Query(...),
     _: Usuario = Depends(get_admin_user),
     mongo: Database = Depends(get_mongo_db),
+    db: Session = Depends(get_db),
 ):
     start = _week(desde)
     end = _week(hasta)
@@ -116,15 +139,13 @@ def admin_product_trend(
     product = mongo.productos.find_one({'_id': object_id}, {'nombre': 1})
     if not product:
         raise HTTPException(404, 'Producto no encontrado.')
-    try:
-        items = product_weekly_trend(producto_ref, start, end)
-    except DriverException as exc:
-        raise _unavailable(exc) from exc
+    items, fuente, _ = _analytics_call(product_weekly_trend, db, producto_ref, start, end)
     return {
         'producto_ref': producto_ref,
         'producto_nombre': product.get('nombre'),
         'desde': start.isoformat(),
         'hasta': end.isoformat(),
+        'fuente_datos': fuente,
         'items': items,
     }
 
@@ -142,17 +163,13 @@ def vendor_trends(
     if not vendor:
         raise HTTPException(403, 'No tienes perfil de vendedor configurado.')
     selected = _week(semana_inicio)
-    try:
-        items = vendor_offer_summary(
-            vendor.id, selected, comparison_weeks=semanas_comparacion
-        )
-    except DriverException as exc:
-        raise _unavailable(exc) from exc
+    items, fuente, _ = _analytics_call(
+        vendor_offer_summary, db, vendor.id, selected, comparison_weeks=semanas_comparacion)
     if solo_sin_ventas:
+        sold_items, fuente, _ = _analytics_call(
+            vendor_offer_summary, db, vendor.id, selected, comparison_weeks=0)
         sold_offer_ids = {
-            item['oferta_id'] for item in vendor_offer_summary(
-                vendor.id, selected, comparison_weeks=0
-            )
+            item['oferta_id'] for item in sold_items
             if item['unidades'] > 0
         }
         offers = db.query(Oferta).filter_by(vendedor_id=vendor.id).order_by(Oferta.id).all()
@@ -189,6 +206,7 @@ def vendor_trends(
         'vendedor_id': vendor.id,
         'semanas_comparacion': semanas_comparacion,
         'solo_sin_ventas': solo_sin_ventas,
+        'fuente_datos': fuente,
         'items': items,
     }
 
@@ -265,14 +283,13 @@ def vendor_product_trend(
     ) if ObjectId.is_valid(producto_ref) else None
     if not product:
         raise HTTPException(404, 'Producto no encontrado.')
-    try:
-        items = vendor_product_weekly_trend(vendor.id, producto_ref, start, end)
-    except DriverException as exc:
-        raise _unavailable(exc) from exc
+    items, fuente, _ = _analytics_call(
+        vendor_product_weekly_trend, db, vendor.id, producto_ref, start, end)
     return {
         'producto_ref': producto_ref,
         'producto_nombre': product.get('nombre'),
         'desde': start.isoformat(),
         'hasta': end.isoformat(),
+        'fuente_datos': fuente,
         'items': items,
     }

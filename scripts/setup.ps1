@@ -273,6 +273,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Falló la copia inicial del catálogo en MySQL
 & $python scripts\apply_recomendaciones_cache.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación de la caché de recomendaciones.' }
 
+& $python scripts\apply_respaldo_analitica.py
+if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación del respaldo analítico MySQL.' }
+& $python scripts\backfill_mysql_analytics.py --apply-if-needed
+if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en MySQL.' }
+
 & $python scripts\backfill_cassandra_analytics.py
 if ($LASTEXITCODE -ne 0) { throw 'Falló la proyección analítica inicial en Cassandra.' }
 

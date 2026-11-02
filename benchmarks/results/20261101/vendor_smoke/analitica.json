@@ -1,0 +1,30 @@
+{
+  "semana": "2026-09-14",
+  "consulta": "vendor_trends",
+  "vendedor_id": 1,
+  "producto_ref": "6a89056833a9ab194c58a754",
+  "mysql_db": "tiendaya_benchmark_20261101",
+  "mysql_port": 3337,
+  "cassandra_port": 9242,
+  "resultados_iguales": true,
+  "filas_cassandra": 18,
+  "filas_mysql": 18,
+  "latencia": {
+    "cassandra": {
+      "promedio_ms": 71.3826,
+      "mediana_ms": 71.493,
+      "p95_ms": 77.0855,
+      "p99_ms": 78.6283,
+      "muestras": 20
+    },
+    "mysql_respaldo": {
+      "promedio_ms": 6.0574,
+      "mediana_ms": 5.855499999999999,
+      "p95_ms": 7.7490000000000006,
+      "p99_ms": 8.6002,
+      "muestras": 20
+    },
+    "diferencia_promedio_porcentaje": -91.51
+  },
+  "alcance": "servicio anal\u00edtico, sin HTTP ni carga comercial concurrente"
+}

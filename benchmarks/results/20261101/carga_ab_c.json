@@ -1,0 +1,510 @@
+[
+  {
+    "escenario": "A",
+    "fuente": "cassandra",
+    "analitica_hilos": 2,
+    "inventario_hilos": 2,
+    "duracion_s": 13.81,
+    "analitica": {
+      "n": 501,
+      "qps": 36.28,
+      "promedio_ms": 53.11,
+      "p50_ms": 58.323,
+      "p95_ms": 77.237,
+      "p99_ms": 78.25
+    },
+    "inventario_proxy": {
+      "n": 2436,
+      "qps": 176.39,
+      "promedio_ms": 10.908,
+      "p50_ms": 10.274,
+      "p95_ms": 15.154,
+      "p99_ms": 20.428
+    },
+    "mysql_status_inicio": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 1
+    },
+    "mysql_status_final": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 2
+    },
+    "mysql_status_delta": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 1
+    },
+    "docker_muestras": [
+      {
+        "segundo": 1.72,
+        "docker": [
+          "tiendaya_benchmark_mysql|23.64%|435.7MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|82.53%|1.11GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 3.87,
+        "docker": [
+          "tiendaya_benchmark_mysql|27.60%|435.6MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|62.05%|1.11GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 7.04,
+        "docker": [
+          "tiendaya_benchmark_mysql|25.50%|435.9MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|51.96%|1.107GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 10.2,
+        "docker": [
+          "tiendaya_benchmark_mysql|24.73%|435.5MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|59.94%|1.108GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 12.35,
+        "docker": [
+          "tiendaya_benchmark_mysql|25.28%|435.8MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|83.11%|1.112GiB / 2GiB"
+        ]
+      }
+    ],
+    "errores": [],
+    "repeticion": 1
+  },
+  {
+    "escenario": "B",
+    "fuente": "mysql",
+    "analitica_hilos": 2,
+    "inventario_hilos": 2,
+    "duracion_s": 15.505,
+    "analitica": {
+      "n": 5272,
+      "qps": 340.01,
+      "promedio_ms": 5.686,
+      "p50_ms": 5.531,
+      "p95_ms": 7.076,
+      "p99_ms": 8.433
+    },
+    "inventario_proxy": {
+      "n": 2140,
+      "qps": 138.02,
+      "promedio_ms": 14.015,
+      "p50_ms": 10.939,
+      "p95_ms": 30.057,
+      "p99_ms": 58.308
+    },
+    "mysql_status_inicio": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 2
+    },
+    "mysql_status_final": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 4
+    },
+    "mysql_status_delta": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 2
+    },
+    "docker_muestras": [
+      {
+        "segundo": 0.01,
+        "docker": [
+          "tiendaya_benchmark_mysql|43.41%|438.7MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.29%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 3.02,
+        "docker": [
+          "tiendaya_benchmark_mysql|42.52%|439.4MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.24%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 6.18,
+        "docker": [
+          "tiendaya_benchmark_mysql|47.89%|438.4MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.17%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 9.33,
+        "docker": [
+          "tiendaya_benchmark_mysql|34.42%|437.8MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.18%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 12.36,
+        "docker": [
+          "tiendaya_benchmark_mysql|42.27%|437.9MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.27%|1.112GiB / 2GiB"
+        ]
+      }
+    ],
+    "errores": [],
+    "repeticion": 1
+  },
+  {
+    "escenario": "C",
+    "fuente": "mysql",
+    "analitica_hilos": 6,
+    "inventario_hilos": 2,
+    "duracion_s": 16.749,
+    "analitica": {
+      "n": 4556,
+      "qps": 272.02,
+      "promedio_ms": 19.753,
+      "p50_ms": 19.569,
+      "p95_ms": 24.197,
+      "p99_ms": 27.276
+    },
+    "inventario_proxy": {
+      "n": 1709,
+      "qps": 102.04,
+      "promedio_ms": 17.55,
+      "p50_ms": 16.101,
+      "p95_ms": 28.107,
+      "p99_ms": 53.239
+    },
+    "mysql_status_inicio": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 4
+    },
+    "mysql_status_final": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_delta": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 4
+    },
+    "docker_muestras": [
+      {
+        "segundo": 0.01,
+        "docker": [
+          "tiendaya_benchmark_mysql|39.87%|439.5MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.27%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 3.17,
+        "docker": [
+          "tiendaya_benchmark_mysql|42.39%|439.2MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.23%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 6.26,
+        "docker": [
+          "tiendaya_benchmark_mysql|37.46%|438.4MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.39%|1.112GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 9.41,
+        "docker": [
+          "tiendaya_benchmark_mysql|38.50%|439.6MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|44.63%|1.101GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 11.57,
+        "docker": [
+          "tiendaya_benchmark_mysql|39.15%|439.8MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.38%|1.101GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 13.72,
+        "docker": [
+          "tiendaya_benchmark_mysql|19.41%|437.7MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.36%|1.102GiB / 2GiB"
+        ]
+      }
+    ],
+    "errores": [],
+    "repeticion": 1
+  },
+  {
+    "escenario": "A",
+    "fuente": "cassandra",
+    "analitica_hilos": 2,
+    "inventario_hilos": 2,
+    "duracion_s": 17.954,
+    "analitica": {
+      "n": 626,
+      "qps": 34.87,
+      "promedio_ms": 48.047,
+      "p50_ms": 47.385,
+      "p95_ms": 76.878,
+      "p99_ms": 77.913
+    },
+    "inventario_proxy": {
+      "n": 1888,
+      "qps": 105.16,
+      "promedio_ms": 15.893,
+      "p50_ms": 14.07,
+      "p95_ms": 25.423,
+      "p99_ms": 49.482
+    },
+    "mysql_status_inicio": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_final": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_delta": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 0
+    },
+    "docker_muestras": [
+      {
+        "segundo": 0.01,
+        "docker": [
+          "tiendaya_benchmark_mysql|19.37%|440.4MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|101.47%|1.102GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 3.16,
+        "docker": [
+          "tiendaya_benchmark_mysql|15.59%|439.3MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|78.30%|1.146GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 6.32,
+        "docker": [
+          "tiendaya_benchmark_mysql|20.53%|439MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|59.59%|1.149GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 9.5,
+        "docker": [
+          "tiendaya_benchmark_mysql|20.69%|439.1MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|57.12%|1.143GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 12.65,
+        "docker": [
+          "tiendaya_benchmark_mysql|20.22%|439.9MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|68.19%|1.167GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 14.8,
+        "docker": [
+          "tiendaya_benchmark_mysql|4.41%|438.9MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.53%|1.142GiB / 2GiB"
+        ]
+      }
+    ],
+    "errores": [],
+    "repeticion": 2
+  },
+  {
+    "escenario": "B",
+    "fuente": "mysql",
+    "analitica_hilos": 2,
+    "inventario_hilos": 2,
+    "duracion_s": 17.802,
+    "analitica": {
+      "n": 5077,
+      "qps": 285.19,
+      "promedio_ms": 5.904,
+      "p50_ms": 5.762,
+      "p95_ms": 7.525,
+      "p99_ms": 8.601
+    },
+    "inventario_proxy": {
+      "n": 2648,
+      "qps": 148.75,
+      "promedio_ms": 11.322,
+      "p50_ms": 10.299,
+      "p95_ms": 17.128,
+      "p99_ms": 25.582
+    },
+    "mysql_status_inicio": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_final": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_delta": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 0
+    },
+    "docker_muestras": [
+      {
+        "segundo": 0.01,
+        "docker": [
+          "tiendaya_benchmark_mysql|39.75%|443.7MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.19%|1.142GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 3.02,
+        "docker": [
+          "tiendaya_benchmark_mysql|43.76%|442.6MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.29%|1.142GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 6.17,
+        "docker": [
+          "tiendaya_benchmark_mysql|42.71%|442.8MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|11.51%|1.143GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 8.32,
+        "docker": [
+          "tiendaya_benchmark_mysql|45.33%|442.7MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.32%|1.143GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 11.5,
+        "docker": [
+          "tiendaya_benchmark_mysql|48.35%|443.5MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.28%|1.143GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 14.66,
+        "docker": [
+          "tiendaya_benchmark_mysql|0.64%|441.9MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.62%|1.143GiB / 2GiB"
+        ]
+      }
+    ],
+    "errores": [],
+    "repeticion": 2
+  },
+  {
+    "escenario": "C",
+    "fuente": "mysql",
+    "analitica_hilos": 6,
+    "inventario_hilos": 2,
+    "duracion_s": 17.699,
+    "analitica": {
+      "n": 4397,
+      "qps": 248.43,
+      "promedio_ms": 20.471,
+      "p50_ms": 20.371,
+      "p95_ms": 24.962,
+      "p99_ms": 27.487
+    },
+    "inventario_proxy": {
+      "n": 2201,
+      "qps": 124.36,
+      "promedio_ms": 13.63,
+      "p50_ms": 13.03,
+      "p95_ms": 17.88,
+      "p99_ms": 24.95
+    },
+    "mysql_status_inicio": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_final": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 8
+    },
+    "mysql_status_delta": {
+      "Slow_queries": 0,
+      "Innodb_row_lock_waits": 0,
+      "Innodb_row_lock_time": 0,
+      "Threads_connected": 0
+    },
+    "docker_muestras": [
+      {
+        "segundo": 0.01,
+        "docker": [
+          "tiendaya_benchmark_mysql|41.54%|443.5MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.28%|1.133GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 2.18,
+        "docker": [
+          "tiendaya_benchmark_mysql|39.54%|444.4MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.45%|1.133GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 5.2,
+        "docker": [
+          "tiendaya_benchmark_mysql|40.96%|443.7MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.33%|1.133GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 8.36,
+        "docker": [
+          "tiendaya_benchmark_mysql|41.09%|443.5MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.26%|1.121GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 11.51,
+        "docker": [
+          "tiendaya_benchmark_mysql|44.11%|443.6MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.34%|1.121GiB / 2GiB"
+        ]
+      },
+      {
+        "segundo": 14.55,
+        "docker": [
+          "tiendaya_benchmark_mysql|0.74%|442.2MiB / 768MiB",
+          "tiendaya_benchmark_cassandra|1.24%|1.121GiB / 2GiB"
+        ]
+      }
+    ],
+    "errores": [],
+    "repeticion": 2
+  }
+]

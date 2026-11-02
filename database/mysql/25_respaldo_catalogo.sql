@@ -25,5 +25,5 @@ CREATE TABLE IF NOT EXISTS catalogo_respaldo (
 
 -- Nuevo destino del outbox. MODIFY con la lista completa es idempotente.
 ALTER TABLE outbox_eventos
-  MODIFY COLUMN destino ENUM('mongo','busqueda','cassandra','neo4j','redis','catalogo')
+  MODIFY COLUMN destino ENUM('mongo','busqueda','cassandra','neo4j','redis','catalogo','analitica_mysql')
   NOT NULL DEFAULT 'mongo';

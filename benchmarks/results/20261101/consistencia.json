@@ -1,0 +1,43 @@
+{
+  "casos": [
+    {
+      "caso": "compra_aprobada",
+      "pedido_aislado": 693,
+      "proyeccion_ms": 1898.2,
+      "filas": 2,
+      "igual": true
+    },
+    {
+      "caso": "compra_flash",
+      "pedido_aislado": 694,
+      "proyeccion_ms": 469.67,
+      "filas": 2,
+      "igual": true
+    },
+    {
+      "caso": "reembolso",
+      "igual": true
+    },
+    {
+      "caso": "reprocesamiento_doble",
+      "igual": true,
+      "duplicados": 0
+    },
+    {
+      "caso": "cassandra_indisponible",
+      "respaldo_filas": 2,
+      "mysql_procesado": true,
+      "cassandra_estado": "error"
+    },
+    {
+      "caso": "recuperacion",
+      "igual": true,
+      "filas": 2,
+      "retraso_total_s": 21.58,
+      "estado_outbox": {
+        "analitica_mysql": "procesado",
+        "cassandra": "procesado"
+      }
+    }
+  ]
+}

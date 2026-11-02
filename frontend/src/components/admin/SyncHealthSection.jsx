@@ -50,6 +50,8 @@ const DESTINOS = {
   mongo:     { label: 'MongoDB',       detalle: 'Proyección del catálogo e historial', Icon: Database },
   busqueda:  { label: 'Elasticsearch', detalle: 'Índice de búsqueda',                  Icon: SearchIcon },
   cassandra: { label: 'Cassandra',     detalle: 'Analítica de ventas',                 Icon: BarChart2 },
+  analitica_mysql: { label: 'MySQL analítica', detalle: 'Respaldo de tendencias',       Icon: BarChart2 },
+  catalogo:  { label: 'Catálogo MySQL', detalle: 'Copia del catálogo MongoDB',         Icon: Database },
   neo4j:     { label: 'Neo4j',         detalle: 'Compras verificadas para reseñas',    Icon: GitBranch },
   redis:     { label: 'Redis',         detalle: 'Limpieza de carritos y reservas',     Icon: Zap },
 }
@@ -62,7 +64,7 @@ function estadoDestino(d) {
 }
 
 function TarjetaDestino({ destino }) {
-  const meta = DESTINOS[destino.destino]
+  const meta = DESTINOS[destino.destino] || { label: destino.destino, detalle: 'Destino de sincronización', Icon: Database }
   const estado = estadoDestino(destino)
   const { Icon } = meta
   return (

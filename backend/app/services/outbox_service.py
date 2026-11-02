@@ -53,7 +53,7 @@ RUTAS: dict[str, tuple[str, ...]] = {
     'producto.oferta_principal_actualizada': ('mongo', 'busqueda', 'neo4j'),
     'producto.catalogo_actualizado': ('busqueda', 'catalogo'),
     'flash.estado_cambiado': ('busqueda',),
-    'analytics.pedido_actualizado': ('cassandra', 'busqueda'),
+    'analytics.pedido_actualizado': ('cassandra', 'analitica_mysql', 'busqueda'),
     'grafo.compra_registrada': ('neo4j',),
     'grafo.pedido_actualizado': ('neo4j',),
     'resena.creada': ('neo4j', 'busqueda'),
@@ -231,6 +231,16 @@ def _proyectar_cassandra(event: OutboxEvento, db: Session) -> None:
     project_order(int(event.agregado_id))
 
 
+def _proyectar_analitica_mysql(event: OutboxEvento, db: Session) -> None:
+    if event.tipo_evento != 'analytics.pedido_actualizado':
+        return
+    from app.services.analytics_mysql_backup import project_order_mysql
+
+    # El reemplazo de la semana se confirma en una transacción propia. Si el
+    # proceso cae antes del ACK del Outbox, repetirlo produce el mismo resumen.
+    project_order_mysql(int(event.agregado_id), db)
+
+
 def _proyectar_neo4j(event: OutboxEvento, db: Session) -> None:
     """Proyecta compras o reseñas desde la autoridad MySQL."""
     from app.core.db_neo4j import get_driver
@@ -369,6 +379,7 @@ MANEJADORES = {
     'busqueda': _proyectar_busqueda,
     'catalogo': _proyectar_catalogo,
     'cassandra': _proyectar_cassandra,
+    'analitica_mysql': _proyectar_analitica_mysql,
     'neo4j': _proyectar_neo4j,
     'redis': _proyectar_redis,
 }
