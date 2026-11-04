@@ -160,7 +160,7 @@ foreach ($key in @('REDIS_USERNAME', 'REDIS_PASSWORD', 'ES_USERNAME', 'ES_PASSWO
 }
 foreach ($key in $settings.Keys) { [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process') }
 $env:FRAUD_ANALYSIS_ENABLED = 'false'
-$env:FAULT_INJECTION_ENABLED = 'false'
+$env:FAULT_INJECTION_ENABLED = 'true'
 $env:VITE_DEMO_MODE = 'true'
 $env:VITE_PORT = '5173'
 $env:VITE_API_URL = '/api/v1'
