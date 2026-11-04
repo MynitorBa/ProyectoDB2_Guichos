@@ -50,11 +50,11 @@ flowchart LR
 
 | Componente | Autoridad y propósito |
 |---|---|
-| MySQL | Usuarios, vendedores, ofertas, precios, inventario, pedidos, pagos, reseñas, fraude, bitácora de la saga y outbox. **Única fuente de verdad** transaccional. Guarda además las copias del plan B (carritos, catálogo, recomendaciones) |
+| MySQL | Usuarios, vendedores, ofertas, precios, inventario, pedidos, pagos, reseñas, fraude, bitácora de la saga y outbox. **Única fuente de verdad transaccional** (dinero, inventario, pedidos, precios); el contenido del catálogo lo decide MongoDB. Guarda además las copias del plan B (carritos, catálogo, recomendaciones, resúmenes de tendencias) |
 | MongoDB | Productos, variantes, esquemas de atributos por categoría, historial de eventos del producto y configuración de tiendas. No decide precio ni stock |
 | Redis | Carritos con expiración, reservas de ventas flash (Lua), autocompletado de respaldo, copias de lectura y cola de pedidos del plan B, y las cachés de la búsqueda semántica (vector de cada consulta, vecinos de cada producto, «Te podría interesar», historial de vistos) |
 | Elasticsearch | Proyección de búsqueda: texto (BM25, errores, sinónimos, facetas) y **vector** de cada producto (`dense_vector` int8 HNSW). Decide qué productos y en qué orden; precio y stock se hidratan desde MySQL |
-| Cassandra | Proyección analítica de ventas pagadas por producto, oferta, vendedor y semana |
+| Cassandra | Proyección analítica de ventas pagadas por producto, oferta, vendedor y semana. Su respaldo son resúmenes equivalentes en MySQL (destino `analitica_mysql`) |
 | Neo4j | Proyección de compras pagadas, ofertas y reseñas: «quien compró esto también compró» y patrones de fraude |
 | Servicio de embeddings | Convierte texto en vectores (sin estado; se reinicia sin perder nada) |
 | Pasarela simulada + SQLite | Sistema externo: cobro, consulta y reembolso idempotentes por clave |
@@ -71,6 +71,7 @@ flowchart LR
     OBX -->|neo4j| NEO[("Neo4j")]
     OBX -->|redis| RED[("Redis")]
     OBX -->|catalogo| CAT[("MySQL: copia del catálogo")]
+    OBX -->|analitica_mysql| ANA[("MySQL: resúmenes de tendencias")]
     API -->|carrito, flash| RED
     RED -.->|"copia de cada cambio\n(respaldo)"| MYS
     REC["Reconciliador y recolector\nde la saga"] --> MYS
@@ -92,6 +93,7 @@ flowchart LR
 | MongoDB | Copia completa del catálogo en MySQL (destino `catalogo`); Elasticsearch como último recurso |
 | Elasticsearch | MongoDB → copia del catálogo en MySQL; autocompletado con un índice de prefijos en Redis |
 | Neo4j | Caché horaria de recomendaciones en MySQL → más vendidos de la categoría |
+| Cassandra | Resúmenes semanales equivalentes en MySQL, alimentados por el destino `analitica_mysql` del outbox ([53](53-plan-b-cassandra-notas.md)–[57](57-cierre-tecnico-planb-cassandra.md)) |
 | MySQL | Solo lectura (sesión por JWT, copias de lectura en Redis) y pedidos en cola sin cobrar |
 | Servicio de embeddings | Búsqueda solo de texto (las consultas ya hechas usan su vector guardado en Redis); los productos se indexan sin vector y la reconciliación los completa |
 

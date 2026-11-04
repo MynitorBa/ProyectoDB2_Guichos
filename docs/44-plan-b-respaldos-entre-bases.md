@@ -2,8 +2,8 @@
 
 Rama `plan-b` (desde `final-entrega3`). Este documento explica qué hace TiendaYa
 cuando se cae cada base de datos, por qué se resolvió así, qué no se puede
-hacer y cómo probarlo. **Cassandra no se tocó**: su plan B (vista SQL en MySQL)
-queda a cargo de otro integrante del equipo.
+hacer y cómo probarlo. **Cassandra no se tocó en este documento**: su plan B (resúmenes en MySQL)
+lo hizo otro integrante del equipo ([53](53-plan-b-cassandra-notas.md)–[57](57-cierre-tecnico-planb-cassandra.md)).
 
 ## 1. Idea general
 
@@ -21,7 +21,7 @@ avisa al usuario. Cuando el motor vuelve, todo se sincroniza solo.
 | Elasticsearch | MongoDB (ya existía) → copia en MySQL; autocompletado desde Redis | Búsqueda sin tolerancia a errores ni facetas | Avisos del outbox y reconciliación |
 | Neo4j | Caché horaria de recomendaciones en MySQL → más vendidos de la categoría | Recomendaciones del último cálculo; F01–F03 «pendientes» | La caché se recalcula; el análisis de fraude se reintenta a los 5 min |
 | MySQL | Modo de solo lectura: sesión por JWT, copias de lectura en Redis, precios proyectados; pedidos en cola | Puede navegar y dejar su pedido en cola; no se cobra nada | Un worker pasa cada pedido en cola por la saga normal |
-| Cassandra | — (pendiente, otro integrante) | Paneles de tendencias no disponibles | — |
+| Cassandra | Resúmenes semanales en MySQL (destino `analitica_mysql`); detalle en [53](53-plan-b-cassandra-notas.md) y [57](57-cierre-tecnico-planb-cassandra.md) | Tendencias desde el respaldo, con aviso de posible retraso | El outbox mantiene ambas fuentes; Cassandra vuelve a ser la principal |
 
 ## 2. Base común: detector de fallas y aviso
 

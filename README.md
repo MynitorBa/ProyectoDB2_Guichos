@@ -166,7 +166,8 @@ analíticas de forma idempotente. Cassandra solo recibe ventas cuyo pago ya fue
 confirmado; los reembolsos se conservan separados para reportar ingresos
 brutos, reembolsados y netos. Si Cassandra no está disponible, el checkout
 sigue confirmándose en MySQL y el evento pendiente se reintenta mediante el
-outbox. Consulte [`docs/26-decision-grafos-columnar.md`](docs/26-decision-grafos-columnar.md)
+outbox; mientras tanto, los paneles de tendencias leen resúmenes equivalentes en
+MySQL (destino `analitica_mysql`, [plan B de Cassandra](docs/53-plan-b-cassandra-notas.md)). Consulte [`docs/26-decision-grafos-columnar.md`](docs/26-decision-grafos-columnar.md)
 y [`docs/27-analitica-cassandra.md`](docs/27-analitica-cassandra.md).
 
 La migración de Fase 1 no elimina datos. Antes de crear las nuevas claves
@@ -245,6 +246,7 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [Búsqueda con Elasticsearch: detalle técnico](docs/29-busqueda-elasticsearch.md)
 - [Estrategia de consistencia del checkout distribuido](docs/30-estrategia-consistencia-checkout.md)
 - [Plan B entre bases de datos: qué hace la tienda cuando se cae un motor](docs/44-plan-b-respaldos-entre-bases.md)
+- Plan B de Cassandra: [notas](docs/53-plan-b-cassandra-notas.md), [ADR del outbox y su retención](docs/54-ADR-outbox-transaccional-y-retencion.md), [benchmark](docs/55-benchmark-cassandra-vs-mysql-planb.md), [investigación de consistencia](docs/56-investigacion-cobro-y-consistencia-planb.md) y [cierre técnico](docs/57-cierre-tecnico-planb-cassandra.md)
 - [Evidencia de las pruebas de falla](docs/31-evidencia-pruebas-falla.md)
 - [Informe de la Entrega final](docs/informe-entrega4.md)
 - [ADR-004: componente vectorial](docs/45-ADR-004-busqueda-vectorial.md)
@@ -256,6 +258,7 @@ Consulte [`docs/22-variantes-dinamicas.md`](docs/22-variantes-dinamicas.md).
 - [ADR-006: clave-valor, grafos y columnar (Entrega 2)](docs/51-ADR-006-clave-valor-grafos-columnar.md)
 - [ADR-007: evaluación de NewSQL para pagos (opcional)](docs/52-ADR-007-evaluacion-newsql-pagos.md)
 - [Verificación final contra el enunciado](docs/50-verificacion-final.md) y [matriz de requisitos](docs/evidencia/requisitos.md)
+- [Correcciones de la auditoría del 1 de noviembre](docs/58-correcciones-auditoria.md)
 
 El checkout es una saga con una pasarela de pagos externa simulada
 (`payment_simulator/`): reserva el inventario, cobra fuera de la transacción y

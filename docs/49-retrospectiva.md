@@ -154,8 +154,11 @@ consulta.
 
 **Qué pasó.** El modelo es correcto para series de tiempo con escritura masiva, pero con el volumen del
 proyecto (cientos de pedidos) las mismas consultas caben en tablas resumen de MySQL alimentadas por el mismo
-outbox. Cassandra fue el contenedor más pesado después de Elasticsearch (~1 GB de RAM) y quedó sin respaldo
-en el plan B y sin control de acceso.
+outbox. Cassandra fue el contenedor más pesado después de Elasticsearch (~1 GB de RAM) y quedó sin control de
+acceso. **Actualización (1 de noviembre):** su plan B se resolvió justamente con esas tablas resumen en MySQL,
+alimentadas por el outbox ([53](53-plan-b-cassandra-notas.md)), y con los datos del proyecto respondieron entre
+89.6 % y 92.3 % más rápido que Cassandra ([55](55-benchmark-cassandra-vs-mysql-planb.md)): la evidencia confirma
+esta retrospectiva.
 
 **Qué se haría.** Empezar con tablas resumen en MySQL e incorporar Cassandra cuando el volumen lo pida, con un
 umbral medido (por ejemplo, cuando las escrituras de eventos de venta o el tamaño de las tablas resumen

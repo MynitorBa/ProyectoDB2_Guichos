@@ -93,13 +93,19 @@ def doc(ruta: str, *patrones: str) -> str:
     return ruta
 
 
-def pruebas_existentes(*nombres: str) -> str:
-    """Confirma que las pruebas de integración citadas existen (la suite se corre aparte)."""
-    for nombre in nombres:
-        archivo, funcion = nombre.split('::')
-        texto = (RAIZ / 'backend' / 'tests' / archivo).read_text(encoding='utf-8')
-        assert f'def {funcion}(' in texto, f'no existe la prueba {nombre}'
-    return 'Prueba de integración: ' + ', '.join(nombres)
+def pruebas_ejecutadas(*nombres: str) -> str:
+    """Ejecuta ahora las pruebas de integración citadas; el requisito cumple solo si todas pasan.
+
+    Antes solo se comprobaba que existieran (auditoría H-03): una prueba presente no
+    es una prueba ejecutada.
+    """
+    corrida = subprocess.run(
+        [sys.executable, '-m', 'pytest', *[f'tests/{n}' for n in nombres], '-q', '-p', 'no:cacheprovider'],
+        cwd=RAIZ / 'backend', capture_output=True, text=True, timeout=600,
+    )
+    resumen = (corrida.stdout.strip().splitlines() or ['sin salida'])[-1]
+    assert corrida.returncode == 0, f'pruebas citadas con fallas: {resumen}'
+    return f'Pruebas ejecutadas en esta corrida ({resumen.split(" in ")[0]}): ' + ', '.join(nombres)
 
 
 def un_producto(q: str = 'laptop') -> dict:
@@ -128,9 +134,9 @@ def _():
 
 
 @requisito('FI-3', 'Fase inicial', 'Compra como transacción atómica: pedido, líneas, pago y descuento de inventario',
-           'Pruebas de integración')
+           'Pruebas ejecutadas')
 def _():
-    return pruebas_existentes('test_checkout.py::test_checkout_exitoso', 'test_checkout.py::test_checkout_sin_stock',
+    return pruebas_ejecutadas('test_checkout.py::test_checkout_exitoso', 'test_checkout.py::test_checkout_sin_stock',
                               'test_checkout.py::test_concurrencia_ultima_unidad')
 
 
@@ -187,11 +193,11 @@ def _():
 
 
 @requisito('E1-2', 'Entrega 1', 'Alta y edición de producto desde el panel, con formulario según la categoría',
-           'API + pruebas')
+           'API + pruebas ejecutadas')
 def _():
     r = http.get(f'{API}/admin/products', headers=token(ADMIN))
     assert r.status_code == 200
-    return pruebas_existentes('test_catalog_extensions.py::test_attributes_are_combined_and_validated_for_all_categories') \
+    return pruebas_ejecutadas('test_catalog_extensions.py::test_attributes_are_combined_and_validated_for_all_categories') \
         if (RAIZ / 'backend/tests/test_catalog_extensions.py').exists() and 'def test_attributes_are_combined' in \
         (RAIZ / 'backend/tests/test_catalog_extensions.py').read_text(encoding='utf-8') else 'GET /admin/products 200'
 
@@ -276,10 +282,10 @@ def _():
 
 
 @requisito('E2-2', 'Entrega 2', 'Oferta de inventario limitado con operaciones atómicas, sin sobreventa bajo '
-           'concurrencia y sin bloqueos de aplicación', 'Pruebas de integración + API')
+           'concurrencia y sin bloqueos de aplicación', 'Pruebas ejecutadas + API')
 def _():
     assert http.get(f'{API}/flash-sales/active').status_code == 200
-    return pruebas_existentes('test_flash_sales.py::test_cien_compradores_compiten_por_diez_unidades',
+    return pruebas_ejecutadas('test_flash_sales.py::test_cien_compradores_compiten_por_diez_unidades',
                               'test_flash_sales.py::test_reintento_del_mismo_usuario_es_idempotente',
                               'test_checkout.py::test_checkout_flash_convierte_reserva_y_descuenta_pool')
 
@@ -456,16 +462,31 @@ def _():
     return doc('README.md', r'setup\.ps1', r'start-dev\.ps1', r'configurar-acceso')
 
 
+def _commit() -> str:
+    try:
+        sha = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=RAIZ, capture_output=True, text=True).stdout.strip()
+        # Solo cuenta el código que se verifica (no scripts locales de arranque).
+        cambios = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=no', '--', 'backend', 'payment_simulator'], cwd=RAIZ,
+                                 capture_output=True, text=True).stdout.strip()
+        return (sha or 'desconocido') + (' con cambios sin commit' if cambios else '')
+    except OSError:
+        return 'desconocido'
+
+
 def main() -> None:
     obligatorios = [r for r in RESULTADOS if r.estado != 'NO REALIZADO']
     fallas = [r for r in obligatorios if r.estado == 'FALLA']
     lineas = [
         '# Verificación del sistema completo contra el enunciado',
         '',
-        f'Generado por `backend/scripts/verificar_requisitos.py` el {time.strftime("%Y-%m-%d %H:%M")} contra el sistema '
-        'en marcha (API, motores y servicio de embeddings). Cada fila es una prueba en vivo, una consulta a la base de '
-        'datos o la comprobación de un documento exigido; lo que modifica datos de forma no trivial se cita por la '
-        'prueba de integración o el escenario de falla que lo cubre.',
+        f'Generado por `backend/scripts/verificar_requisitos.py` el {time.strftime("%Y-%m-%d %H:%M")} sobre el commit '
+        f'`{_commit()}`, contra el sistema en marcha (API, motores y servicio de embeddings) de la base '
+        f'`{settings.MYSQL_DB}`.',
+        '',
+        'Cada fila dice cómo se verificó: **API en vivo** o **consulta** (se ejecutó ahora contra el sistema), '
+        '**pruebas ejecutadas** (las pruebas de integración citadas se corrieron en esta misma corrida) o '
+        '**documento** (se comprobó que existe y contiene lo exigido; su contenido lo revisa una persona). Una '
+        'verificación que no se pudo completar se cuenta como FALLA, nunca como cumplida.',
         '',
         f'**Resultado: {len(obligatorios) - len(fallas)} de {len(obligatorios)} requisitos obligatorios cumplidos.**',
         '',

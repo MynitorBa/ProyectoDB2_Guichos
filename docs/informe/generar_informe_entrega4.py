@@ -87,17 +87,20 @@ def contenido() -> list[tuple]:
         ('p', 'La regla que organiza la arquitectura: MySQL decide el dinero y el inventario; los demás motores son '
               'proyecciones reconstruibles o estado efímero. Toda escritura autoritativa ocurre en MySQL junto con una '
               'fila de outbox por destino, en la misma transacción; un consumidor por destino proyecta hacia MongoDB, '
-              'Elasticsearch, Cassandra, Neo4j, Redis y la copia del catálogo, de forma idempotente y sin que un '
+              'Elasticsearch, Cassandra, Neo4j, Redis, la copia del catálogo y los resúmenes de tendencias en MySQL, '
+              'de forma idempotente y sin que un '
               'destino caído retrase a los demás.'),
         ('t', ['Componente', 'Responsabilidad', 'Usuario del backend'], [
             ['MySQL 8', 'Usuarios, ofertas, precios, inventario, pedidos, pagos, reseñas, fraude, saga y outbox. Única '
-             'fuente de verdad; guarda también las copias del plan B', 'tiendaya (usuario propio)'],
+             'fuente de verdad transaccional (el contenido del catálogo lo decide MongoDB); guarda también las copias '
+             'del plan B', 'tiendaya (usuario propio)'],
             ['MongoDB 7', 'Productos, variantes, esquemas de atributos por categoría, historial de eventos', 'tiendaya_api · rol a medida'],
             ['Redis 7', 'Carritos con expiración, ventas flash (Lua), autocompletado y cola del plan B, cachés de la '
              'búsqueda semántica e historial de vistos', 'tiendaya_api · ACL'],
             ['Elasticsearch 8.15', 'Búsqueda de texto y vector de cada producto (dense_vector int8 HNSW); decide qué '
              'productos y en qué orden; precio y stock se hidratan desde MySQL', 'tiendaya_api · rol'],
-            ['Cassandra 4.1', 'Ventas pagadas por producto, oferta, vendedor y semana', '(sin control de acceso)'],
+            ['Cassandra 4.1', 'Ventas pagadas por producto, oferta, vendedor y semana; su plan B son resúmenes '
+             'equivalentes en MySQL', '(sin control de acceso)'],
             ['Neo4j 5.26', 'Compras pagadas: «también compraron» y patrones de fraude', 'neo4j'],
             ['Servicio de embeddings', 'Convierte texto en vectores de 768 números (modelo local, sin estado)', '—'],
             ['Pasarela simulada + SQLite', 'Cobro, consulta y reembolso idempotentes por clave', '—'],
@@ -315,7 +318,7 @@ def contenido() -> list[tuple]:
 
         # ── 6 ───────────────────────────────────────────────────────────────────
         ('h1', '6. Verificación y presentación'),
-        ('b', 'Suite de integración del backend contra los motores reales (sin mocks): 396 pruebas pasan; quedan 3 fallas '
+        ('b', 'Al corte del 30 de octubre, la suite de integración del backend contra los motores reales (sin mocks): 396 pruebas pasan; quedaban 3 fallas '
               'anteriores a esta entrega (checkout de venta flash y dos de bodegas, introducidas por un cambio de '
               'inventario) que se documentan como deuda.'),
         ('b', 'Invariantes de consistencia I1–I7: se cumplen al cierre de cada fase.'),
@@ -339,6 +342,23 @@ def contenido() -> list[tuple]:
         ('b', 'La retrospectiva identifica con honestidad qué se haría distinto —copias de precio en MongoDB, escritura '
               'doble del catálogo, sincronización de Neo4j, Cassandra prematura, seguridad tardía— y por qué.'),
 
+        # ── Adenda ──────────────────────────────────────────────────────────────
+        ('h1', 'Adenda (4 de noviembre de 2026)'),
+        ('p', 'Lo que sigue ocurrió después del corte del 30 de octubre. Las cifras de las secciones anteriores se '
+              'conservan como estaban en esa fecha.'),
+        ('b', 'Verificación final contra el enunciado (docs/50): 37 de 37 requisitos obligatorios, ahora ejecutando '
+              'en la misma corrida las pruebas de integración que se citan. Las 3 fallas pendientes del corte eran '
+              'pruebas desactualizadas y se corrigieron.'),
+        ('b', 'Plan B de Cassandra (docs/53–57): resúmenes semanales equivalentes en MySQL, alimentados por el destino '
+              'analitica_mysql del outbox; los paneles de tendencias los usan si Cassandra no responde.'),
+        ('b', 'Casos de falla específicos C01–C12 en el laboratorio de consistencia («¿qué pasa si Redis se cae justo '
+              'al comprar?»): cada motor falla en un instante exacto y el sistema responde bien en los doce (docs/31).'),
+        ('b', 'Auditoría del equipo (docs/58): validación completa de las imágenes de reseñas, invariantes con estado '
+              '«no verificable», recorrido completo del libro de la pasarela, ledger explícito por entorno y candado '
+              'para que las pruebas no corran contra la DEMO.'),
+        ('b', 'Suite completa al 4 de noviembre: 439 pruebas pasan, 4 omitidas, 0 fallan; invariantes I1–I7 '
+              'verificados y cumplidos; 40/40 permisos.'),
+
         # ── Anexo ───────────────────────────────────────────────────────────────
         ('h1', 'Anexo. Documentos y comandos'),
         ('t', ['Documento', 'Contenido'], [
@@ -351,6 +371,9 @@ def contenido() -> list[tuple]:
             ['docs/48-ADR-005-control-de-acceso.md', 'Decisión del control de acceso'],
             ['docs/evidencia/permisos.md', 'Evidencia de permisos'],
             ['docs/49-retrospectiva.md', 'Retrospectiva'],
+            ['docs/50-verificacion-final.md', 'Verificación contra el enunciado (adenda)'],
+            ['docs/53 a docs/57', 'Plan B de Cassandra (adenda)'],
+            ['docs/58-correcciones-auditoria.md', 'Correcciones de la auditoría (adenda)'],
         ]),
         ('t', ['Comando', 'Para qué'], [
             ['scripts\\setup.ps1', 'Instalación desde cero (incluye el control de acceso)'],
@@ -432,7 +455,8 @@ def _portada(doc: Document) -> None:
         p.paragraph_format.space_before = Pt(8)
         _estilo(p.add_run(texto), size, bold=bold, font=FONT_HEADING if size > 13 else FONT_BODY)
     doc.add_paragraph().paragraph_format.space_before = Pt(60)
-    for linea in ('Barrios Cruz, Mynor Enrique', 'Universidad del Istmo — UNIS', 'Guatemala, 30 de octubre de 2026'):
+    for linea in ('Barrios Cruz, Mynor Enrique', 'Universidad del Istmo — UNIS', 'Guatemala, 30 de octubre de 2026',
+                  'Adenda: 4 de noviembre de 2026'):
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p.paragraph_format.space_after = Pt(6)

@@ -201,17 +201,18 @@
   <text x="880" y="750" class="outbox">busqueda</text>
   <text x="1120" y="750" class="outbox">cassandra</text>
   <text x="1360" y="750" class="outbox">neo4j</text>
-  <text x="160" y="750" class="outbox">+ catalogo (copia en MySQL)</text>
+  <text x="160" y="750" class="outbox">+ catalogo, analitica_mysql</text>
   <text x="45" y="786" class="outbox">Outbox por destino: la escritura en MySQL y una fila por destino en la misma transacción; un consumidor por destino, idempotente, con reintentos de 2ⁿ s (máx. 300 s).</text>
 
   <!-- ══ Plan B y leyenda ══ -->
   <rect x="45" y="808" width="900" height="182" rx="10" class="caja"/>
   <text x="65" y="834" class="nombre">Plan B: si un motor no responde</text>
-  <text x="65" y="860" class="linea"><tspan font-weight="700">Redis</tspan> → carrito copiado en MySQL; flash con FOR UPDATE en MySQL</text>
-  <text x="65" y="882" class="linea"><tspan font-weight="700">MongoDB</tspan> → copia del catálogo en MySQL (destino catalogo); Elasticsearch como último recurso</text>
-  <text x="65" y="904" class="linea"><tspan font-weight="700">Elasticsearch</tspan> → MongoDB → copia en MySQL; autocompletado con prefijos en Redis</text>
-  <text x="65" y="926" class="linea"><tspan font-weight="700">Neo4j</tspan> → caché horaria de recomendaciones en MySQL → más vendidos</text>
-  <text x="65" y="948" class="linea"><tspan font-weight="700">MySQL</tspan> → solo lectura (JWT, copias en Redis) y pedidos en cola sin cobrar</text>
+  <text x="65" y="856" class="linea"><tspan font-weight="700">Redis</tspan> → carrito copiado en MySQL; flash con FOR UPDATE en MySQL</text>
+  <text x="65" y="875" class="linea"><tspan font-weight="700">MongoDB</tspan> → copia del catálogo en MySQL (destino catalogo); Elasticsearch como último recurso</text>
+  <text x="65" y="894" class="linea"><tspan font-weight="700">Elasticsearch</tspan> → MongoDB → copia en MySQL; autocompletado con prefijos en Redis</text>
+  <text x="65" y="913" class="linea"><tspan font-weight="700">Neo4j</tspan> → caché horaria de recomendaciones en MySQL → más vendidos</text>
+  <text x="65" y="932" class="linea"><tspan font-weight="700">Cassandra</tspan> → resúmenes semanales en MySQL (destino analitica_mysql)</text>
+  <text x="65" y="951" class="linea"><tspan font-weight="700">MySQL</tspan> → solo lectura (JWT, copias en Redis) y pedidos en cola sin cobrar</text>
   <text x="65" y="970" class="linea"><tspan font-weight="700">Embeddings</tspan> → búsqueda solo de texto; consultas repetidas con su vector guardado en Redis</text>
 
   <rect x="975" y="808" width="480" height="182" rx="10" class="caja"/>

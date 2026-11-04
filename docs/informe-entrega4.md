@@ -22,15 +22,15 @@ Cada decisión se tomó con evidencia medida: una línea base antes de cambiar, 
 
 ![Arquitectura final](diagramas/arquitectura-final.png)
 
-La regla que organiza la arquitectura: MySQL decide el dinero y el inventario; los demás motores son proyecciones reconstruibles o estado efímero. Toda escritura autoritativa ocurre en MySQL junto con una fila de outbox por destino, en la misma transacción; un consumidor por destino proyecta hacia MongoDB, Elasticsearch, Cassandra, Neo4j, Redis y la copia del catálogo, de forma idempotente y sin que un destino caído retrase a los demás.
+La regla que organiza la arquitectura: MySQL decide el dinero y el inventario; los demás motores son proyecciones reconstruibles o estado efímero. Toda escritura autoritativa ocurre en MySQL junto con una fila de outbox por destino, en la misma transacción; un consumidor por destino proyecta hacia MongoDB, Elasticsearch, Cassandra, Neo4j, Redis, la copia del catálogo y los resúmenes de tendencias en MySQL, de forma idempotente y sin que un destino caído retrase a los demás.
 
 | Componente | Responsabilidad | Usuario del backend |
 |---|---|---|
-| MySQL 8 | Usuarios, ofertas, precios, inventario, pedidos, pagos, reseñas, fraude, saga y outbox. Única fuente de verdad; guarda también las copias del plan B | tiendaya (usuario propio) |
+| MySQL 8 | Usuarios, ofertas, precios, inventario, pedidos, pagos, reseñas, fraude, saga y outbox. Única fuente de verdad transaccional (el contenido del catálogo lo decide MongoDB); guarda también las copias del plan B | tiendaya (usuario propio) |
 | MongoDB 7 | Productos, variantes, esquemas de atributos por categoría, historial de eventos | tiendaya_api · rol a medida |
 | Redis 7 | Carritos con expiración, ventas flash (Lua), autocompletado y cola del plan B, cachés de la búsqueda semántica e historial de vistos | tiendaya_api · ACL |
 | Elasticsearch 8.15 | Búsqueda de texto y vector de cada producto (dense_vector int8 HNSW); decide qué productos y en qué orden; precio y stock se hidratan desde MySQL | tiendaya_api · rol |
-| Cassandra 4.1 | Ventas pagadas por producto, oferta, vendedor y semana | (sin control de acceso) |
+| Cassandra 4.1 | Ventas pagadas por producto, oferta, vendedor y semana; su plan B son resúmenes equivalentes en MySQL | (sin control de acceso) |
 | Neo4j 5.26 | Compras pagadas: «también compraron» y patrones de fraude | neo4j |
 | Servicio de embeddings | Convierte texto en vectores de 768 números (modelo local, sin estado) | — |
 | Pasarela simulada + SQLite | Cobro, consulta y reembolso idempotentes por clave | — |
@@ -214,7 +214,7 @@ La regla que más valor dio y que se mantendría por encima de todo: una sola au
 
 ## 6. Verificación y presentación
 
-- Suite de integración del backend contra los motores reales (sin mocks): 396 pruebas pasan; quedan 3 fallas anteriores a esta entrega (checkout de venta flash y dos de bodegas, introducidas por un cambio de inventario) que se documentan como deuda.
+- Al corte del 30 de octubre, la suite de integración del backend contra los motores reales (sin mocks): 396 pruebas pasan; quedaban 3 fallas anteriores a esta entrega (checkout de venta flash y dos de bodegas, introducidas por un cambio de inventario) que se documentan como deuda.
 - Invariantes de consistencia I1–I7: se cumplen al cierre de cada fase.
 - 56 pruebas de vectores, 50 de permisos y los scripts de evidencia (evaluar_vectores, benchmark_vectores, verificar_permisos) que se pueden volver a ejecutar.
 - Entorno DEMO de la presentación actualizado: control de acceso en Redis, MongoDB y Elasticsearch, índice v2 con los vectores de sus 106 productos y el servicio de embeddings dentro del modo presentación (start-presentation.ps1 / stop-presentation.ps1). Verificado: los siete motores en «ok», búsqueda híbrida, similares e inicio funcionando sobre los datos DEMO.
@@ -225,6 +225,16 @@ La regla que más valor dio y que se mantendría por encima de todo: una sola au
 - La pregunta de si una base vectorial dedicada vale la pena quedó respondida con números: no a esta escala ni con un millón de productos; sí cuando la memoria de los vectores o su tráfico compitan con la búsqueda de texto, y el camino para llegar ahí ya existe.
 - El control de acceso cubre los tres motores NoSQL que usa el backend, con mínimo privilegio por servicio, sin contraseñas en el repositorio y con evidencia que se regenera.
 - La retrospectiva identifica con honestidad qué se haría distinto —copias de precio en MongoDB, escritura doble del catálogo, sincronización de Neo4j, Cassandra prematura, seguridad tardía— y por qué.
+
+## Adenda (4 de noviembre de 2026)
+
+Lo que sigue ocurrió después del corte del 30 de octubre. Las cifras de las secciones anteriores se conservan como estaban en esa fecha.
+
+- Verificación final contra el enunciado (docs/50): 37 de 37 requisitos obligatorios, ahora ejecutando en la misma corrida las pruebas de integración que se citan. Las 3 fallas pendientes del corte eran pruebas desactualizadas y se corrigieron.
+- Plan B de Cassandra (docs/53–57): resúmenes semanales equivalentes en MySQL, alimentados por el destino analitica_mysql del outbox; los paneles de tendencias los usan si Cassandra no responde.
+- Casos de falla específicos C01–C12 en el laboratorio de consistencia («¿qué pasa si Redis se cae justo al comprar?»): cada motor falla en un instante exacto y el sistema responde bien en los doce (docs/31).
+- Auditoría del equipo (docs/58): validación completa de las imágenes de reseñas, invariantes con estado «no verificable», recorrido completo del libro de la pasarela, ledger explícito por entorno y candado para que las pruebas no corran contra la DEMO.
+- Suite completa al 4 de noviembre: 439 pruebas pasan, 4 omitidas, 0 fallan; invariantes I1–I7 verificados y cumplidos; 40/40 permisos.
 
 ## Anexo. Documentos y comandos
 
@@ -239,6 +249,9 @@ La regla que más valor dio y que se mantendría por encima de todo: una sola au
 | docs/48-ADR-005-control-de-acceso.md | Decisión del control de acceso |
 | docs/evidencia/permisos.md | Evidencia de permisos |
 | docs/49-retrospectiva.md | Retrospectiva |
+| docs/50-verificacion-final.md | Verificación contra el enunciado (adenda) |
+| docs/53 a docs/57 | Plan B de Cassandra (adenda) |
+| docs/58-correcciones-auditoria.md | Correcciones de la auditoría (adenda) |
 
 | Comando | Para qué |
 |---|---|
