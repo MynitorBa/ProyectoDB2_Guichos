@@ -302,6 +302,7 @@ def test_checkout_por_oferta_crea_subpedido_y_snapshots(reset_stock):
             ('inventario.actualizado', 'mongo'),
             ('inventario.actualizado', 'busqueda'),
             ('analytics.pedido_actualizado', 'cassandra'),
+            ('analytics.pedido_actualizado', 'analitica_mysql'),  # plan B de Cassandra
             ('analytics.pedido_actualizado', 'busqueda'),
             ('grafo.compra_registrada', 'neo4j'),
             ('carrito.limpiar', 'redis'),

@@ -94,6 +94,7 @@ PUNTOS_DEF: dict[str, Punto] = {
     'outbox.neo4j': Punto('El destino Neo4j del outbox falla.', 'outbox'),
     'outbox.redis': Punto('El destino Redis del outbox falla.', 'outbox'),
     'outbox.catalogo': Punto('El destino «copia del catálogo» (MySQL, plan B) del outbox falla.', 'outbox'),
+    'outbox.analitica_mysql': Punto('El destino «analítica MySQL» (plan B de Cassandra) del outbox falla.', 'outbox'),
 }
 PUNTOS = {punto: d.descripcion for punto, d in PUNTOS_DEF.items()}
 MODOS = ('una_vez', 'siempre')
