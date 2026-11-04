@@ -134,6 +134,8 @@ foreach ($service in $services) {
 }
 
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
+# Ledger de la pasarela PRINCIPAL, explícito: nunca el de la DEMO (auditoría H-01).
+$env:PASARELA_DB = Join-Path $root 'payment_simulator\ledger.db'
 Start-Process -FilePath $python -ArgumentList '-m','uvicorn','payment_simulator.app:app','--host','127.0.0.1','--port','8001' -WorkingDirectory $root -RedirectStandardOutput (Join-Path $runtime 'gateway.out.log') -RedirectStandardError (Join-Path $runtime 'gateway.err.log') -WindowStyle Hidden
 Start-Process -FilePath $python -ArgumentList '-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8000' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'backend.out.log') -RedirectStandardError (Join-Path $runtime 'backend.err.log') -WindowStyle Hidden
 Start-Process -FilePath $npm -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5173' -WorkingDirectory (Join-Path $root 'frontend') -RedirectStandardOutput (Join-Path $runtime 'frontend.out.log') -RedirectStandardError (Join-Path $runtime 'frontend.err.log') -WindowStyle Hidden

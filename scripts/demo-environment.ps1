@@ -211,6 +211,9 @@ function Start-DemoApps {
     # instancia DEMO y obliga al cliente a usar el proxy local de Vite.
     $env:VITE_API_URL = '/api/v1'
     $env:VITE_BACKEND_URL = 'http://127.0.0.1:8005'
+    # La pasarela DEMO usa el ledger DEMO. Sin esta línea escribía sus cobros en
+    # payment_simulator\ledger.db, el de la instancia principal (auditoría H-01).
+    $env:PASARELA_DB = Join-Path $Root 'payment_simulator\ledger.demo.db'
     Start-Process -FilePath $Python -ArgumentList '-m','uvicorn','payment_simulator.app:app','--host','127.0.0.1','--port','8006' -WorkingDirectory $Root -RedirectStandardOutput (Join-Path $Runtime 'gateway.out.log') -RedirectStandardError (Join-Path $Runtime 'gateway.err.log') -WindowStyle Hidden
     Start-Process -FilePath $Python -ArgumentList '-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8005' -WorkingDirectory (Join-Path $Root 'backend') -RedirectStandardOutput (Join-Path $Runtime 'backend.out.log') -RedirectStandardError (Join-Path $Runtime 'backend.err.log') -WindowStyle Hidden
     Start-Process -FilePath 'C:\Program Files\nodejs\npm.cmd' -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5175' -WorkingDirectory (Join-Path $Root 'frontend') -RedirectStandardOutput (Join-Path $Runtime 'frontend.out.log') -RedirectStandardError (Join-Path $Runtime 'frontend.err.log') -WindowStyle Hidden

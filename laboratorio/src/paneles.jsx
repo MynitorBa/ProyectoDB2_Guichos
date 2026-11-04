@@ -246,6 +246,7 @@ const DESTINOS = {
   neo4j: { label: 'Neo4j', Icono: GitBranch },
   redis: { label: 'Redis', Icono: Zap },
   catalogo: { label: 'Copia del catálogo', Icono: Database },
+  analitica_mysql: { label: 'Analítica MySQL', Icono: BarChart2 },
 }
 
 function estadoDestino(d) {
@@ -346,8 +347,11 @@ export function PanelInvariantes() {
       acciones={<Boton variante="secondary" cargando={consulta.isFetching} onClick={() => consulta.refetch()}>Verificar ahora</Boton>}>
       {!datos ? <Cargando className="h-40" /> : (
         <>
-          <p className={cn('text-sm font-semibold mb-2', datos.ok ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]')}>
-            {datos.ok ? 'Todos los invariantes se cumplen.' : 'Hay invariantes violados.'}
+          <p className={cn('text-sm font-semibold mb-2', datos.ok ? 'text-[var(--color-success)]'
+            : datos.violado ? 'text-[var(--color-error)]' : 'text-[var(--color-warning)]')}>
+            {datos.ok ? 'Todos los invariantes se verificaron y se cumplen.'
+              : datos.violado ? 'Hay invariantes violados.'
+                : `Ninguno violado, pero no se pudo verificar: ${(datos.no_verificables || []).join(', ')}.`}
             <span className="font-normal text-xs text-[var(--color-text-muted)] ml-2">{horaLocal(datos.generado_en)}</span>
           </p>
           <ul className="divide-y divide-[var(--color-border)]">

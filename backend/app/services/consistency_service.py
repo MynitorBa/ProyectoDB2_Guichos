@@ -29,11 +29,14 @@ MINUTOS_VERIFICACION = 30
 EJEMPLOS = 5
 
 
-def _resultado(clave: str, titulo: str, violaciones: list, detalle: str, **extra) -> dict:
+def _resultado(clave: str, titulo: str, violaciones: list, detalle: str, *, parcial: bool = False,
+               **extra) -> dict:
+    # Tres estados: True (se cumple), False (violado) y None (no verificable). Una
+    # revisión parcial sin violaciones queda en None: nunca se cuenta como cumplida.
     return {
         'id': clave,
         'titulo': titulo,
-        'ok': not violaciones,
+        'ok': False if violaciones else (None if parcial else True),
         'violaciones': len(violaciones),
         'ejemplos': violaciones[:EJEMPLOS],
         'detalle': detalle,
@@ -150,9 +153,11 @@ def pasarela_coincide(db: Session, claves: set[str] | None = None) -> dict:
     ``claves`` limita la revisión a ciertos cobros (útil en pruebas).
     """
     try:
-        respuesta = httpx.get(f'{settings.PAYMENT_GATEWAY_URL}/cobros', params={'limite': 1000}, timeout=3)
-        respuesta.raise_for_status()
-        cobros = respuesta.json()
+        mezcla = _ledger_de_otro_entorno()
+        if mezcla:
+            return {'id': 'I6', 'titulo': 'La pasarela y MySQL coinciden', 'ok': None, 'violaciones': 0,
+                    'ejemplos': [], 'detalle': f'No verificable: configuración inválida ({mezcla}).'}
+        cobros, completo = _todos_los_cobros()
     except httpx.HTTPError as exc:
         return {'id': 'I6', 'titulo': 'La pasarela y MySQL coinciden', 'ok': None, 'violaciones': 0,
                 'ejemplos': [], 'detalle': f'No verificable: pasarela no disponible ({exc.__class__.__name__}).'}
@@ -181,7 +186,43 @@ def pasarela_coincide(db: Session, claves: set[str] | None = None) -> dict:
                                 'pedido_id': pedido['pedido_id'], 'pedido': pedido['estado'], 'pago': pedido['pago']})
     return _resultado('I6', 'Cada cobro de la pasarela coincide con su pedido', violaciones,
                       f'{len(cobros)} cobro(s) revisados: aprobado ⇒ vendido (o en resolución), '
-                      'reembolsado ⇒ pago reembolsado, ningún cargo sin pedido.')
+                      'reembolsado ⇒ pago reembolsado, ningún cargo sin pedido.'
+                      + ('' if completo else f' Incompleto: se llegó al tope de {PAGINA_COBROS * MAX_PAGINAS_COBROS} '
+                         'cobros y los más antiguos no se revisaron.'),
+                      parcial=not completo)
+
+
+PAGINA_COBROS = 1000
+MAX_PAGINAS_COBROS = 100
+LEDGERS = {'principal': 'ledger.db', 'demo': 'ledger.demo.db'}
+
+
+def _ledger_de_otro_entorno() -> str | None:
+    """Detecta que la base de un entorno se compare con el ledger del otro (PRINCIPAL ↔ DEMO).
+
+    Compararlos produciría violaciones que no existen (o escondería las reales). Un
+    ledger con otro nombre, como el temporal de las pruebas, no se considera mezcla.
+    """
+    ledger = httpx.get(f'{settings.PAYMENT_GATEWAY_URL}/control', timeout=3).json().get('ledger')
+    entorno = 'demo' if settings.MYSQL_DB.endswith('_demo') else 'principal'
+    ajeno = LEDGERS['principal' if entorno == 'demo' else 'demo']
+    if ledger == ajeno:
+        return f'la base {settings.MYSQL_DB} ({entorno}) se estaría comparando con {ledger}'
+    return None
+
+
+def _todos_los_cobros() -> tuple[list[dict], bool]:
+    """Recorre el libro de la pasarela por páginas. Devuelve los cobros y si se revisaron todos."""
+    cobros: list[dict] = []
+    for pagina in range(MAX_PAGINAS_COBROS):
+        respuesta = httpx.get(f'{settings.PAYMENT_GATEWAY_URL}/cobros', timeout=5,
+                              params={'limite': PAGINA_COBROS, 'desde': pagina * PAGINA_COBROS})
+        respuesta.raise_for_status()
+        lote = respuesta.json()
+        cobros.extend(lote)
+        if len(lote) < PAGINA_COBROS:
+            return cobros, True
+    return cobros, False
 
 
 def proyecciones_convergen(db: Session, mongo: Database, es=None) -> dict:
@@ -203,6 +244,7 @@ def proyecciones_convergen(db: Session, mongo: Database, es=None) -> dict:
                     documentos[hit['_id']] = hit['_source']
         except Exception:
             es = None
+    sin_elasticsearch = es is None
     violaciones = []
     revisados = 0
     for ref in refs:
@@ -220,9 +262,9 @@ def proyecciones_convergen(db: Session, mongo: Database, es=None) -> dict:
                 violaciones.append({'producto_ref': ref, 'destino': 'busqueda',
                                     'stock': indexado and indexado.get('stock_total'), 'esperado': stock})
     detalle = (f'{revisados} productos sin eventos pendientes comparados con MySQL'
-               + ('' if es is not None else '; Elasticsearch no verificable') + '.')
+               + ('' if not sin_elasticsearch else '; Elasticsearch no respondió: solo se verificó MongoDB') + '.')
     return _resultado('I7', 'Las proyecciones convergen con MySQL', violaciones, detalle,
-                      eventos_pendientes=len(pendientes))
+                      parcial=sin_elasticsearch, eventos_pendientes=len(pendientes))
 
 
 def verificar(db: Session, mongo: Database, es=None) -> dict:
@@ -237,7 +279,10 @@ def verificar(db: Session, mongo: Database, es=None) -> dict:
     ]
     db.commit()
     return {
-        'ok': all(i['ok'] is not False for i in invariantes),
+        # ok solo si todos se verificaron y se cumplen; violado si alguno falla.
+        'ok': all(i['ok'] is True for i in invariantes),
+        'violado': any(i['ok'] is False for i in invariantes),
+        'no_verificables': [i['id'] for i in invariantes if i['ok'] is None],
         'generado_en': utc_now().isoformat(),
         'invariantes': invariantes,
     }

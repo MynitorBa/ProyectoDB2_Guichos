@@ -40,8 +40,14 @@ def main() -> int:
                 print(f'        nota: {inv["nota"]}')
             for ejemplo in inv['ejemplos']:
                 print(f'        {ejemplo}')
-        print(f"\n{'Todos los invariantes se cumplen.' if resultado['ok'] else 'Hay invariantes violados.'}")
-    return 0 if resultado['ok'] else 1
+        if resultado['ok']:
+            print('\nTodos los invariantes se verificaron y se cumplen.')
+        elif resultado['violado']:
+            print('\nHay invariantes violados.')
+        else:
+            print(f"\nNingún invariante violado, pero no se pudo verificar: {', '.join(resultado['no_verificables'])}.")
+    # 0 = todo verificado y cumplido; 1 = alguno violado; 2 = sin violaciones pero incompleto.
+    return 0 if resultado['ok'] else (1 if resultado['violado'] else 2)
 
 
 if __name__ == '__main__':

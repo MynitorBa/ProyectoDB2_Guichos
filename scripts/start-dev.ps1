@@ -112,6 +112,8 @@ Write-Host "Iniciando servicio de embeddings en :8002 (la primera vez descarga e
 $embeddingsJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root`" && `"$Root\backend\venv\Scripts\python.exe`" -m uvicorn embeddings_service.app:app --host 127.0.0.1 --port 8002" -PassThru -WindowStyle Normal
 
 Write-Host "Iniciando pasarela de pagos simulada en :8001..." -ForegroundColor Yellow
+# Ledger de la pasarela PRINCIPAL, explícito: nunca el de la DEMO (auditoría H-01).
+$env:PASARELA_DB = "$Root\payment_simulator\ledger.db"
 $gatewayJob = Start-Process -FilePath "cmd" -ArgumentList "/c cd `"$Root`" && `"$Root\backend\venv\Scripts\python.exe`" -m uvicorn payment_simulator.app:app --host 127.0.0.1 --port 8001" -PassThru -WindowStyle Normal
 
 # 3. Backend (en proceso separado)

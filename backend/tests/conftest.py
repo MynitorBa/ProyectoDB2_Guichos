@@ -24,6 +24,33 @@ os.environ['FAULT_INJECTION_ENABLED'] = 'true'
 from app.core.config import settings  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
+
+
+def senales_de_demo() -> list[str]:
+    """Motores que apuntan a la DEMO de la presentación (puertos y nombres de backend/.env.demo).
+
+    Las pruebas escriben pedidos, inventario y proyecciones; la DEMO tiene los datos
+    de la presentación y nunca debe recibirlas. Basta un motor para detenerlas.
+    """
+    revisiones = {
+        'TIENDAYA_DEMO': os.environ.get('TIENDAYA_DEMO', '').lower() == 'true',
+        'MySQL': settings.MYSQL_DB.endswith('_demo') or settings.MYSQL_PORT == 3317,
+        'MongoDB': 'demo' in settings.MONGO_DB or ':27117' in settings.MONGO_URI,
+        'Redis': settings.REDIS_PORT == 6389,
+        'Cassandra': settings.CASSANDRA_KEYSPACE.endswith('_demo') or settings.CASSANDRA_PORT == 9142,
+        'Neo4j': ':7787' in settings.NEO4J_URI,
+        'Elasticsearch': 'demo' in settings.ES_INDEX_ALIAS or ':9210' in settings.ES_URL,
+    }
+    return [motor for motor, es_demo in revisiones.items() if es_demo]
+
+
+def pytest_sessionstart(session):
+    # Se revisa antes de recolectar pruebas y de levantar la pasarela: nada llega a escribirse.
+    if demo := senales_de_demo():
+        pytest.exit('Las pruebas de integración no se ejecutan contra la DEMO de la presentación '
+                    f'(apuntan a ella: {", ".join(demo)}). Usa la configuración de backend/.env.', returncode=2)
+
+
 PUERTO_PASARELA = 8091
 URL_PASARELA = f'http://127.0.0.1:{PUERTO_PASARELA}'
 

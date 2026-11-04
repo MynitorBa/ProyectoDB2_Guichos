@@ -107,6 +107,8 @@ function Start-MainApps {
     $env:VITE_PORT = '5173'
     $env:VITE_API_URL = 'http://localhost:8000/api/v1'
     $env:VITE_BACKEND_URL = 'http://127.0.0.1:8000'
+    # Ledger de la pasarela PRINCIPAL, explícito (auditoría H-01).
+    $env:PASARELA_DB = Join-Path $Root 'payment_simulator\ledger.db'
     Start-Process -FilePath $Python -ArgumentList '-m','uvicorn','payment_simulator.app:app','--host','127.0.0.1','--port','8001' -WorkingDirectory $Root -RedirectStandardOutput (Join-Path $MainRuntime 'gateway.out.log') -RedirectStandardError (Join-Path $MainRuntime 'gateway.err.log') -WindowStyle Hidden
     Start-Process -FilePath $Python -ArgumentList '-m','uvicorn','app.main:app','--host','127.0.0.1','--port','8000' -WorkingDirectory (Join-Path $Root 'backend') -RedirectStandardOutput (Join-Path $MainRuntime 'backend.out.log') -RedirectStandardError (Join-Path $MainRuntime 'backend.err.log') -WindowStyle Hidden
     Start-Process -FilePath 'C:\Program Files\nodejs\npm.cmd' -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5173' -WorkingDirectory (Join-Path $Root 'frontend') -RedirectStandardOutput (Join-Path $MainRuntime 'frontend.out.log') -RedirectStandardError (Join-Path $MainRuntime 'frontend.err.log') -WindowStyle Hidden

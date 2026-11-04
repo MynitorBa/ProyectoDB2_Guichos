@@ -118,7 +118,8 @@ def health():
 
 @app.get('/control')
 def ver_control():
-    return _control
+    # El nombre del ledger permite a quien compara cobros comprobar que es el de su entorno.
+    return {**_control, 'ledger': DB_PATH.name}
 
 
 @app.post('/control')
@@ -186,7 +187,9 @@ def reembolsar(clave: str):
 
 
 @app.get('/cobros')
-def listar(limite: int = 50):
+def listar(limite: int = 50, desde: int = 0):
+    # Más recientes primero; el id desempata, así que ``desde`` recorre todo sin saltos.
     with _conexion() as c:
-        filas = c.execute('SELECT * FROM cobros ORDER BY creado_en DESC LIMIT ?', (limite,)).fetchall()
+        filas = c.execute('SELECT * FROM cobros ORDER BY creado_en DESC, id DESC LIMIT ? OFFSET ?',
+                          (limite, max(desde, 0))).fetchall()
     return [_a_dict(f) for f in filas]
