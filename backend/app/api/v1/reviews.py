@@ -17,7 +17,8 @@ ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 from app.core.deps import get_current_user, get_optional_user, require_role, get_db, get_neo4j, get_neo4j_opcional
 from app.models.usuario import Usuario
 from app.models.vendedor import Vendedor
-from app.models.resena import Resena
+from app.models.resena import Resena, ResenaImagen
+from app.services.image_service import read_valid_image
 from app.models.producto_referencia import ProductoReferencia
 from app.services import review_mysql_service as mysql_svc
 from app.services.outbox_service import encolar_resena
@@ -145,39 +146,53 @@ async def subir_imagenes(
     user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Todo se valida antes de escribir en disco: dueño de la reseña, cupo de 4
+    # imágenes y cada archivo (máximo 5 MB y bytes de imagen real, no solo la
+    # extensión). Así una solicitud rechazada nunca deja archivos huérfanos.
     if len(archivos) > 4:
         raise HTTPException(400, 'Máximo 4 imágenes por reseña.')
-    STATIC_REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-    urls = []
+    review = db.query(Resena).filter(
+        Resena.public_id == resena_id, Resena.usuario_id == user.id,
+    ).first()
+    if not review:
+        raise HTTPException(404, 'Reseña no encontrada.')
+    existentes = db.query(ResenaImagen).filter(ResenaImagen.resena_id == review.id).count()
+    if existentes + len(archivos) > 4:
+        raise HTTPException(400, 'Máximo 4 imágenes por reseña.')
+    validas = []
     for archivo in archivos:
         ext = os.path.splitext(archivo.filename or '')[1].lower()
         if ext not in ALLOWED_EXTS:
             raise HTTPException(400, f'Formato no permitido: {ext or "desconocido"}')
-        filename = f"{resena_id}_{_uuid.uuid4().hex}{ext}"
-        content = await archivo.read()
-        with (STATIC_REVIEWS_DIR / filename).open('wb') as f:
-            f.write(content)
-        urls.append(f"/static/reviews/{filename}")
-    if urls:
-        try:
-            mysql_svc.agregar_imagenes(
-                db, public_id=resena_id, usuario_id=user.id, urls=urls,
-            )
-            review = db.query(Resena).filter_by(public_id=resena_id).first()
-            producto_ref = db.get(ProductoReferencia, review.producto_referencia_id).producto_ref
-            encolar_resena(
-                db, tipo_evento='resena.actualizada', resena_id=review.id,
-                producto_ref=producto_ref,
-            )
-            db.commit()
-        except (LookupError, ValueError) as exc:
-            db.rollback()
-            for url in urls:
-                try:
-                    (BACKEND_DIR / url.lstrip('/')).unlink(missing_ok=True)
-                except OSError:
-                    pass
-            raise HTTPException(404 if isinstance(exc, LookupError) else 400, str(exc))
+        contenido, _ = await read_valid_image(archivo)
+        validas.append((ext, contenido))
+
+    STATIC_REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
+    escritos: list[Path] = []
+    urls = []
+    try:
+        for ext, contenido in validas:
+            filename = f"{resena_id}_{_uuid.uuid4().hex}{ext}"
+            destino = STATIC_REVIEWS_DIR / filename
+            destino.write_bytes(contenido)
+            escritos.append(destino)
+            urls.append(f"/static/reviews/{filename}")
+        # agregar_imagenes vuelve a comprobar dueño y cupo dentro de la transacción.
+        mysql_svc.agregar_imagenes(db, public_id=resena_id, usuario_id=user.id, urls=urls)
+        producto_ref = db.get(ProductoReferencia, review.producto_referencia_id).producto_ref
+        encolar_resena(db, tipo_evento='resena.actualizada', resena_id=review.id, producto_ref=producto_ref)
+        db.commit()
+    except BaseException as exc:
+        # Cualquier falla (también una de MySQL) deshace la transacción y borra lo escrito.
+        db.rollback()
+        for ruta in escritos:
+            try:
+                ruta.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if isinstance(exc, (LookupError, ValueError)):
+            raise HTTPException(404 if isinstance(exc, LookupError) else 400, str(exc)) from exc
+        raise
     return {"imagenes": urls}
 
 
