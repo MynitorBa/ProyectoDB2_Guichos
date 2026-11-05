@@ -1,10 +1,11 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Database, Search as SearchIcon, BarChart2, GitBranch, Zap, RefreshCw, RotateCw, PauseCircle, CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { getSearchIndexStatus, getSyncOutbox, reindexSearch, retrySyncEvents } from '../../api/admin'
+import { getPlanBIncidents, getSearchIndexStatus, getSyncOutbox, reindexSearch, retrySyncEvents } from '../../api/admin'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Skeleton } from '../ui/skeleton'
@@ -91,6 +92,57 @@ function TarjetaDestino({ destino }) {
   )
 }
 
+function HistorialPlanB() {
+  const [motor, setMotor] = useState('')
+  const [estado, setEstado] = useState('')
+  const [tipo, setTipo] = useState('')
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const incidentes = useQuery({
+    queryKey: ['admin-planb-incidentes', motor, estado, tipo, desde, hasta],
+    queryFn: () => getPlanBIncidents({
+      ...(motor && { motor }), ...(estado && { estado }), ...(tipo && { tipo }),
+      ...(desde && { desde: `${desde}T00:00:00Z` }),
+      ...(hasta && { hasta: `${hasta}T23:59:59Z` }),
+    }).then((r) => r.data),
+    refetchInterval: 30_000,
+  })
+  return (
+    <Panel titulo="Historial de planes B" descripcion="Se registra cada caída y recuperación una sola vez. La sincronización posterior requiere verificación independiente.">
+      <div className="mb-4 flex flex-wrap gap-2 font-sans text-sm">
+        <select aria-label="Filtrar por motor" value={motor} onChange={(e) => setMotor(e.target.value)} className="rounded border p-2">
+          <option value="">Todos los motores</option>
+          {Object.entries(DESTINOS).filter(([key]) => key !== 'analitica_mysql' && key !== 'catalogo' && key !== 'busqueda').map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+          <option value="mysql">MySQL</option><option value="embeddings">Embeddings</option>
+        </select>
+        <select aria-label="Filtrar por estado" value={estado} onChange={(e) => setEstado(e.target.value)} className="rounded border p-2">
+          <option value="">Todos los estados</option><option value="activo">Activo</option><option value="recuperado">Recuperado</option>
+        </select>
+        <select aria-label="Filtrar por tipo" value={tipo} onChange={(e) => setTipo(e.target.value)} className="rounded border p-2">
+          <option value="">Todos los tipos</option><option value="caida">Caída</option>
+        </select>
+        <input aria-label="Desde" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="rounded border p-2" />
+        <input aria-label="Hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="rounded border p-2" />
+      </div>
+      {incidentes.isError ? <p role="alert">No se pudo consultar el historial.</p> : incidentes.isLoading ? <Skeleton className="h-16" /> : !incidentes.data?.length ? (
+        <p className="text-sm text-[var(--color-text-muted)]">No hay incidentes para estos filtros.</p>
+      ) : (
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm font-sans">
+          <thead><tr className="border-b"><th className="p-2">Inicio</th><th className="p-2">Recuperación</th><th className="p-2">Última comprobación</th><th className="p-2">Motor</th><th className="p-2">Tipo</th><th className="p-2">Evolución</th><th className="p-2">Estado</th><th className="p-2">Duración</th><th className="p-2">Respaldo</th><th className="p-2">Resultado</th><th className="p-2">Error</th><th className="p-2">Sincronización</th></tr></thead>
+          <tbody>{incidentes.data.map((item) => <tr key={item.id} className="border-b align-top">
+            <td className="p-2">{horaLocal(item.fecha_inicio)}</td><td className="p-2">{horaLocal(item.fecha_recuperacion)}</td>
+            <td className="p-2">{horaLocal(item.ultima_comprobacion)}</td><td className="p-2">{item.motor}</td>
+            <td className="p-2">{item.tipo}</td><td className="p-2">{item.estado_anterior} → caído{item.fecha_recuperacion ? ' → recuperado' : ''}</td>
+            <td className="p-2">{item.estado}</td><td className="p-2">{duracion(item.duracion_segundos)}</td>
+            <td className="p-2">{item.respaldo}</td><td className="p-2">{item.resultado}</td>
+            <td className="p-2">{item.codigo_error || '—'}</td><td className="p-2">{item.estado_sync === 'no_verificado' ? 'No verificada' : item.estado_sync}</td>
+          </tr>)}</tbody>
+        </table></div>
+      )}
+    </Panel>
+  )
+}
+
 export function SyncHealthSection() {
   const queryClient = useQueryClient()
   const outbox = useQuery({
@@ -142,6 +194,8 @@ export function SyncHealthSection() {
           </div>
         )}
       </Panel>
+
+      <HistorialPlanB />
 
       <Panel
         titulo="Índice de búsqueda"

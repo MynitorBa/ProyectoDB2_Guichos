@@ -44,8 +44,9 @@ function downloadBlob(blob, filename) {
 }
 
 const ESTADO_COLA = {
-  en_cola: { texto: 'En cola', detalle: 'Se confirmará y cobrará cuando el sistema se recupere.', clase: 'border-amber-300 bg-amber-50 text-amber-900' },
-  procesado: { texto: 'Procesado', detalle: 'Ya es un pedido normal de tu historial.', clase: 'border-green-300 bg-green-50 text-green-900' },
+  en_cola: { texto: 'En cola', detalle: 'Todavía no hay un pedido confirmado ni se ha realizado ningún cobro.', clase: 'border-amber-300 bg-amber-50 text-amber-900' },
+  procesando: { texto: 'Procesando', detalle: 'Estamos creando tu pedido. El pago aún no está confirmado.', clase: 'border-amber-300 bg-amber-50 text-amber-900' },
+  procesado: { texto: 'Pedido creado', detalle: 'Consulta el estado del pago en el detalle del pedido.', clase: 'border-green-300 bg-green-50 text-green-900' },
   requiere_atencion: { texto: 'Requiere tu atención', detalle: 'No se cobró nada.', clase: 'border-red-300 bg-red-50 text-red-900' },
 }
 
@@ -54,7 +55,7 @@ function PedidosEnCola() {
   const { data } = useQuery({
     queryKey: ['orders-cola'],
     queryFn: () => getQueuedOrders().then((r) => r.data),
-    refetchInterval: (query) => (query.state.data?.some((s) => s.estado === 'en_cola') ? 10_000 : false),
+    refetchInterval: (query) => (query.state.data?.some((s) => ['en_cola', 'procesando'].includes(s.estado)) ? 10_000 : false),
     meta: { silencioso: true },
   })
   const solicitudes = (data || []).filter((s) => s.estado !== 'procesado' || !s.pedido_id)
@@ -82,6 +83,7 @@ export default function OrdersPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['orders'],
     queryFn: () => getOrders().then((r) => r.data),
+    refetchInterval: 10_000,
   })
 
   const pedidos = Array.isArray(data) ? data : []

@@ -2250,13 +2250,13 @@ const fraudValue = value => value === null || value === undefined || value === '
 const fraudDate = value => value ? formatDate(value) : 'No disponible'
 
 const FRAUD_GUIDE = {
-  bombardeo: ['Cinco o más reseñas verificadas y aprobadas sobre un producto en 24 horas.', 'Neo4j identifica el patrón; MySQL aporta el texto y los datos autoritativos.', 'La concentración temporal no demuestra que las reseñas sean falsas.'],
-  reviewer_unico_vendedor: ['Un cliente concentra al menos tres reseñas verificadas en una sola tienda.', 'Neo4j identifica la concentración; MySQL aporta cada reseña.', 'No es una autocompra ni demuestra coordinación por sí sola.'],
-  cluster: ['Un par de clientes reseñó al menos tres productos en común.', 'Neo4j encuentra el par y los productos; MySQL aporta ambas reseñas.', 'No compara igualdad de textos o calificaciones ni identifica necesariamente un grupo independiente.'],
-  sin_compra: ['Una reseña no tiene respaldo suficiente de compra pagada válida.', 'MySQL conserva la reseña, su moderación y el motivo de verificación; Neo4j aporta el nombre del producto.', 'No demuestra que la compra nunca haya ocurrido.'],
-  autocompra: ['El comprador coincide con el propietario actual de la tienda receptora.', 'Neo4j identifica la relación; MySQL aporta pedidos, pagos y reseñas disponibles.', 'No existe historial temporal completo de propiedad de la tienda.'],
-  inventario_atipico: ['Entradas o ajustes positivos reiterados cerca de ventas pagadas.', 'MySQL aporta los movimientos, responsables y pedidos asociados.', 'La correlación de F06 es temporal; no exige cantidades iguales ni prueba fraude.'],
-  coincidencia_cantidad: ['Una compra pagada y una reposición posterior de la misma oferta y cantidad forman un par 1:1.', 'MySQL aporta las líneas pagadas y movimientos confirmados por la regla.', 'Los candidatos ambiguos se excluyen; la coincidencia no demuestra causalidad.'],
+  bombardeo: ['Cinco o más reseñas verificadas y aprobadas sobre un producto en 24 horas.', 'Neo4j identifica el patrón. MySQL aporta el texto y los datos autoritativos.', 'La concentración temporal no demuestra que las reseñas sean falsas.'],
+  reviewer_unico_vendedor: ['Un cliente concentra al menos tres reseñas verificadas en una sola tienda.', 'Neo4j identifica la concentración. MySQL aporta cada reseña.', 'No es una autocompra ni demuestra coordinación por sí sola.'],
+  cluster: ['Un par de clientes reseñó al menos tres productos en común.', 'Neo4j encuentra el par y los productos. MySQL aporta ambas reseñas.', 'No compara igualdad de textos o calificaciones ni identifica necesariamente un grupo independiente.'],
+  sin_compra: ['Una reseña no tiene respaldo suficiente de compra pagada válida.', 'MySQL conserva la reseña, su moderación y el motivo de verificación. Neo4j aporta el nombre del producto.', 'No demuestra que la compra nunca haya ocurrido.'],
+  autocompra: ['El comprador coincide con el propietario actual de la tienda receptora.', 'Neo4j identifica la relación. MySQL aporta pedidos, pagos y reseñas disponibles.', 'No existe historial temporal completo de propiedad de la tienda.'],
+  inventario_atipico: ['Entradas o ajustes positivos reiterados cerca de ventas pagadas.', 'MySQL aporta los movimientos, responsables y pedidos asociados.', 'La correlación de F06 es temporal. No exige cantidades iguales ni prueba fraude.'],
+  coincidencia_cantidad: ['Una compra pagada y una reposición posterior de la misma oferta y cantidad forman un par 1:1.', 'MySQL aporta las líneas pagadas y movimientos confirmados por la regla.', 'Los candidatos ambiguos se excluyen. La coincidencia no demuestra causalidad.'],
 }
 
 function FraudGuide({ type, segment }) {

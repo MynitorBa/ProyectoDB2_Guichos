@@ -88,6 +88,7 @@ export const rejectCatalogRequest = (requestId, observaciones) =>
 
 // Salud de la sincronización: outbox por destino e índice de búsqueda
 export const getSyncOutbox = () => api.get('/admin/sync/outbox')
+export const getPlanBIncidents = (params = {}) => api.get('/admin/sync/incidentes', { params })
 export const retrySyncEvents = (data = {}) => api.post('/admin/sync/outbox/reintentar', data)
 export const getSearchIndexStatus = () => api.get('/admin/sync/busqueda')
 export const reindexSearch = (completo = false) =>

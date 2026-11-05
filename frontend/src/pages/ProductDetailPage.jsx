@@ -649,10 +649,10 @@ export default function ProductDetailPage() {
                   </h2>
                   <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
                     {{
-                      cache: 'Productos de la misma categoría con compradores en común, según el último cálculo guardado; precio y existencia se validan en tiempo real.',
-                      mas_vendidos: 'Mientras las recomendaciones personalizadas no están disponibles, te mostramos los más vendidos; precio y existencia se validan en tiempo real.',
+                      cache: 'Productos de la misma categoría con compradores en común, según el último cálculo guardado. Precio y existencia se validan en tiempo real.',
+                      mas_vendidos: 'Mientras las recomendaciones personalizadas no están disponibles, te mostramos los más vendidos. Precio y existencia se validan en tiempo real.',
                     }[recommendationData.origen]
-                      || 'Productos de la misma categoría con compradores en común; precio y existencia se validan en tiempo real.'}
+                      || 'Productos de la misma categoría con compradores en común. Precio y existencia se validan en tiempo real.'}
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {recommendationData.items.map(item => (
@@ -674,8 +674,8 @@ export default function ProductDetailPage() {
                   </h2>
                   <p className="font-sans text-sm text-[var(--color-text-muted)] mb-5">
                     {similarData.origen === 'mas_vendidos'
-                      ? 'Algunos de los más vendidos de esta categoría; precio y existencia se validan en tiempo real.'
-                      : 'Productos parecidos por su descripción y características; precio y existencia se validan en tiempo real.'}
+                      ? 'Algunos de los más vendidos de esta categoría. Precio y existencia se validan en tiempo real.'
+                      : 'Productos parecidos por su descripción y características. Precio y existencia se validan en tiempo real.'}
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {similarData.items.map(item => (
