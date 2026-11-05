@@ -137,9 +137,47 @@ def es_contra_entrega(db: Session, metodo_pago_id: int) -> bool:
 
 
 def _pago_de(db: Session, pedido_id: int) -> Pago:
-    return db.execute(
+    """Devuelve el pago autoritativo del pedido y bloquea su fila.
+
+    El esquema histórico no declara ``pagos.pedido_id`` como único. El flujo
+    normal sí crea un solo pago y comparte la clave idempotente del pedido,
+    pero una importación o herramienta antigua podría haber insertado otro.
+    En ese caso no es seguro escoger simplemente el primero o el último:
+    preferimos el único pago cuya clave coincide con la del pedido y detenemos
+    la operación si la selección sigue siendo ambigua.
+    """
+    pedido = db.execute(
+        select(Pedido.id, Pedido.clave_idempotencia).where(Pedido.id == pedido_id)
+    ).one_or_none()
+    if pedido is None:
+        raise CheckoutError('Pedido inexistente al seleccionar su pago.', 'PEDIDO_INEXISTENTE', pedido_id)
+
+    pagos = db.execute(
         select(Pago).where(Pago.pedido_id == pedido_id).order_by(Pago.id).with_for_update()
-    ).scalars().first()
+    ).scalars().all()
+    if not pagos:
+        raise CheckoutError('El pedido no tiene un pago registrado.', 'PAGO_INEXISTENTE', pedido_id)
+
+    if pedido.clave_idempotencia:
+        coincidentes = [p for p in pagos if p.clave_idempotencia == pedido.clave_idempotencia]
+        if len(coincidentes) == 1:
+            return coincidentes[0]
+        if len(coincidentes) > 1:
+            # La restricción única de clave_idempotencia lo impide en el
+            # esquema actual, pero esta defensa conserva el fallo seguro.
+            raise CheckoutError(
+                'Hay varios pagos con la clave idempotente del pedido.',
+                'PAGO_AMBIGUO', pedido_id,
+            )
+
+    if len(pagos) == 1:
+        # Compatibilidad con pedidos académicos anteriores a la saga, cuyos
+        # pagos legítimos no tenían clave idempotente.
+        return pagos[0]
+    raise CheckoutError(
+        'El pedido tiene varios pagos y no se puede identificar el autoritativo.',
+        'PAGO_AMBIGUO', pedido_id,
+    )
 
 
 def _bloquear_pedido(db: Session, pedido_id: int) -> Pedido:
@@ -589,7 +627,7 @@ def _reservar_con_reintentos(db: Session, mongo_db, **datos) -> Pedido:
 # ── Paso 2: cobrar (fuera de transacción) ─────────────────────────────────────
 
 def cobrar_pedido(db: Session, pedido_id: int, pasarela: 'pg.PasarelaPagos') -> 'pg.ResultadoPasarela':
-    pago = db.execute(select(Pago).where(Pago.pedido_id == pedido_id).order_by(Pago.id)).scalars().first()
+    pago = _pago_de(db, pedido_id)
     monto, clave = pago.monto, pago.clave_idempotencia
     db.commit()  # no retener ningún bloqueo durante la llamada externa
 
@@ -777,7 +815,7 @@ def marcar_en_verificacion(db: Session, pedido_id: int, detalle: dict | None = N
 
 def reembolsar_y_cancelar(db: Session, pedido_id: int, pasarela: 'pg.PasarelaPagos', razon: str) -> str:
     """Compensación del cargo: el cobro se aprobó pero el pedido no puede cumplirse."""
-    clave = db.execute(select(Pago.clave_idempotencia).where(Pago.pedido_id == pedido_id)).scalar_one()
+    clave = _pago_de(db, pedido_id).clave_idempotencia
     db.commit()
     resultado = pasarela.reembolsar(clave)
     if resultado.estado == pg.REEMBOLSADO:
