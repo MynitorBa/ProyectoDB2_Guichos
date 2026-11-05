@@ -360,7 +360,7 @@ def fraude_indicador_paginado(
             fraud.enriquecer_nombres_producto(neo4j, result['items'])
         return result
     if neo4j is None:
-        raise HTTPException(503, 'El análisis del grafo está pendiente; los resultados históricos permanecen disponibles.')
+        raise HTTPException(503, 'El análisis del grafo está pendiente. Los resultados históricos permanecen disponibles.')
     result = fraud.listar_indicador_paginado(
         neo4j, regla, pagina=pagina, tamano=tamano, buscar=buscar,
         segmento=segmento, ventana_horas=ventana_horas, umbral=umbral,
@@ -430,7 +430,7 @@ def fraude_recalcular(
     except FraudAnalysisBusy as exc:
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(503, 'El análisis no pudo completarse; no se inactivaron alertas.') from exc
+        raise HTTPException(503, 'El análisis no pudo completarse. No se inactivaron alertas.') from exc
 
 
 @router.get('/admin/fraude/estado-analisis')

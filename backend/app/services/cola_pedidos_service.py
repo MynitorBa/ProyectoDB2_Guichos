@@ -76,7 +76,7 @@ def encolar(r: redis.Redis, *, usuario_id: int, items: list[dict], direccion_id:
             'Las ofertas flash necesitan confirmar su cupo al momento y no pueden quedar en cola. '
             'Retíralas del carrito o intenta más tarde.', 'FLASH_REQUIRES_DATABASE')
     if any(s['estado'] == 'en_cola' for s in listar(r, usuario_id)):
-        raise SolicitudInvalida('Ya tienes un pedido en cola; espera a que se procese.', 'ORDER_ALREADY_QUEUED')
+        raise SolicitudInvalida('Ya tienes un pedido en cola. Espera a que se procese.', 'ORDER_ALREADY_QUEUED')
 
     solicitud = {
         'id': str(uuid.uuid4()),

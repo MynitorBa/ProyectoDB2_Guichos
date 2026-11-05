@@ -243,7 +243,7 @@ def conciliar_pedido_1851(
     if db.query(PedidoLinea).filter_by(pedido_id=PEDIDO_ID).count() != 1:
         raise ConciliacionError('El pedido ya no contiene exactamente una línea.')
     if not oferta or oferta.version != 3:
-        raise ConciliacionError('La oferta 768 cambió de versión; se detiene la conciliación.')
+        raise ConciliacionError('La oferta 768 cambió de versión. Se detiene la conciliación.')
     if not inventario or (inventario.cantidad_disponible, inventario.cantidad_reservada) != (9, 1):
         raise ConciliacionError('El inventario 507 ya no está en 9/1.')
     if len(movimientos) != 1 or movimientos[0].id != RESERVA_ID or movimientos[0].tipo != 'reserva' or movimientos[0].cantidad != 1:

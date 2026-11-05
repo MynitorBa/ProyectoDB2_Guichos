@@ -163,7 +163,13 @@ function Bootstrap-Demo {
         'apply_outbox_v2.py',
         'apply_review_authority.py',
         'apply_fraud_alerts.py',
-        'apply_fraud_automation.py'
+        'apply_fraud_automation.py',
+        # Plan B (24–27) y bitácora de conciliaciones (28): sin ellas la DEMO no queda como el programa
+        'apply_respaldo_redis.py',
+        'apply_respaldo_catalogo.py',
+        'apply_recomendaciones_cache.py',
+        'apply_respaldo_analitica.py',
+        'apply_historical_reconciliations.py'
     )
     if ($schemaState -eq 'legacy') {
         $migrationScripts = $legacyMigrationScripts + $commonMigrationScripts

@@ -147,7 +147,7 @@ export function PanelCasos({ habilitado = true }) {
   const lista = (casos.data || []).filter((c) => filtro === 'Todos' || c.componente === filtro)
   return (
     <Panel icono={Target} titulo="Casos específicos: ¿qué pasa si…?"
-      descripcion="Cada caso simula que un componente falla en un instante exacto de una operación real. «Preparar» desactiva los demás puntos, deja la pasarela aprobando y arma la falla para la próxima acción en la tienda; después revisa la bitácora, el outbox y los invariantes."
+      descripcion="Cada caso simula que un componente falla en un instante exacto de una operación real. «Preparar» desactiva los demás puntos, deja la pasarela aprobando y arma la falla para la próxima acción en la tienda. Después revisa la bitácora, el outbox y los invariantes."
       acciones={<a href={TIENDA_URL} target="_blank" rel="noreferrer"
         className="inline-flex items-center h-8 px-3 rounded-md text-sm font-semibold border border-[var(--color-border)] hover:border-[var(--color-border-strong)]">Abrir la tienda</a>}>
       <div className="flex flex-wrap gap-1.5 mb-3" role="group" aria-label="Filtrar por componente">
@@ -200,7 +200,7 @@ export function PanelCasos({ habilitado = true }) {
 // ── Componentes de la arquitectura ────────────────────────────────────────────
 
 const CONTENEDORES = [
-  { nombre: 'MongoDB', contenedor: 'tiendaya_mongo', efecto: 'Catálogo y su proyección; el índice de búsqueda también espera.' },
+  { nombre: 'MongoDB', contenedor: 'tiendaya_mongo', efecto: 'Catálogo y su proyección. El índice de búsqueda también espera.' },
   { nombre: 'Elasticsearch', contenedor: 'tiendaya_elasticsearch', efecto: 'La búsqueda pasa a modo degradado sobre MongoDB.' },
   { nombre: 'Neo4j', contenedor: 'tiendaya_neo4j', efecto: 'Las compras esperan para habilitar reseñas verificadas.' },
   { nombre: 'Cassandra', contenedor: 'tiendaya_cassandra', efecto: 'La analítica de ventas se atrasa.' },
@@ -221,7 +221,7 @@ export function PanelComponentes({ habilitado = true }) {
   const prefijo = import.meta.env.VITE_DEMO_MODE === 'true' ? 'tiendaya_demo_' : 'tiendaya_'
   return (
     <Panel icono={Container} titulo="Tumbar componentes"
-      descripcion="Para simular la caída de una base de datos, ejecuta estos comandos en una terminal. El laboratorio no ejecuta nada en tu máquina; observa el efecto en «Outbox en vivo».">
+      descripcion="Para simular la caída de una base de datos, ejecuta estos comandos en una terminal. El laboratorio no ejecuta nada en tu máquina. Observa el efecto en «Outbox en vivo».">
       <ul className="space-y-2">
         {CONTENEDORES.map((c) => (
           <li key={c.contenedor} className="rounded-lg border border-[var(--color-border)] px-3 py-2 space-y-1.5">
@@ -343,7 +343,7 @@ export function PanelInvariantes() {
   const datos = consulta.data
   return (
     <Panel icono={ShieldCheck} titulo="Invariantes de consistencia"
-      descripcion="Propiedades que deben cumplirse siempre, incluso después de una falla; se verifican contra MySQL, la pasarela, MongoDB y Elasticsearch."
+      descripcion="Propiedades que deben cumplirse siempre, incluso después de una falla. Se verifican contra MySQL, la pasarela, MongoDB y Elasticsearch."
       acciones={<Boton variante="secondary" cargando={consulta.isFetching} onClick={() => consulta.refetch()}>Verificar ahora</Boton>}>
       {!datos ? <Cargando className="h-40" /> : (
         <>

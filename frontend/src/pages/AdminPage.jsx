@@ -736,7 +736,7 @@ function AnalyticsSection() {
         <Button variant={!onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(false)}>Con actividad</Button>
         <Button variant={onlyWithoutSales ? 'primary' : 'secondary'} onClick={() => setOnlyWithoutSales(true)}>Sin ventas</Button>
       </div>
-      {data?.fuente_datos === 'mysql_respaldo' && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Cassandra no está disponible. Mostramos el respaldo de tendencias en MySQL; puede tener un breve retraso.</p>}
+      {data?.fuente_datos === 'mysql_respaldo' && <p role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Cassandra no está disponible. Mostramos el respaldo de tendencias en MySQL. Puede tener un breve retraso.</p>}
       {isLoading ? <Skeleton className="h-72 w-full" /> : isError ? (
         <p role="alert" className="text-sm text-[var(--color-error)]">{error?.response?.data?.detail || 'No se pudo consultar Cassandra.'}</p>
       ) : rows.length === 0 ? (
@@ -774,7 +774,7 @@ function AnalyticsSection() {
       </>}
 
       <div className="border-t border-[var(--color-border)] pt-6 space-y-5">
-        <div><h3 className="font-display font-semibold text-lg">Seguimiento semanal por producto</h3><p className="font-sans text-sm text-[var(--color-text-secondary)]">Busca visualmente un producto y consulta su serie continua; las semanas sin ventas aparecen en cero.</p></div>
+        <div><h3 className="font-display font-semibold text-lg">Seguimiento semanal por producto</h3><p className="font-sans text-sm text-[var(--color-text-secondary)]">Busca visualmente un producto y consulta su serie continua. Las semanas sin ventas aparecen en cero.</p></div>
         <ProductPicker value={selectedProduct} onSelect={setSelectedProduct} loadProducts={loadAdminAnalyticsProducts} queryKey="admin-analytics-product-picker" title="Producto para seguimiento" description="Busca por nombre o SKU y selecciona el producto por su imagen." />
         <div className="grid gap-3 sm:grid-cols-2 max-w-xl">
           <label className="font-sans text-xs text-[var(--color-text-secondary)]">Desde (lunes)<Input type="date" min="2020-01-06" step="7" value={fromWeek} onChange={event => setFromWeek(event.target.value)} className="mt-1" /></label>
@@ -1283,7 +1283,7 @@ function ProductsSection() {
   const deleteMutation = useMutation({
     mutationFn: (id) => deleteProduct(id),
     onSuccess: () => {
-      toast.success('Producto descontinuado; permanece disponible en administración.')
+      toast.success('Producto descontinuado. Permanece disponible en administración.')
       queryClient.invalidateQueries({ queryKey: ['admin-products'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['catalog-stats'] })
@@ -2287,7 +2287,7 @@ function FraudEvidence({ alert }) {
   if (alert.tipo === 'autocompra') return <div className="space-y-3 text-xs">
     <FraudGuide type="autocompra" />
     <p><strong>Comprador:</strong> {fraudValue(alert.usuario_nombre || e.usuario_nombre)} · <strong>Tienda:</strong> {fraudValue(alert.vendedor_nombre || e.vendedor_nombre)} · <strong>Producto:</strong> {fraudValue(alert.producto_nombre || e.producto_nombre)} · <strong>Oferta:</strong> #{fraudValue(alert.oferta_id)}</p>
-    <p>El comprador coincide con el propietario <strong>actual</strong> registrado; la propiedad histórica no está verificada.</p>
+    <p>El comprador coincide con el propietario <strong>actual</strong> registrado. La propiedad histórica no está verificada.</p>
     <h4 className="font-semibold">Compras relacionadas ({d.compras?.length ?? 0})</h4>
     {d.compras?.length ? <div className="overflow-x-auto"><table className="w-full text-left"><thead><tr>{['Pedido / línea', 'Producto', 'Cantidad', 'Pago', 'Fecha de pago', 'Importe'].map(h => <th key={h} className="p-2 border-b">{h}</th>)}</tr></thead><tbody>{d.compras.map(c => <tr key={c.linea_id}><td className="p-2 border-b">#{c.pedido_id} / #{c.linea_id}</td><td className="p-2 border-b">{fraudValue(c.producto_nombre)}</td><td className="p-2 border-b">{c.cantidad}</td><td className="p-2 border-b">{fraudValue(c.estado_pago)} · {fraudValue(c.estado_pedido)}</td><td className="p-2 border-b">{fraudDate(c.fecha)}</td><td className="p-2 border-b">{c.importe != null ? `Q${c.importe}` : 'No disponible'}</td></tr>)}</tbody></table></div> : <p>No se encontraron líneas autoritativas para los identificadores proyectados.</p>}
     {!!d.resenas?.length && <><h4 className="font-semibold">Reseñas vinculadas</h4>{d.resenas.map(r => <FraudReviewCard key={r.resena_id} review={r} />)}</>}
@@ -2612,8 +2612,8 @@ function FraudSection() {
           <DialogTitle>{indicator?.label || 'Detalle del indicador'}</DialogTitle>
           <DialogDescription>
             {indicatorRule === 'sin_compra'
-              ? 'Reseñas autoritativas consultadas en MySQL; Neo4j aporta únicamente el nombre proyectado del producto.'
-              : 'Patrones consultados en Neo4j y reseñas completadas desde MySQL. Son señales para investigar; no bloquean operaciones.'}
+              ? 'Reseñas autoritativas consultadas en MySQL. Neo4j aporta únicamente el nombre proyectado del producto.'
+              : 'Patrones consultados en Neo4j y reseñas completadas desde MySQL. Son señales para investigar. No bloquean operaciones.'}
           </DialogDescription>
           <FraudGuide type={indicatorRule} segment={indicatorSegment} />
           {indicatorRule === 'bombardeo' && (

@@ -28,7 +28,7 @@ def _payment_allows_fulfillment(db, order):
         raise HTTPException(409, exc.message) from exc
     cash_on_delivery = payment.estado == 'pendiente' and es_contra_entrega(db, payment.metodo_pago_id)
     if payment.estado != 'aprobado' and not cash_on_delivery:
-        raise HTTPException(409, 'El pago todavía no está aprobado; espera la conciliación de la pasarela.')
+        raise HTTPException(409, 'El pago todavía no está aprobado. Espera la conciliación de la pasarela.')
     return payment
 
 
@@ -198,7 +198,7 @@ def admin_status(db, order_id, user, target):
     elif target == 'cancelado':
         if order.estado not in {'confirmado', 'preparando'} or db.query(PedidoEnvio).filter(
             PedidoEnvio.pedido_vendedor_id.in_([p.id for p in parts])).first():
-            raise HTTPException(409, 'Solo se puede cancelar antes del primer envío; las devoluciones requieren otro flujo.')
+            raise HTTPException(409, 'Solo se puede cancelar antes del primer envío. Las devoluciones requieren otro flujo.')
         from app.models.oferta import Oferta
         from app.models.inventario import Inventario, MovimientoInventario
         from app.services.offer_history_service import registrar_saldo_inventario
@@ -233,7 +233,7 @@ def admin_status(db, order_id, user, target):
             if payment.estado == 'aprobado':
                 payment.estado = 'reembolsado'
     else:
-        raise HTTPException(409, 'Utiliza los botones de preparación y envío del subpedido; el estado global es calculado.')
+        raise HTTPException(409, 'Utiliza los botones de preparación y envío del subpedido. El estado global es calculado.')
     order.estado = target
     for part in parts:
         part.estado = target

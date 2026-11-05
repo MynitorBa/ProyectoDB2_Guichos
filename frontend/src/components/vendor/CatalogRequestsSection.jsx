@@ -126,7 +126,7 @@ function ProductProposalDialog({ open, onOpenChange }) {
         <PossibleDuplicates
           items={duplicateData?.duplicados}
           titulo="Este producto podría ya existir en el catálogo"
-          ayuda="Si es el mismo, usa «Solicitar oferta» para venderlo como oferente; si es distinto, puedes continuar."
+          ayuda="Si es el mismo, usa «Solicitar oferta» para venderlo como oferente. Si es distinto, puedes continuar."
         />
         <div>
           <Label>Categorías * <span className="font-normal text-xs">(la primera será principal)</span></Label>

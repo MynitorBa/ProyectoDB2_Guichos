@@ -919,6 +919,9 @@ def run_projection_scripts(cfg: dict[str, str]) -> None:
         [sys.executable, 'scripts/backfill_cassandra_analytics.py'],
         [sys.executable, 'scripts/backfill_neo4j_reviews.py', '--apply'],
         [sys.executable, 'scripts/reindex_search.py', '--recrear'],
+        # Respaldos del plan B con los datos nuevos: copia del catálogo y analítica en MySQL.
+        [sys.executable, 'scripts/sync_catalogo_respaldo.py'],
+        [sys.executable, 'scripts/backfill_mysql_analytics.py', '--apply-if-needed'],
     ]
     for command in commands:
         print('Proyección:', ' '.join(command[1:]))

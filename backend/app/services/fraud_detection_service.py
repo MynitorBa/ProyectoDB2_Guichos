@@ -774,7 +774,7 @@ def recalcular_alertas(
         resenas_ligadas = _resenas_ligadas_a_lineas(neo4j, signal.get('lineas') or [])
         reasons = [
             'El comprador coincide con el propietario actual del vendedor receptor.',
-            'No existe historial temporal de propiedad; la atribución histórica no está verificada.',
+            'No existe historial temporal de propiedad. La atribución histórica no está verificada.',
             f'La ejecución analiza una ventana móvil de {ventana_autocompra_dias} días.',
         ]
         if compras >= 3:
@@ -881,7 +881,7 @@ def recalcular_alertas(
         motivos = [
             f'{row.movimientos} entradas/ajustes positivos en 30 días.',
             f'El aumento acumulado es de {int(row.unidades or 0)} unidades.',
-            'La señal requiere revisar respaldo de abastecimiento; no prueba fraude por sí sola.',
+            'La señal requiere revisar respaldo de abastecimiento. No prueba fraude por sí sola.',
         ]
         if correlated_pairs:
             motivos.append(
@@ -938,7 +938,7 @@ def recalcular_alertas(
             motivos=[
                 f'{len(pares)} compra(s) pagada(s) tienen una reposición posterior de cantidad exacta.',
                 f'Cantidades coincidentes: {", ".join(map(str, cantidades))}.',
-                'La relación es una señal temporal 1:1; no demuestra por sí sola una reposición fraudulenta.',
+                'La relación es una señal temporal 1:1. No demuestra por sí sola una reposición fraudulenta.',
                 'Compras canceladas, pendientes, rechazadas o reembolsadas fueron excluidas.',
             ],
             evidencias={

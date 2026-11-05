@@ -336,9 +336,23 @@ def test_cannot_cancel_after_dispatch_or_force_global_status(db):
 
 def test_confirm_pending_and_no_refund_without_payment(db):
     order, parts, lines, admin = example_order(db)
+    # Un pedido pendiente real tiene su stock reservado (aún sin salida): la
+    # confirmación administrativa pasa por confirmar_pedido, que convierte la
+    # reserva en venta.
     order.estado = 'pendiente'
     for part in parts:
         part.estado = 'pendiente'
+    # Contra entrega: se confirma con el pago pendiente y, al cancelar, no hay cobro que reembolsar.
+    pago = db.query(Pago).filter_by(pedido_id=order.id).one()
+    pago.metodo_pago_id = db.query(MetodoPago).filter(MetodoPago.nombre.like('%entrega%')).one().id
+    pago.estado = 'pendiente'
+    db.query(MovimientoInventario).filter_by(pedido_id=order.id, tipo='salida').delete()
+    for line in lines:
+        inventory = db.query(Inventario).filter_by(oferta_id=line.oferta_id, bodega='principal').one()
+        inventory.cantidad_disponible = max(inventory.cantidad_disponible, inventory.cantidad_reservada + line.cantidad)
+        inventory.cantidad_reservada += line.cantidad
+        db.add(MovimientoInventario(inventario_id=inventory.id, tipo='reserva', cantidad=line.cantidad,
+            motivo=f'Reserva del pedido #{order.id}', pedido_id=order.id, usuario_id=admin.id))
     db.commit()
     with pytest.raises(HTTPException):
         create_shipment(db, order.id, parts[0].id, admin, [{'pedido_linea_id': lines[0].id, 'cantidad': 1}])

@@ -272,7 +272,7 @@ export default function CheckoutPage() {
       if (!err?.response) {
         // Sin respuesta (red caída o timeout): no sabemos si se creó el pedido.
         // Se conserva la clave para que el reintento sea seguro.
-        setError({ tipo: 'red', mensaje: 'No recibimos respuesta del servidor. Tu compra pudo haberse registrado; reintentar es seguro y no generará un cobro doble.' })
+        setError({ tipo: 'red', mensaje: 'No recibimos respuesta del servidor. Tu compra pudo haberse registrado. Reintentar es seguro y no generará un cobro doble.' })
         return
       }
       const raw = err.response.data?.detail
@@ -289,7 +289,7 @@ export default function CheckoutPage() {
         // El servidor falló sin un resultado definitivo (pudo caer después de
         // confirmar): igual que sin respuesta, se conserva la clave y reintentar
         // devuelve el pedido ya creado en lugar de crear otro o cobrar dos veces.
-        setError({ tipo: 'red', mensaje: 'No pudimos confirmar el resultado de tu compra. Pudo haberse registrado; reintentar es seguro y no generará un cobro doble.' })
+        setError({ tipo: 'red', mensaje: 'No pudimos confirmar el resultado de tu compra. Pudo haberse registrado. Reintentar es seguro y no generará un cobro doble.' })
         return
       }
       const tipo = TIPO_ERROR[code] || 'generico'

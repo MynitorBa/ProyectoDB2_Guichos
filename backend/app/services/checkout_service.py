@@ -296,8 +296,8 @@ def _notificar_vendedores(db: Session, pedido: Pedido) -> None:
 MENSAJES_CANCELACION = {
     'pago_rechazado': 'La pasarela rechazó el pago. No se realizó ningún cargo y tus productos siguen en el carrito.',
     'pasarela_no_disponible': 'No pudimos contactar a la pasarela de pagos. No se realizó ningún cargo.',
-    'pago_no_recibido': 'No se recibió el pago a tiempo; liberamos la reserva. No se realizó ningún cargo.',
-    'pedido_no_cumplible': 'El pago se aprobó pero el pedido ya no se podía cumplir; el cargo fue reembolsado.',
+    'pago_no_recibido': 'No se recibió el pago a tiempo. Liberamos la reserva. No se realizó ningún cargo.',
+    'pedido_no_cumplible': 'El pago se aprobó pero el pedido ya no se podía cumplir. El cargo fue reembolsado.',
 }
 
 
@@ -915,12 +915,12 @@ def procesar_checkout(
         return pedido
     if desenlace == RECHAZADO:
         raise CheckoutError(
-            'Tu pago fue rechazado. No se realizó ningún cargo; tu carrito se conserva.',
+            'Tu pago fue rechazado. No se realizó ningún cargo. Tu carrito se conserva.',
             'PAYMENT_DECLINED', pedido_id,
         )
     if desenlace == NO_ENVIADO:
         raise CheckoutError(
-            'La pasarela de pagos no está disponible. No se realizó ningún cargo; intenta de nuevo.',
+            'La pasarela de pagos no está disponible. No se realizó ningún cargo. Intenta de nuevo.',
             'PAYMENT_UNAVAILABLE', pedido_id,
         )
     if desenlace in (REEMBOLSADO, REEMBOLSO_PENDIENTE):

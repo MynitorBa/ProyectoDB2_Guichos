@@ -96,22 +96,51 @@ CANDIDATOS_POR_PRODUCTO = 30
 ESTADOS_VENDIDOS = ('confirmado', 'preparando', 'enviado_parcial', 'enviado', 'entregado_parcial', 'entregado')
 
 
+def _categorias_activas() -> dict[str, str] | None:
+    """Categoría principal de cada producto activo (con MongoDB caído, desde su copia).
+
+    None si no se pudo leer el catálogo: la caché se calcula entonces sin filtro y
+    el filtro por categoría se aplica igual al leerla.
+    """
+    from app.core.db_mongo import get_mongo_db
+    try:
+        docs, _ = catalogo_respaldo.productos(get_mongo_db(), {'estado': 'activo'}, estado='activo',
+                                              categoria_slug=None, q=None)
+    except Exception as exc:  # noqa: BLE001 - la caché no debe fallar por el catálogo
+        logger.warning('No se leyeron las categorías para la caché de recomendaciones: %s', exc)
+        return None
+    return {str(doc['_id']): categoria_principal(doc) for doc in docs}
+
+
 def recalcular_cache(neo4j, mysql: Session) -> int:
     """Copia a MySQL el recorrido de co-compra de todos los productos.
 
     Se reemplaza la tabla completa en una transacción: quien lee ve la versión
     anterior o la nueva, nunca una mezcla. Devuelve las filas guardadas.
     """
-    filas = neo4j.run("""
+    pares = neo4j.run("""
         MATCH (p:Producto)<-[:DE_PRODUCTO]-(:Compra)<-[:REALIZO]-(u:Usuario)
         MATCH (u)-[:REALIZO]->(:Compra)-[:DE_PRODUCTO]->(otro:Producto)
         WHERE otro.ref <> p.ref
         WITH p.ref AS producto_ref, otro.ref AS recomendado_ref, count(DISTINCT u) AS compradores
+        RETURN producto_ref, recomendado_ref, compradores
         ORDER BY producto_ref, compradores DESC, recomendado_ref
-        WITH producto_ref, collect({ref: recomendado_ref, compradores: compradores})[..$maximo] AS top
-        UNWIND top AS t
-        RETURN producto_ref, t.ref AS recomendado_ref, t.compradores AS compradores_comunes
-    """, maximo=CANDIDATOS_POR_PRODUCTO).data()
+    """).data()
+    # La misma regla que el grafo en vivo: solo productos activos de la misma
+    # categoría principal, y de ellos los mejores. Filtrar después de recortar
+    # dejaba fuera candidatos válidos cuando un producto tenía muchas co-compras.
+    categorias = _categorias_activas()
+    filas, por_producto = [], {}
+    for par in pares:
+        base = par['producto_ref']
+        if categorias is not None and (categorias.get(base) is None
+                                       or categorias.get(par['recomendado_ref']) != categorias[base]):
+            continue
+        if por_producto.get(base, 0) >= CANDIDATOS_POR_PRODUCTO:
+            continue
+        por_producto[base] = por_producto.get(base, 0) + 1
+        filas.append({'producto_ref': base, 'recomendado_ref': par['recomendado_ref'],
+                      'compradores_comunes': par['compradores']})
     ahora = utc_now()
     mysql.execute(text('DELETE FROM recomendaciones_cache'))
     if filas:

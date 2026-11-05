@@ -76,7 +76,7 @@ def run_fraud_analysis_once(
         for stale in stale_runs:
             stale.estado = 'fallida'
             stale.finalizada_en = utc_now()
-            stale.error = 'Ejecución interrumpida; el candado ya no estaba activo.'
+            stale.error = 'Ejecución interrumpida. El candado ya no estaba activo.'
 
         run = FraudAnalysisRun(
             origen=origen, estado='en_curso', iniciada_en=ahora or utc_now(),
@@ -129,7 +129,7 @@ def run_fraud_analysis_once(
                 run.error = (
                     # Plan B de Neo4j: los expedientes conservan su vigencia anterior
                     # y el análisis queda pendiente hasta que vuelva el grafo.
-                    'Neo4j no disponible: análisis pendiente; se reintentará cuando vuelva el grafo. '
+                    'Neo4j no disponible: análisis pendiente. Se reintentará cuando vuelva el grafo. '
                     if grafo_no_disponible(exc) else ''
                 ) + str(exc)[:1900]
                 db.commit()

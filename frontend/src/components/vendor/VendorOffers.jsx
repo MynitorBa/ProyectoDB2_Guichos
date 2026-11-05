@@ -232,7 +232,7 @@ function FlashSalePanel({ offer }) {
   const cancelMutation = useMutation({
     mutationFn: promotionId => api.post(`/vendor/flash-sales/${promotionId}/cancel`),
     onSuccess: () => {
-      toast.success('Promoción cancelada; las unidades restantes volvieron al inventario normal.')
+      toast.success('Promoción cancelada. Las unidades restantes volvieron al inventario normal.')
       cache.invalidateQueries({ queryKey: ['vendor-flash-sales'] })
       cache.invalidateQueries({ queryKey: ['vendor-offer'] })
       cache.invalidateQueries({ queryKey: ['vendor-offers'] })
