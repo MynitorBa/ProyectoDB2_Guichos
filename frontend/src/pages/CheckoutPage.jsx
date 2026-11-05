@@ -325,7 +325,7 @@ export default function CheckoutPage() {
           </h1>
           <p className="font-sans text-sm text-[var(--color-text-secondary)] mb-6">
             {successData.codigo === 'IDEMPOTENT_REPLAY'
-              ? 'Tu compra ya se había registrado en el intento anterior; no se realizó ningún cobro adicional.'
+              ? 'Tu compra ya se había registrado en el intento anterior. No se realizó ningún cobro adicional.'
               : 'Tu pedido ha sido procesado exitosamente.'}
           </p>
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-lg)] p-6 mb-6 text-left space-y-3">

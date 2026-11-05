@@ -110,7 +110,7 @@ function AvisoPago({ pedido }) {
           <p className="font-semibold">{verificando ? 'Estamos verificando tu pago' : 'Procesando tu pago'}</p>
           <p>
             {verificando
-              ? 'La pasarela no confirmó el cobro a tiempo. Lo consultamos automáticamente: si se cobró, confirmaremos tu pedido; si no, lo cancelaremos sin ningún cargo.'
+              ? 'La pasarela no confirmó el cobro a tiempo. Lo consultamos automáticamente. Si se cobró, confirmaremos tu pedido. Si no, lo cancelaremos sin ningún cargo.'
               : 'Tus productos están reservados mientras se completa el pago.'}
             {' '}Esta página se actualiza sola.
           </p>

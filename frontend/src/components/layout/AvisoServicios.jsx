@@ -3,21 +3,32 @@ import { AlertTriangle } from 'lucide-react'
 import { getSaludMotores } from '../../api/salud'
 import { useAuth } from '../../context/AuthContext'
 
-// Qué nota el usuario cuando un motor no responde. Cassandra solo afecta a los
-// paneles de tendencias, así que se avisa únicamente a administradores y vendedores.
-const MENSAJES = {
-  mysql: 'La tienda está en modo de solo lectura: puedes navegar y dejar tu pedido en cola; lo confirmaremos y cobraremos cuando se recupere. Los precios mostrados son referenciales.',
-  redis: 'El carrito y las ofertas flash funcionan en modo de respaldo: puedes seguir comprando, un poco más lento.',
-  mongo: 'El catálogo se muestra desde una copia de respaldo: la información puede estar desactualizada y por ahora no se pueden editar productos.',
-  elasticsearch: 'La búsqueda funciona en modo básico: sin corrección de errores ni filtros.',
-  neo4j: 'Las recomendaciones se muestran desde su último cálculo guardado.',
-  cassandra: 'Las tendencias se consultan desde el respaldo MySQL mientras Cassandra se recupera. Los datos pueden tener un breve retraso.',
+const MENSAJES_COMPRADOR = {
+  mysql: 'Puedes seguir navegando. Si dejas una solicitud de compra en cola, aún no será un pedido confirmado y no se realizará ningún cobro hasta procesarla.',
+  mongo: 'El catálogo puede mostrar información con un breve retraso.',
+  elasticsearch: 'La búsqueda está temporalmente limitada. Puedes seguir navegando por el catálogo.',
 }
-const SOLO_GESTION = new Set(['cassandra'])
+const MENSAJES_VENDEDOR = {
+  ...MENSAJES_COMPRADOR,
+  mongo: 'El catálogo puede mostrar información atrasada y la edición de productos está temporalmente limitada.',
+  cassandra: 'Las tendencias pueden mostrar información con un breve retraso.',
+  neo4j: 'Las nuevas señales de fraude están pendientes de análisis. Las existentes siguen disponibles.',
+}
+const MENSAJES_ADMIN = {
+  ...MENSAJES_VENDEDOR,
+  mysql: 'MySQL no responde. Las solicitudes nuevas quedan en cola, sin pedido confirmado ni cobro. Revise el historial de planes B al recuperarse.',
+  redis: 'Redis no responde. Carrito y reservas utilizan su respaldo.',
+  mongo: 'MongoDB no responde. El catálogo usa la copia de MySQL y la edición está limitada.',
+  elasticsearch: 'Elasticsearch no responde. La búsqueda usa el modo básico.',
+  neo4j: 'Neo4j no responde. El análisis nuevo de fraude queda pendiente. Los expedientes históricos siguen disponibles.',
+  cassandra: 'Cassandra no responde. Las tendencias usan el respaldo analítico MySQL.',
+  embeddings: 'El servicio de embeddings no responde. Se mantiene la búsqueda textual.',
+}
 
 export function AvisoServicios() {
   const { user } = useAuth()
-  const gestiona = user?.roles?.some((rol) => rol === 'administrador' || rol === 'vendedor')
+  const mensajes = user?.roles?.includes('administrador') ? MENSAJES_ADMIN
+    : user?.roles?.includes('vendedor') ? MENSAJES_VENDEDOR : MENSAJES_COMPRADOR
   const { data } = useQuery({
     queryKey: ['salud-motores'],
     queryFn: () => getSaludMotores().then((r) => r.data),
@@ -30,8 +41,8 @@ export function AvisoServicios() {
   })
 
   const avisos = (data?.degradados || [])
-    .filter((motor) => MENSAJES[motor] && (gestiona || !SOLO_GESTION.has(motor)))
-    .map((motor) => MENSAJES[motor])
+    .filter((motor) => mensajes[motor])
+    .map((motor) => mensajes[motor])
   if (!avisos.length) return null
 
   return (

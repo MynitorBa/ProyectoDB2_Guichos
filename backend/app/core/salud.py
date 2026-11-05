@@ -34,6 +34,8 @@ class _Estado:
     ultimo_error: str | None = None
     ultima_falla: float | None = None
     ultimo_exito: float | None = None
+    observado: bool = False
+    ultimo_registro: float = 0.0
 
 
 _lock = threading.Lock()
@@ -61,18 +63,25 @@ def degradado(motor: str) -> bool:
 def registrar_exito(motor: str) -> None:
     with _lock:
         e = _estado(motor)
+        recuperacion = e.fallas >= UMBRAL or not e.observado
         if e.fallas >= UMBRAL:
             logger.info('%s volvió a responder; se cierra el circuito.', motor)
         e.fallas = 0
         e.abierto_hasta = 0.0
         e.ultimo_exito = time.time()
+        e.observado = True
+    if recuperacion:
+        from app.services.planb_incident_service import record_recovery
+        record_recovery(motor)
 
 
 def registrar_falla(motor: str, exc: BaseException | str | None = None, *, confirmada: bool = False) -> None:
     """Cuenta una falla. ``confirmada`` (un ping fallido) abre el circuito de inmediato."""
     with _lock:
         e = _estado(motor)
+        anteriores = e.fallas
         e.fallas = max(e.fallas + 1, UMBRAL if confirmada else 0)
+        e.observado = True
         e.ultima_falla = time.time()
         e.ultimo_error = (exc if isinstance(exc, str) else exc.__class__.__name__) if exc else None
         if e.fallas >= UMBRAL:
@@ -80,6 +89,17 @@ def registrar_falla(motor: str, exc: BaseException | str | None = None, *, confi
                 logger.warning('%s falló %s veces seguidas; se abre el circuito %s s.',
                                motor, e.fallas, ESPERA_SEGUNDOS)
             e.abierto_hasta = time.monotonic() + ESPERA_SEGUNDOS
+        apertura = anteriores < UMBRAL and e.fallas >= UMBRAL
+        comprobacion = not apertura and e.fallas >= UMBRAL and time.time() - e.ultimo_registro >= 60
+        if apertura or comprobacion:
+            e.ultimo_registro = time.time()
+        codigo = e.ultimo_error
+    if apertura:
+        from app.services.planb_incident_service import record_outage
+        record_outage(motor, codigo)
+    elif comprobacion:
+        from app.services.planb_incident_service import record_check
+        record_check(motor)
 
 
 def reiniciar() -> None:

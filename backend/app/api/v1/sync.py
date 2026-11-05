@@ -1,5 +1,7 @@
 """Observabilidad y operación de la sincronización entre componentes (solo admin)."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from pymongo.database import Database
@@ -12,8 +14,34 @@ from app.core.deps import get_admin_user
 from app.models.outbox import DESTINOS_OUTBOX
 from app.models.usuario import Usuario
 from app.services import outbox_service
+from app.services import planb_incident_service as incidents
 
 router = APIRouter(prefix='/admin/sync', tags=['Sincronización'])
+
+
+@router.get('/incidentes')
+def listar_incidentes_planb(
+    motor: str | None = Query(None, enum=list(incidents.RESPALDOS)),
+    estado: str | None = Query(None, enum=['activo', 'recuperado']),
+    tipo: str | None = Query(None, enum=['caida']),
+    desde: datetime | None = None,
+    hasta: datetime | None = None,
+    limite: int = Query(100, ge=1, le=500),
+    _: Usuario = Depends(get_admin_user),
+):
+    if desde and desde.tzinfo is None:
+        desde = desde.replace(tzinfo=timezone.utc)
+    if hasta and hasta.tzinfo is None:
+        hasta = hasta.replace(tzinfo=timezone.utc)
+    if desde:
+        desde = desde.astimezone(timezone.utc)
+    if hasta:
+        hasta = hasta.astimezone(timezone.utc)
+    if desde and hasta and desde > hasta:
+        raise HTTPException(422, 'El inicio del período debe ser anterior al final.')
+    return incidents.list_incidents(
+        motor=motor, estado=estado, tipo=tipo, desde=desde, hasta=hasta, limit=limite,
+    )
 
 
 class ReintentoPayload(BaseModel):

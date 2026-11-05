@@ -1,4 +1,4 @@
-param()
+param([switch]$EnableFaultLab)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -61,7 +61,7 @@ foreach ($path in @($compose, $envFile, $python, $npm, $ledger)) {
 if (-not (Test-Path -LiteralPath (Join-Path $root 'frontend\node_modules'))) {
     throw 'Faltan dependencias del frontend. No se instalará nada automáticamente.'
 }
-if (-not (Test-Path -LiteralPath (Join-Path $root 'laboratorio\node_modules'))) {
+if ($EnableFaultLab -and -not (Test-Path -LiteralPath (Join-Path $root 'laboratorio\node_modules'))) {
     throw 'Faltan dependencias del laboratorio. No se instalará nada automáticamente.'
 }
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker CLI no está instalado.' }
@@ -101,7 +101,9 @@ $main = @(Invoke-Docker -Arguments @('ps', '--filter', 'label=com.docker.compose
 if ($main.Count -gt 0 -and $main[0]) { throw 'La instancia PRINCIPAL tiene contenedores activos; no se iniciará una segunda pila.' }
 $clean = @(Invoke-Docker -Arguments @('ps', '--filter', 'label=com.docker.compose.project=tiendaya_demo_clean', '--format', '{{.Names}}'))
 if ($clean.Count -gt 0 -and $clean[0]) { throw 'La DEMO limpia incompleta está activa; no se iniciará la original.' }
-foreach ($port in @(5173, 5174, 5175, 8000, 8001, 8002, 8005, 8006)) { Assert-FreePort $port }
+$appPorts = @(5173, 5175, 8000, 8001, 8002, 8005, 8006)
+if ($EnableFaultLab) { $appPorts += 5174 }
+foreach ($port in $appPorts) { Assert-FreePort $port }
 $motorPorts = @(
     @{ Port = 3317; Name = 'mysql' }, @{ Port = 27117; Name = 'mongo' },
     @{ Port = 6389; Name = 'redis' }, @{ Port = 9142; Name = 'cassandra' },
@@ -160,7 +162,7 @@ foreach ($key in @('REDIS_USERNAME', 'REDIS_PASSWORD', 'ES_USERNAME', 'ES_PASSWO
 }
 foreach ($key in $settings.Keys) { [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process') }
 $env:FRAUD_ANALYSIS_ENABLED = 'false'
-$env:FAULT_INJECTION_ENABLED = 'true'
+$env:FAULT_INJECTION_ENABLED = if ($EnableFaultLab) { 'true' } else { 'false' }
 $env:VITE_DEMO_MODE = 'true'
 $env:VITE_PORT = '5173'
 $env:VITE_API_URL = '/api/v1'
@@ -214,14 +216,18 @@ $env:RECONCILIADOR_GRACIA_S = '20'
 $recoveryProcess = Start-Process -FilePath $python -ArgumentList 'scripts\run_demo_recovery.py' -WorkingDirectory (Join-Path $root 'backend') -RedirectStandardOutput (Join-Path $runtime 'recovery.out.log') -RedirectStandardError (Join-Path $runtime 'recovery.err.log') -WindowStyle Hidden -PassThru
 Start-Process -FilePath $npm -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5173' -WorkingDirectory (Join-Path $root 'frontend') -RedirectStandardOutput (Join-Path $runtime 'frontend.out.log') -RedirectStandardError (Join-Path $runtime 'frontend.err.log') -WindowStyle Hidden
 $env:VITE_API_URL = 'http://localhost:8000/api/v1'
-Start-Process -FilePath $npm -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5174' -WorkingDirectory (Join-Path $root 'laboratorio') -RedirectStandardOutput (Join-Path $runtime 'laboratorio.out.log') -RedirectStandardError (Join-Path $runtime 'laboratorio.err.log') -WindowStyle Hidden
+if ($EnableFaultLab) {
+    Start-Process -FilePath $npm -ArgumentList 'run','dev','--','--host','127.0.0.1','--port','5174' -WorkingDirectory (Join-Path $root 'laboratorio') -RedirectStandardOutput (Join-Path $runtime 'laboratorio.out.log') -RedirectStandardError (Join-Path $runtime 'laboratorio.err.log') -WindowStyle Hidden
+}
 Wait-Http 'http://127.0.0.1:8001/docs'
 Wait-Http 'http://127.0.0.1:8000/docs'
 Wait-Http 'http://127.0.0.1:5173/'
-Wait-Http 'http://127.0.0.1:5174/'
+if ($EnableFaultLab) { Wait-Http 'http://127.0.0.1:5174/' }
 Wait-Http 'http://127.0.0.1:8002/health'
 $owned = @()
-foreach ($port in @(5173, 5174, 8000, 8001, 8002)) {
+$ownedPorts = @(5173, 8000, 8001, 8002)
+if ($EnableFaultLab) { $ownedPorts += 5174 }
+foreach ($port in $ownedPorts) {
     $listenerPid = Get-ListenerPid $port
     if (-not $listenerPid) { throw "No se encontró el proceso que atiende el puerto $port. Revise los logs en $runtime." }
     $process = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid"
@@ -230,7 +236,7 @@ foreach ($port in @(5173, 5174, 8000, 8001, 8002)) {
 @{ app = $owned; outbox_launcher = $outboxProcess.Id; recovery_launcher = $recoveryProcess.Id } | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $runtime 'presentation-processes.json') -Encoding UTF8
 Write-Host 'TiendaYa con DEMO original: http://localhost:5173' -ForegroundColor Green
-Write-Host 'Laboratorio original: http://localhost:5174'
+if ($EnableFaultLab) { Write-Host 'Laboratorio original: http://localhost:5174' }
 Write-Host 'API: http://localhost:8000/docs | Pasarela: http://localhost:8001/docs'
 Write-Host 'Embeddings: http://localhost:8002/health (el modelo termina de cargar en segundo plano)'
 Write-Host 'Outbox, recuperación del checkout y servicio de embeddings activos. No se ejecutaron seeds, migraciones, backfills ni otros workers.'

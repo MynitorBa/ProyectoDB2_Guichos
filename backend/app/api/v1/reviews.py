@@ -348,7 +348,7 @@ def fraude_indicador_paginado(
     min_comun: int = Query(3, ge=2),
     _: Usuario = Depends(get_admin),
     db: Session = Depends(get_db),
-    neo4j: Neo4jSession = Depends(get_neo4j),
+    neo4j: Neo4jSession | None = Depends(get_neo4j_opcional),
 ):
     if regla not in {'bombardeo', 'sin_compra', 'reviewer_unico_vendedor', 'cluster'}:
         raise HTTPException(404, 'Indicador de fraude desconocido.')
@@ -356,8 +356,11 @@ def fraude_indicador_paginado(
         result = fraud.listar_sin_compra_mysql(
             db, pagina=pagina, tamano=tamano, buscar=buscar,
         )
-        fraud.enriquecer_nombres_producto(neo4j, result['items'])
+        if neo4j is not None:
+            fraud.enriquecer_nombres_producto(neo4j, result['items'])
         return result
+    if neo4j is None:
+        raise HTTPException(503, 'El análisis del grafo está pendiente; los resultados históricos permanecen disponibles.')
     result = fraud.listar_indicador_paginado(
         neo4j, regla, pagina=pagina, tamano=tamano, buscar=buscar,
         segmento=segmento, ventana_horas=ventana_horas, umbral=umbral,

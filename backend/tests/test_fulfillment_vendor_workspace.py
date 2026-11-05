@@ -12,9 +12,12 @@ from app.models.pedido_vendedor import PedidoVendedor
 from app.models.direccion import Direccion
 from app.models.oferta import Oferta, OfertaPrecioHistorial
 from app.models.inventario import Inventario, MovimientoInventario
+from app.models.pago import Pago, MetodoPago
 from app.api.v1.vendor import change_own_offer, VendorOfferUpdate
 from app.api.v1.catalog_requests import propose_variant, approve_request, VariantProposalCreate, ReviewPayload
-from app.services.fulfillment_service import create_shipment, deliver_shipment, detail, progress_state, admin_status
+from app.services.fulfillment_service import (
+    admin_status, create_shipment, deliver_shipment, detail, prepare_part, progress_state,
+)
 
 
 @pytest.fixture
@@ -58,6 +61,12 @@ def example_order(db):
         db.flush()
         parts.append(part)
         lines.append(line)
+    db.add(Pago(
+        pedido_id=order.id,
+        metodo_pago_id=db.query(MetodoPago).first().id,
+        monto=70,
+        estado='aprobado',
+    ))
     db.commit()
     return order, parts, lines, admin
 
@@ -117,11 +126,8 @@ def test_vendor_offer_audit_version_and_ownership(db):
 
 
 def test_cancellation_restock_once_and_simulated_refund(db):
-    from app.models.pago import Pago, MetodoPago
     order, parts, lines, admin = example_order(db)
-    payment = Pago(pedido_id=order.id, metodo_pago_id=db.query(MetodoPago).first().id,
-                   monto=70, estado='aprobado')
-    db.add(payment)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
     inventories = [db.query(Inventario).filter_by(oferta_id=l.oferta_id, bodega='principal').one() for l in lines]
     initial = [i.cantidad_disponible for i in inventories]
     db.commit()
@@ -135,6 +141,188 @@ def test_cancellation_restock_once_and_simulated_refund(db):
     assert [i.cantidad_disponible for i in inventories] == [initial[0]+5, initial[1]+2]
     with pytest.raises(HTTPException):
         create_shipment(db, order.id, parts[0].id, admin, [{'pedido_linea_id': lines[0].id, 'cantidad': 1}])
+
+
+def test_pending_card_payment_cannot_be_confirmed_or_dispatched(db):
+    order, parts, lines, admin = example_order(db)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
+    order.estado = 'pendiente'
+    payment.estado = 'en_verificacion'
+    for part in parts:
+        part.estado = 'pendiente'
+    db.commit()
+
+    with pytest.raises(HTTPException, match='pago todavía no está aprobado'):
+        admin_status(db, order.id, admin, 'confirmado')
+
+    # Defensa adicional si un subpedido hubiera sido alterado por datos
+    # históricos o una herramienta anterior.
+    parts[0].estado = 'confirmado'
+    db.commit()
+    with pytest.raises(HTTPException, match='pago todavía no está aprobado'):
+        create_shipment(
+            db, order.id, parts[0].id, admin,
+            [{'pedido_linea_id': lines[0].id, 'cantidad': 1}],
+        )
+
+
+def test_pending_card_payment_cannot_be_prepared_or_delivered(db):
+    order, parts, lines, admin = example_order(db)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
+
+    # Preparación: incluso un subpedido confirmado queda bloqueado mientras el
+    # cobro de tarjeta sea incierto.
+    payment.estado = 'en_verificacion'
+    db.commit()
+    with pytest.raises(HTTPException, match='pago todavía no está aprobado'):
+        prepare_part(db, order.id, parts[0].id, admin)
+
+    # Entrega: el envío pudo haberse creado cuando el pago era válido, pero si
+    # luego se marca en verificación tampoco se permite completar la entrega.
+    payment.estado = 'aprobado'
+    db.commit()
+    shipment_id = create_shipment(
+        db, order.id, parts[0].id, admin,
+        [{'pedido_linea_id': lines[0].id, 'cantidad': 1}],
+    )
+    payment.estado = 'en_verificacion'
+    db.commit()
+    with pytest.raises(HTTPException, match='pago todavía no está aprobado'):
+        deliver_shipment(db, order.id, shipment_id, admin)
+
+
+def test_fulfillment_selects_payment_matching_order_idempotency_key(db):
+    order, parts, _lines, admin = example_order(db)
+    authoritative = db.query(Pago).filter_by(pedido_id=order.id).one()
+    order.clave_idempotencia = str(uuid.uuid4())
+    authoritative.clave_idempotencia = order.clave_idempotencia
+    authoritative.estado = 'en_verificacion'
+    # Simula un registro histórico incorrecto posterior. El código no debe
+    # elegirlo solo por tener el id más alto ni porque figure aprobado.
+    db.add(Pago(
+        pedido_id=order.id,
+        metodo_pago_id=authoritative.metodo_pago_id,
+        monto=authoritative.monto,
+        estado='aprobado',
+        clave_idempotencia=str(uuid.uuid4()),
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException, match='pago todavía no está aprobado'):
+        prepare_part(db, order.id, parts[0].id, admin)
+
+    authoritative.estado = 'aprobado'
+    db.commit()
+    prepare_part(db, order.id, parts[0].id, admin)
+    assert parts[0].estado == 'preparando'
+
+
+def test_cash_on_delivery_pending_can_be_dispatched(db):
+    order, parts, lines, admin = example_order(db)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
+    payment.metodo_pago_id = db.query(MetodoPago).filter(
+        MetodoPago.nombre.ilike('%contra entrega%'),
+    ).one().id
+    payment.estado = 'pendiente'
+    db.commit()
+
+    shipment_id = create_shipment(
+        db, order.id, parts[0].id, admin,
+        [{'pedido_linea_id': lines[0].id, 'cantidad': 1}],
+    )
+    assert shipment_id is not None
+
+
+def test_admin_confirmation_uses_saga_once(db):
+    from app.models.outbox import OutboxEvento
+
+    order, parts, lines, admin = example_order(db)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
+    order.estado = 'pendiente'
+    for part in parts:
+        part.estado = 'pendiente'
+
+    # El helper creó movimientos representativos para las pruebas de
+    # cancelación. Este caso reconstruye el estado real anterior a confirmar:
+    # reserva existente y todavía ninguna salida.
+    db.query(MovimientoInventario).filter_by(pedido_id=order.id).delete()
+    inventories = []
+    for line in lines:
+        inventory = db.query(Inventario).filter_by(
+            oferta_id=line.oferta_id, bodega='principal',
+        ).one()
+        inventory.cantidad_reservada += line.cantidad
+        db.add(MovimientoInventario(
+            inventario_id=inventory.id, tipo='reserva', cantidad=line.cantidad,
+            motivo='Reserva de prueba para confirmación administrativa',
+            pedido_id=order.id, usuario_id=admin.id,
+        ))
+        inventories.append((inventory, line.cantidad, inventory.cantidad_disponible))
+    db.commit()
+
+    admin_status(db, order.id, admin, 'confirmado')
+    movement_count = db.query(MovimientoInventario).filter_by(
+        pedido_id=order.id, tipo='salida',
+    ).count()
+    outbox_count = db.query(OutboxEvento).filter_by(agregado_id=str(order.id)).count()
+    assert payment.estado == 'aprobado' and order.estado == 'confirmado'
+    assert movement_count == len(lines)
+    assert outbox_count > 0
+    for inventory, quantity, available_before in inventories:
+        assert inventory.cantidad_reservada == 0
+        assert inventory.cantidad_disponible == available_before - quantity
+
+    with pytest.raises(HTTPException):
+        admin_status(db, order.id, admin, 'confirmado')
+    assert db.query(MovimientoInventario).filter_by(
+        pedido_id=order.id, tipo='salida',
+    ).count() == movement_count
+    assert db.query(OutboxEvento).filter_by(agregado_id=str(order.id)).count() == outbox_count
+
+
+def test_admin_confirmation_failure_before_commit_rolls_back(db, monkeypatch):
+    from app.core.fault_injection import FallaSimulada
+    from app.models.outbox import OutboxEvento
+    from app.services import checkout_service
+
+    order, parts, lines, admin = example_order(db)
+    order.estado = 'pendiente'
+    for part in parts:
+        part.estado = 'pendiente'
+    db.query(MovimientoInventario).filter_by(pedido_id=order.id).delete()
+    expected = []
+    for line in lines:
+        inventory = db.query(Inventario).filter_by(
+            oferta_id=line.oferta_id, bodega='principal',
+        ).one()
+        inventory.cantidad_reservada += line.cantidad
+        db.add(MovimientoInventario(
+            inventario_id=inventory.id, tipo='reserva', cantidad=line.cantidad,
+            motivo='Reserva para probar rollback de confirmación',
+            pedido_id=order.id, usuario_id=admin.id,
+        ))
+        expected.append((inventory.id, inventory.cantidad_disponible, inventory.cantidad_reservada))
+    db.commit()
+    outbox_before = db.query(OutboxEvento).filter_by(agregado_id=str(order.id)).count()
+
+    def fail_before_commit(point):
+        if point == 'checkout.confirmacion':
+            raise FallaSimulada('fallo antes del commit')
+
+    monkeypatch.setattr(checkout_service, 'punto_de_falla', fail_before_commit)
+    with pytest.raises(FallaSimulada, match='fallo antes del commit'):
+        admin_status(db, order.id, admin, 'confirmado')
+
+    db.expire_all()
+    persisted_order = db.get(Pedido, order.id)
+    assert persisted_order.estado == 'pendiente'
+    assert db.query(MovimientoInventario).filter_by(
+        pedido_id=order.id, tipo='salida',
+    ).count() == 0
+    assert db.query(OutboxEvento).filter_by(agregado_id=str(order.id)).count() == outbox_before
+    for inventory_id, available, reserved in expected:
+        inventory = db.get(Inventario, inventory_id)
+        assert (inventory.cantidad_disponible, inventory.cantidad_reservada) == (available, reserved)
 
 
 def test_cannot_cancel_after_dispatch_or_force_global_status(db):

@@ -15,6 +15,23 @@ from app.models.notificacion import Notificacion
 TERMINAL = {'cancelado', 'reembolsado'}
 
 
+def _payment_allows_fulfillment(db, order):
+    """Impide despachar una reserva cuyo cobro todavía es incierto.
+
+    Contra entrega es la única excepción: el checkout confirma el pedido antes
+    del cobro y el pago permanece pendiente hasta la entrega.
+    """
+    from app.services.checkout_service import CheckoutError, _pago_de, es_contra_entrega
+    try:
+        payment = _pago_de(db, order.id)
+    except CheckoutError as exc:
+        raise HTTPException(409, exc.message) from exc
+    cash_on_delivery = payment.estado == 'pendiente' and es_contra_entrega(db, payment.metodo_pago_id)
+    if payment.estado != 'aprobado' and not cash_on_delivery:
+        raise HTTPException(409, 'El pago todavía no está aprobado; espera la conciliación de la pasarela.')
+    return payment
+
+
 def progress_state(total, sent, delivered, fallback='confirmado'):
     if total and delivered >= total:
         return 'entregado'
@@ -93,6 +110,7 @@ def _part(db, order, part_id, vendor_id):
 
 def create_shipment(db, order_id, part_id, user, lines, reference=None):
     order, vendor_id = order_access(db, order_id, user, write=True)
+    _payment_allows_fulfillment(db, order)
     part = _part(db, order, part_id, vendor_id)
     if part.estado == 'pendiente':
         raise HTTPException(409, 'El subpedido todavía no está confirmado.')
@@ -128,6 +146,7 @@ def create_shipment(db, order_id, part_id, user, lines, reference=None):
 
 def deliver_shipment(db, order_id, shipment_id, user):
     order, vendor_id = order_access(db, order_id, user, write=True)
+    _payment_allows_fulfillment(db, order)
     shipment = db.query(PedidoEnvio).filter_by(id=shipment_id).populate_existing().with_for_update().first()
     if not shipment:
         raise HTTPException(404, 'Envío no encontrado.')
@@ -146,6 +165,7 @@ def deliver_shipment(db, order_id, shipment_id, user):
 
 def prepare_part(db, order_id, part_id, user):
     order, vendor_id = order_access(db, order_id, user, write=True)
+    _payment_allows_fulfillment(db, order)
     part = _part(db, order, part_id, vendor_id)
     if part.estado not in {'confirmado', 'preparando'}:
         raise HTTPException(409, 'Solo un subpedido confirmado puede pasar a preparación.')
@@ -165,6 +185,16 @@ def admin_status(db, order_id, user, target):
     if target == 'confirmado':
         if order.estado != 'pendiente':
             raise HTTPException(409, 'Solo se puede confirmar un pedido pendiente.')
+        payment = _payment_allows_fulfillment(db, order)
+        # Confirmar no es un simple cambio de estado: debe convertir la reserva
+        # en venta, registrar el movimiento de salida y encolar las proyecciones.
+        from app.services.checkout_service import confirmar_pedido
+        confirmar_pedido(
+            db, order.id,
+            referencia=payment.referencia_pasarela,
+            origen='confirmacion_administrativa',
+        )
+        return
     elif target == 'cancelado':
         if order.estado not in {'confirmado', 'preparando'} or db.query(PedidoEnvio).filter(
             PedidoEnvio.pedido_vendedor_id.in_([p.id for p in parts])).first():

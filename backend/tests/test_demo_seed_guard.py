@@ -5,8 +5,9 @@ import pytest
 from scripts.seed_demo_large import (
     SCALES, complete_paid_line_inventory_ids, load_demo_env, ref_for,
     resolve_offer_rows, should_seed_order, uid_for,
-    planned_fraud_order, demo_product_name,
+    planned_fraud_order, demo_product_name, plan_normal_order, run_tags,
 )
+from scripts.demo_catalog_data import category_for, demo_person_name, demo_product, demo_store_name
 
 
 SAFE_ENV = """\
@@ -124,8 +125,58 @@ def test_medium_fraud_scenarios_are_distinct_and_exclusive():
     assert len({buyer for buyer, _ in plans[40:55]}) == 5
     assert len({choices[0][0] for _, choices in plans[40:43]}) == 3
     assert len({choices[0] for _, choices in plans[65:71]}) == 6
-    assert demo_product_name(0).startswith('Laptop DEMO')
-    assert demo_product_name(1).startswith('Teléfono DEMO')
+    assert demo_product_name(0).startswith('Computadora portátil')
+    assert demo_product_name(1).startswith('Teléfono inteligente')
+
+
+def test_catalogo_realista_es_determinista_y_coherente():
+    products = [demo_product(i) for i in range(SCALES['full'].products)]
+    assert len({product.name for product in products}) == len(products)
+    assert all(product.price > 0 and product.stock >= 40 for product in products)
+    assert all('DEMO modelo' not in product.name for product in products)
+    assert f"{demo_product(0).attributes['ram_gb']} GB de RAM" in demo_product(0).description
+    assert demo_product(9).variant_attributes['talla'] in ('S', 'M', 'L', 'XL')
+    assert demo_product(16).attributes['autor'] in demo_product(16).description
+    assert demo_store_name(0) != demo_store_name(8)
+    assert len({demo_person_name(i) for i in range(SCALES['full'].users)}) == SCALES['full'].users
+    assert {category_for(i) for i in range(40)} == set(range(12))
+    assert run_tags('entrega3-demo-v1') == ('ENTRE', 'entrega3')
+    assert run_tags('entrega4-realista-v1') != run_tags('presentacion-equipo-v1')
+
+
+def test_atributos_sinteticos_respetan_esquemas_de_categoria():
+    required = (
+        {'procesador', 'ram_gb', 'almacenamiento', 'pulgadas'},
+        {'ram_gb', 'almacenamiento', 'camara_mp', 'pulgadas'},
+        {'tipo_audio', 'conectividad'},
+        {'talla', 'color', 'material', 'genero'},
+        {'talla', 'color', 'material', 'corte', 'genero'},
+        {'talla', 'color', 'material', 'genero'},
+        set(),
+        {'autor', 'isbn', 'paginas', 'editorial'},
+        {'deporte'}, {'peso_g'}, {'edad_minima'}, {'uso'},
+    )
+    for index in range(96):
+        product = demo_product(index)
+        assert required[category_for(index)] <= product.attributes.keys()
+        assert product.variant_attributes.keys() <= product.attributes.keys()
+        assert all(isinstance(value, (str, int, float, bool)) for value in product.attributes.values())
+        if category_for(index) == 5:
+            assert isinstance(product.attributes['talla'], int)
+
+
+def test_compras_normales_siguen_afinidad_y_no_agotan_stock_sintetico():
+    offers = [(i + 1, None, None, i // 8, None, demo_product(i).price, i)
+              for i in range(SCALES['full'].products)]
+    sold = {row[0]: 0 for row in offers}
+    for order_index in range(SCALES['full'].orders):
+        buyer_index = (order_index * 17 + 7) % SCALES['full'].users
+        choices = plan_normal_order(order_index, buyer_index,
+                                    2 if order_index < 4000 else 1, offers)
+        for offer_id, quantity in choices:
+            sold[offer_id] += quantity
+    assert max(sold.values()) <= 350
+    assert all(sold[row[0]] <= demo_product(row[6]).stock for row in offers)
 
 
 def test_un_mongo_uri_del_entorno_no_cambia_el_destino_de_la_carga(tmp_path, monkeypatch):
