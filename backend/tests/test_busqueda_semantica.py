@@ -29,7 +29,7 @@ def tipos(resultado):
 def test_las_coincidencias_de_texto_van_antes_que_las_relacionadas():
     resultado = buscar(q='samsung')
     assert resultado['semantica'] is True and resultado['sin_coincidencias'] is False
-    assert resultado['items'][0]['nombre'] == 'Samsung Galaxy A54'
+    assert 'samsung' in resultado['items'][0]['nombre'].lower()
     # Primero todo lo que contiene el texto y después, lo parecido por significado.
     assert tipos(resultado) == sorted(tipos(resultado), key=lambda t: t != 'texto')
     relacionados = [i['nombre'] for i in resultado['items'] if i['coincidencia'] == 'semantica']

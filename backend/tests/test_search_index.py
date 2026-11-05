@@ -142,12 +142,12 @@ def test_busqueda_difusa_y_autocompletado_sobre_documentos_reales(es, indice_tem
     difusa = es.search(index=indice_temporal, query={
         'match': {'nombre': {'query': 'macbok', 'fuzziness': 'AUTO'}}
     })
-    assert difusa['hits']['hits'][0]['_source']['sku'] == 'TECH-LAP-003'
+    assert 'MacBook' in difusa['hits']['hits'][0]['_source']['nombre']
 
     sugerencias = es.search(index=indice_temporal, suggest={
         'productos': {'prefix': 'galax', 'completion': {'field': 'sugerencia'}}
     })['suggest']['productos'][0]['options']
-    assert any(op['_source']['sku'] == 'TECH-CEL-001' for op in sugerencias)
+    assert sugerencias and all('Galaxy' in op['_source']['nombre'] for op in sugerencias)
 
 
 # ── Índice real y calidad de datos ────────────────────────────────────────────

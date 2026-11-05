@@ -6,11 +6,13 @@ sesión, los vistos se guardan en Redis (``vistos:{usuario_id}``, los últimos
 los suyos. El carrito se lee sin renovar su TTL: mirar recomendaciones no es
 actividad sobre el carrito.
 
-Consulta: una cláusula kNN por semilla en la misma búsqueda, con su peso
-(carrito 2, vistos 1 → 0.8 → 0.64… por antigüedad). Elasticsearch suma los
-puntajes: cada interés aporta sus vecinos y lo que se parece a varios sube.
-Se prefirió a promediar los vectores porque el promedio de una laptop y unos
-audífonos cae «en medio» y no se parece a ninguno de los dos.
+Consulta: una búsqueda kNN por semilla (un solo viaje con ``msearch``) y los
+resultados se intercalan por turnos en orden de peso (carrito 2, vistos 1 →
+0.8 → 0.64… por antigüedad): cada interés aporta sus vecinos. Sumar los
+puntajes en una sola búsqueda dejaba que la categoría con más productos
+parecidos ocupara todos los lugares. Se prefirió a promediar los vectores
+porque el promedio de una laptop y unos audífonos cae «en medio» y no se
+parece a ninguno de los dos.
 
 Escala: el resultado se guarda 10 minutos por combinación de semillas
 (``para_ti:{huella}``); los vectores de las semillas ya están en el índice, así
@@ -118,20 +120,45 @@ def _vecinos(es: Elasticsearch, elegidas: list[tuple[str, float]], excluir: list
             'filter': [{'term': {'estado': 'activo'}}],
             'must_not': [{'ids': {'values': excluir}}],
         }}
-        respuesta = es.search(
-            index=settings.ES_INDEX_ALIAS, size=cantidad, source=False,
-            knn=[{
-                'field': 'vector', 'query_vector': vectores[ref], 'k': cantidad,
-                'num_candidates': CANDIDATOS_KNN, 'filter': filtro, 'boost': peso,
-            } for ref, peso in elegidas if ref in vectores],
-        )
+        # Una búsqueda kNN por semilla (en un solo viaje con msearch).
+        consultas = [ref for ref, _ in elegidas if ref in vectores]
+        cuerpo = []
+        for ref in consultas:
+            cuerpo += [{'index': settings.ES_INDEX_ALIAS}, {
+                'size': cantidad, '_source': False,
+                'knn': {'field': 'vector', 'query_vector': vectores[ref], 'k': cantidad,
+                        'num_candidates': CANDIDATOS_KNN, 'filter': filtro},
+            }]
+        respuestas = es.msearch(searches=cuerpo)['responses']
     except (TransportError, ApiError) as exc:
         if isinstance(exc, TransportError):
             salud.registrar_falla('elasticsearch', exc)
         logger.warning('No se pudieron calcular las recomendaciones del inicio: %s', exc)
         return None
+    if any('error' in r for r in respuestas):
+        logger.warning('No se pudieron calcular las recomendaciones del inicio: %s',
+                       next(r['error'] for r in respuestas if 'error' in r))
+        return None
     salud.registrar_exito('elasticsearch')
-    return [hit['_id'] for hit in respuesta['hits']['hits']]
+    return _intercalar([[hit['_id'] for hit in r['hits']['hits']] for r in respuestas], cantidad)
+
+
+def _intercalar(listas: list[list[str]], cantidad: int) -> list[str]:
+    """Turnos por semilla, en orden de peso: cada interés aporta sus vecinos.
+
+    Sumar los puntajes en una sola búsqueda dejaba que la categoría con más
+    productos parecidos (p. ej. cientos de audífonos) ocupara todos los lugares.
+    """
+    resultado: list[str] = []
+    posiciones = [0] * len(listas)
+    while len(resultado) < cantidad and any(p < len(l) for p, l in zip(posiciones, listas)):
+        for i, lista in enumerate(listas):
+            while posiciones[i] < len(lista) and lista[posiciones[i]] in resultado:
+                posiciones[i] += 1
+            if posiciones[i] < len(lista) and len(resultado) < cantidad:
+                resultado.append(lista[posiciones[i]])
+                posiciones[i] += 1
+    return resultado
 
 
 def recomendar(

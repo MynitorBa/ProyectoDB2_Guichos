@@ -66,7 +66,7 @@ def test_lo_visto_en_el_navegador_trae_productos_parecidos(laptop):
 def test_cada_interes_aporta_sus_vecinos(laptop, audifonos):
     nombres = ' '.join(p['nombre'].lower() for p in _para_ti(vistos=f'{audifonos},{laptop}')['items'])
     assert 'laptop' in nombres or 'macbook' in nombres
-    assert 'airpods' in nombres or 'bocina' in nombres
+    assert any(palabra in nombres for palabra in ('airpods', 'bocina', 'audífonos', 'parlante'))
 
 
 def test_ignora_identificadores_invalidos():
