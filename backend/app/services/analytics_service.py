@@ -8,8 +8,9 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from bson import ObjectId
+from cassandra.concurrent import execute_concurrent
 from pymongo.errors import PyMongoError
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.db_cassandra import get_cassandra_session
@@ -21,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 GT_TZ = timezone(timedelta(hours=-6))
 ZERO = Decimal('0.00')
+# Sentencias en vuelo a la vez. Con una ida y vuelta por fila, una semana con
+# volumen tardaba ~70 s; en paralelo la latencia de red deja de sumarse.
+CONCURRENCIA = 64
+
+
+def _ejecutar(cassandra, sentencias: list) -> list:
+    """Ejecuta pares ``(sentencia, parámetros)`` en paralelo y espera a todas."""
+    if not sentencias:
+        return []
+    return execute_concurrent(cassandra, sentencias, concurrency=CONCURRENCIA, raise_on_first_error=True)
 
 
 def current_week_start(now: datetime | None = None) -> date:
@@ -46,7 +57,7 @@ def _utc_bounds(week_start: date) -> tuple[datetime, datetime]:
     )
 
 
-def _paid_lines(db: Session, week_start: date | None = None) -> list[dict]:
+def _paid_lines(db: Session, week_start: date | None = None, producto_refs=None) -> list[dict]:
     where = """
       EXISTS (
         SELECT 1 FROM pagos pg
@@ -65,6 +76,11 @@ def _paid_lines(db: Session, week_start: date | None = None) -> list[dict]:
         start, end = _utc_bounds(week_start)
         where += ' AND p.fecha_creacion >= :start AND p.fecha_creacion < :end'
         params = {'start': start, 'end': end}
+    if producto_refs is not None:
+        if not producto_refs:
+            return []
+        where += ' AND pl.producto_ref IN :refs'
+        params['refs'] = list(producto_refs)
     query = text(f"""
       SELECT
         pl.id AS pedido_linea_id,
@@ -105,6 +121,8 @@ def _paid_lines(db: Session, week_start: date | None = None) -> list[dict]:
       WHERE {where}
       ORDER BY p.fecha_creacion, pl.id
     """)
+    if 'refs' in params:
+        query = query.bindparams(bindparam('refs', expanding=True))
     return [dict(row) for row in db.execute(query, params).mappings().all()]
 
 
@@ -195,18 +213,18 @@ def _write_rows(cassandra, rows: list[dict], mongo) -> dict:
         # La imagen es solo decorativa: MongoDB caído no debe detener la analítica.
         logger.warning('MongoDB no disponible para imágenes de analítica; se conservan las actuales: %s', exc)
         images = _imagenes_actuales(cassandra, {(_week_for_row(row), row['producto_ref']) for row in rows})
+    sentencias = []
     for row in rows:
         week = _week_for_row(row)
-        refunded = row['estado_pago'] == 'reembolsado'
         flash_id = row['promocion_flash_id']
-        cassandra.execute(detail, (
+        sentencias.append((detail, (
             row['producto_ref'], week, row['fecha_hora'], row['pedido_linea_id'],
             row['pedido_id'], row['oferta_id'], row['vendedor_id'], row['variante_id'],
             row['sku_snapshot'], row['producto_nombre_snapshot'],
             row['vendedor_nombre_snapshot'], row['cantidad'], row['precio_unitario'],
             row['subtotal'], 'flash' if flash_id else 'normal', flash_id,
             row['estado_pago'],
-        ))
+        )))
         product_groups[(week, row['producto_ref'])].append(row)
         vendor_groups[(row['vendedor_id'], week, row['oferta_id'])].append(row)
         vendor_product_groups[(row['vendedor_id'], row['producto_ref'], week)].append(row)
@@ -226,14 +244,14 @@ def _write_rows(cassandra, rows: list[dict], mongo) -> dict:
             sum(row['cantidad'] for row in group if row['promocion_flash_id'] and row['estado_pago'] != 'reembolsado'),
             updated,
         )
-        cassandra.execute(product_summary, (week, product_ref, *summary_values))
-        cassandra.execute(product_trend, (product_ref, week, *summary_values))
+        sentencias.append((product_summary, (week, product_ref, *summary_values)))
+        sentencias.append((product_trend, (product_ref, week, *summary_values)))
 
     for (vendor_id, week, offer_id), group in vendor_groups.items():
         refunded_rows = [row for row in group if row['estado_pago'] == 'reembolsado']
         gross = sum((row['subtotal'] for row in group), ZERO)
         refunded = sum((row['subtotal'] for row in refunded_rows), ZERO)
-        cassandra.execute(vendor_summary, (
+        sentencias.append((vendor_summary, (
             vendor_id, week, offer_id, group[-1]['producto_ref'],
             group[-1]['producto_nombre_snapshot'], group[-1]['sku_snapshot'],
             sum(row['cantidad'] for row in group if row['estado_pago'] != 'reembolsado'),
@@ -241,13 +259,13 @@ def _write_rows(cassandra, rows: list[dict], mongo) -> dict:
             len({row['pedido_id'] for row in group if row['estado_pago'] != 'reembolsado'}),
             sum(row['cantidad'] for row in group if row['promocion_flash_id'] and row['estado_pago'] != 'reembolsado'),
             updated,
-        ))
+        )))
 
     for (vendor_id, product_ref, week), group in vendor_product_groups.items():
         refunded_rows = [row for row in group if row['estado_pago'] == 'reembolsado']
         gross = sum((row['subtotal'] for row in group), ZERO)
         refunded = sum((row['subtotal'] for row in refunded_rows), ZERO)
-        cassandra.execute(vendor_product_trend, (
+        sentencias.append((vendor_product_trend, (
             vendor_id, product_ref, week, group[-1]['producto_nombre_snapshot'],
             sum(row['cantidad'] for row in group if row['estado_pago'] != 'reembolsado'),
             gross, refunded, gross - refunded,
@@ -255,7 +273,8 @@ def _write_rows(cassandra, rows: list[dict], mongo) -> dict:
             len({row['oferta_id'] for row in group if row['estado_pago'] != 'reembolsado'}),
             sum(row['cantidad'] for row in group if row['promocion_flash_id'] and row['estado_pago'] != 'reembolsado'),
             updated,
-        ))
+        )))
+    _ejecutar(cassandra, sentencias)
     return {
         'lineas': len(rows),
         'productos_semana': len(product_groups),
@@ -311,30 +330,82 @@ def rebuild_week(week_start: date, db: Session, cassandra=None, mongo=None) -> d
         (row['vendedor_id'], row['producto_ref']) for row in rows
     })
     target.execute('DELETE FROM resumen_productos_semana WHERE semana_inicio=%s', (week_start,))
+    _borrar(target, week_start, refs, {(vendor_id, None) for vendor_id in vendors}, vendor_product_pairs)
+    return _write_rows(target, rows, source_mongo)
+
+
+def _borrar(target, week_start: date, refs, ofertas_vendedor, vendor_product_pairs) -> None:
+    """Borra en paralelo las filas de la semana que se van a reescribir.
+
+    ``ofertas_vendedor`` son pares ``(vendedor_id, oferta_id)``; con
+    ``oferta_id`` ``None`` se borra la partición entera del vendedor esa semana.
+    """
+    detalle = target.prepare('DELETE FROM ventas_producto_semana WHERE producto_ref=? AND semana_inicio=?')
+    tendencia = target.prepare('DELETE FROM tendencia_producto_semana WHERE producto_ref=? AND semana_inicio=?')
+    vendedor = target.prepare(
+        'DELETE FROM resumen_ofertas_vendedor_semana WHERE vendedor_id=? AND semana_inicio=?')
+    oferta = target.prepare(
+        'DELETE FROM resumen_ofertas_vendedor_semana WHERE vendedor_id=? AND semana_inicio=? AND oferta_id=?')
+    vendedor_producto = target.prepare(
+        'DELETE FROM tendencia_producto_vendedor_semana WHERE vendedor_id=? AND producto_ref=? AND semana_inicio=?')
+    sentencias = []
     for ref in refs:
-        target.execute(
-            'DELETE FROM ventas_producto_semana WHERE producto_ref=%s AND semana_inicio=%s',
-            (ref, week_start),
-        )
-        target.execute(
-            'DELETE FROM tendencia_producto_semana WHERE producto_ref=%s AND semana_inicio=%s',
-            (ref, week_start),
-        )
-    for vendor_id in vendors:
-        target.execute(
-            'DELETE FROM resumen_ofertas_vendedor_semana WHERE vendedor_id=%s AND semana_inicio=%s',
-            (vendor_id, week_start),
-        )
+        sentencias += [(detalle, (ref, week_start)), (tendencia, (ref, week_start))]
+    for vendor_id, offer_id in ofertas_vendedor:
+        if offer_id is None:
+            sentencias.append((vendedor, (vendor_id, week_start)))
+        else:
+            sentencias.append((oferta, (vendor_id, week_start, offer_id)))
     for vendor_id, product_ref in vendor_product_pairs:
-        target.execute(
-            """DELETE FROM tendencia_producto_vendedor_semana
-               WHERE vendedor_id=%s AND producto_ref=%s AND semana_inicio=%s""",
-            (vendor_id, product_ref, week_start),
-        )
+        sentencias.append((vendedor_producto, (vendor_id, product_ref, week_start)))
+    _ejecutar(target, sentencias)
+
+
+def rebuild_products_week(week_start: date, refs, db: Session, cassandra=None, mongo=None) -> dict:
+    """Recalcula desde MySQL solo lo que depende de ``refs`` en la semana.
+
+    Cada fila de las cinco tablas sale de las líneas de un único producto (una
+    oferta pertenece a un solo producto), así que releer las líneas pagadas de
+    esos productos alcanza para reescribirlas completas y el resto de la semana
+    no cambia. Idempotente e independiente del orden, igual que
+    ``rebuild_week``, con el que deja exactamente las mismas filas.
+    """
+    target = cassandra or get_cassandra_session()
+    source_mongo = mongo if mongo is not None else get_mongo_db()
+    refs = set(refs)
+    if not refs:
+        return {'lineas': 0, 'productos_semana': 0, 'ofertas_vendedor_semana': 0}
+    rows = _paid_lines(db, week_start, refs)
+    start, end = _utc_bounds(week_start)
+    # Vendedores con alguna línea de estos productos en la semana, pagada o no:
+    # sus filas anteriores pueden haber dejado de valer (p. ej. una cancelación).
+    vendors = set(db.execute(text("""
+      SELECT DISTINCT pv.vendedor_id
+      FROM pedido_lineas pl
+      JOIN pedidos p ON p.id = pl.pedido_id
+      JOIN pedido_vendedores pv ON pv.id = pl.pedido_vendedor_id
+      WHERE p.fecha_creacion >= :start AND p.fecha_creacion < :end
+        AND pl.producto_ref IN :refs
+    """).bindparams(bindparam('refs', expanding=True)),
+        {'start': start, 'end': end, 'refs': list(refs)}).scalars().all())
+    vendors = sorted(vendors | {row['vendedor_id'] for row in rows})
+    # Lo ya proyectado también cuenta: así se borra lo que quedó de un pedido
+    # que ya no existe en MySQL.
+    consulta = target.prepare(
+        'SELECT oferta_id, producto_ref FROM resumen_ofertas_vendedor_semana WHERE vendedor_id=? AND semana_inicio=?')
+    proyectadas = _ejecutar(target, [(consulta, (vendor_id, week_start)) for vendor_id in vendors])
+    ofertas = {(row['vendedor_id'], row['oferta_id']) for row in rows}
+    for vendor_id, (_, filas) in zip(vendors, proyectadas):
+        ofertas |= {(vendor_id, fila.oferta_id) for fila in filas if fila.producto_ref in refs}
+    pares = {(vendor_id, ref) for vendor_id in vendors for ref in refs}
+    resumen = target.prepare('DELETE FROM resumen_productos_semana WHERE semana_inicio=? AND producto_ref=?')
+    _ejecutar(target, [(resumen, (week_start, ref)) for ref in refs])
+    _borrar(target, week_start, refs, ofertas, pares)
     return _write_rows(target, rows, source_mongo)
 
 
 def project_order(order_id: int) -> dict:
+    """Proyecta un pedido: solo sus productos en su semana, no la semana entera."""
     with SessionLocal() as db:
         moments = db.execute(
             text('SELECT fecha_creacion FROM pedidos WHERE id=:id'), {'id': order_id}
@@ -342,7 +413,10 @@ def project_order(order_id: int) -> dict:
         if not moments:
             return {'lineas': 0, 'productos_semana': 0, 'ofertas_vendedor_semana': 0}
         week = _week_for_row({'fecha_hora': moments[0]})
-        return rebuild_week(week, db)
+        refs = db.execute(
+            text('SELECT DISTINCT producto_ref FROM pedido_lineas WHERE pedido_id=:id'), {'id': order_id}
+        ).scalars().all()
+        return rebuild_products_week(week, refs, db)
 
 
 def _serialize_summary(row) -> dict:

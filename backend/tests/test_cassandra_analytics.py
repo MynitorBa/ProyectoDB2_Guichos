@@ -2,15 +2,20 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
+from sqlalchemy import text
+
 from app.core.db_cassandra import close_cassandra, get_cassandra_session
 from app.core.db_mysql import SessionLocal
 from app.services.analytics_service import (
     _paid_lines,
+    _utc_bounds,
     _week_for_row,
     current_week_start,
     product_trends,
     product_weekly_trend,
+    project_order,
     rebuild_all,
+    rebuild_week,
 )
 from app.services.outbox_service import project_event
 
@@ -127,6 +132,75 @@ def test_backfill_is_idempotent_and_matches_mysql():
         assert all('variacion_unidades' in item for item in trends)
     assert actual_net == expected_net
     assert actual_refunded == expected_refunded
+    close_cassandra()
+
+
+def _foto_semana(cassandra, db, week):
+    """Las cinco tablas de una semana, sin la marca de tiempo de actualización."""
+    def filas(query, params):
+        return sorted(
+            tuple(v for k, v in row._asdict().items() if k != 'actualizado_en')
+            for row in cassandra.execute(query, params)
+        )
+    start, end = _utc_bounds(week)
+    lineas = db.execute(text("""
+      SELECT DISTINCT pv.vendedor_id, pl.producto_ref FROM pedido_lineas pl
+      JOIN pedidos p ON p.id = pl.pedido_id
+      JOIN pedido_vendedores pv ON pv.id = pl.pedido_vendedor_id
+      WHERE p.fecha_creacion >= :start AND p.fecha_creacion < :end
+    """), {'start': start, 'end': end}).all()
+    refs = sorted({ref for _, ref in lineas})
+    vendedores = sorted({vendor for vendor, _ in lineas})
+    return {
+        'resumen': filas('SELECT * FROM resumen_productos_semana WHERE semana_inicio=%s', (week,)),
+        'detalle': [f for ref in refs for f in filas(
+            'SELECT * FROM ventas_producto_semana WHERE producto_ref=%s AND semana_inicio=%s', (ref, week))],
+        'tendencia': [f for ref in refs for f in filas(
+            'SELECT * FROM tendencia_producto_semana WHERE producto_ref=%s AND semana_inicio=%s', (ref, week))],
+        'ofertas': [f for vendor in vendedores for f in filas(
+            'SELECT * FROM resumen_ofertas_vendedor_semana WHERE vendedor_id=%s AND semana_inicio=%s',
+            (vendor, week))],
+        'vendedor_producto': [f for vendor, ref in sorted(lineas) for f in filas(
+            """SELECT * FROM tendencia_producto_vendedor_semana
+               WHERE vendedor_id=%s AND producto_ref=%s AND semana_inicio=%s""", (vendor, ref, week))],
+    }
+
+
+def test_proyeccion_por_pedido_equivale_a_reconstruir_la_semana():
+    """Solo se recalculan los productos del pedido, y el resultado es el mismo
+    que reconstruir la semana entera; también limpia filas que ya no valen."""
+    cassandra = get_cassandra_session()
+    with SessionLocal() as db:
+        pedido = db.execute(text("""
+          SELECT p.id, p.fecha_creacion, pl.producto_ref, pl.oferta_id, pv.vendedor_id
+          FROM pedidos p
+          JOIN pedido_lineas pl ON pl.pedido_id = p.id
+          JOIN pedido_vendedores pv ON pv.id = pl.pedido_vendedor_id
+          JOIN pagos pg ON pg.pedido_id = p.id AND pg.estado = 'aprobado'
+          ORDER BY p.fecha_creacion DESC LIMIT 1
+        """)).one()
+        week = _week_for_row({'fecha_hora': pedido.fecha_creacion})
+        rebuild_week(week, db, cassandra)
+        esperado = _foto_semana(cassandra, db, week)
+        assert esperado['resumen'] and esperado['ofertas']
+
+        # Restos inválidos de los productos del pedido: cifras viejas, una línea
+        # y una oferta que ya no existen en MySQL.
+        cassandra.execute(
+            'UPDATE resumen_productos_semana SET unidades_vendidas=999 WHERE semana_inicio=%s AND producto_ref=%s',
+            (week, pedido.producto_ref))
+        cassandra.execute(
+            """INSERT INTO ventas_producto_semana (producto_ref, semana_inicio, fecha_hora, pedido_linea_id,
+               cantidad) VALUES (%s, %s, %s, %s, 1)""",
+            (pedido.producto_ref, week, pedido.fecha_creacion, -1))
+        cassandra.execute(
+            """INSERT INTO resumen_ofertas_vendedor_semana (vendedor_id, semana_inicio, oferta_id, producto_ref,
+               unidades_vendidas) VALUES (%s, %s, %s, %s, 5)""",
+            (pedido.vendedor_id, week, -1, pedido.producto_ref))
+        assert _foto_semana(cassandra, db, week) != esperado
+
+        project_order(pedido.id)
+        assert _foto_semana(cassandra, db, week) == esperado
     close_cassandra()
 
 
