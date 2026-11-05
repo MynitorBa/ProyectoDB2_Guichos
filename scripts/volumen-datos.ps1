@@ -161,6 +161,10 @@ try {
     Paso 'Analítica de respaldo en MySQL'
     & $Python scripts\backfill_mysql_analytics.py --apply; Exigir 'analítica MySQL'
     Paso 'Neo4j (compras y reseñas)'
+    # El backfill es aditivo: se vacía el grafo (es una proyección de MySQL) para que no
+    # queden compras de pedidos que ya no existen en los datos cargados.
+    & $Python -c "from app.core.db_neo4j import get_driver; s=get_driver().session(); s.run('MATCH (n) DETACH DELETE n').consume(); s.close(); print('grafo vaciado')"
+    Exigir 'vaciar Neo4j'
     & $Python scripts\backfill_neo4j_reviews.py --apply; Exigir 'Neo4j'
     Paso 'Proyecciones de MongoDB y copia del catálogo'
     & $Python scripts\sync_mongo_projections.py; Exigir 'proyecciones MongoDB'
@@ -178,7 +182,9 @@ try {
     Paso 'Caché de recomendaciones y análisis de fraude'
     & $Python -c "from app.core.db_mysql import SessionLocal; from app.core.db_neo4j import get_driver; from app.services.recommendation_service import recalcular_cache; n=get_driver().session(); db=SessionLocal(); print('recomendaciones en cache:', recalcular_cache(n, db)); db.close(); n.close()"
     Exigir 'caché de recomendaciones'
-    & $Python scripts\run_fraud_analysis.py --once; Exigir 'análisis de fraude'
+    # Directo al servicio: run_fraud_analysis.py --once respeta FRAUD_ANALYSIS_ENABLED=false.
+    & $Python -c "from app.services.fraud_analysis_service import run_fraud_analysis_once; r=run_fraud_analysis_once('manual'); print('análisis de fraude:', r.get('estado') if isinstance(r, dict) else r)"
+    Exigir 'análisis de fraude'
 
     Paso 'Verificación'
     & $Python scripts\verify_setup.py
