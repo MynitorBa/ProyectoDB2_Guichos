@@ -384,3 +384,33 @@ def test_variant_request_includes_offer(db):
             approve_request(request['id'], ReviewPayload(), admin, db, mongo)
     finally:
         mongo.producto_variantes.delete_one({'producto_ref': str(product['_id']), 'atributos': attrs})
+
+
+def test_admin_refund_returns_the_charge_in_the_gateway(db):
+    """El reembolso del administrador devuelve el cargo en la pasarela, no solo en MySQL."""
+    from app.services import payment_gateway_client as pg
+    order, parts, lines, admin = example_order(db)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
+    clave = str(uuid.uuid4())
+    pasarela = pg.get_pasarela()
+    assert pasarela.cobrar(clave, Decimal('70.00'), f'pedido-{order.id}').estado == pg.APROBADO
+    payment.clave_idempotencia = clave
+    db.commit()
+    admin_status(db, order.id, admin, 'cancelado')
+    admin_status(db, order.id, admin, 'reembolsado')
+    assert payment.estado == 'reembolsado'
+    assert pasarela.consultar(clave).estado == pg.REEMBOLSADO
+
+
+def test_admin_refund_not_confirmed_by_gateway_changes_nothing(db):
+    """Si la pasarela no confirma el reembolso, el pago no se marca como reembolsado."""
+    order, parts, lines, admin = example_order(db)
+    payment = db.query(Pago).filter_by(pedido_id=order.id).one()
+    payment.clave_idempotencia = str(uuid.uuid4())  # cobro que la pasarela no conoce
+    db.commit()
+    admin_status(db, order.id, admin, 'cancelado')
+    with pytest.raises(HTTPException) as exc:
+        admin_status(db, order.id, admin, 'reembolsado')
+    assert exc.value.status_code == 503
+    db.rollback()
+    assert db.get(Pago, payment.id).estado == 'aprobado'

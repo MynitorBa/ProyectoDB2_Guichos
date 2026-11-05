@@ -113,18 +113,25 @@ def pedidos_vendidos_con_pago(db: Session) -> dict:
 
 
 def cancelados_liberan_reserva(db: Session) -> dict:
-    """I4: todo pedido cancelado devolvió exactamente lo que reservó."""
+    """I4: todo pedido cancelado devolvió exactamente lo que reservó.
+
+    Un pedido cancelado antes de confirmarse libera su reserva. Uno cancelado
+    después (por el administrador, antes del primer envío) ya la había
+    convertido en venta (salida), y la cancelación repone esas unidades (entrada).
+    """
     violaciones = _filas(db, """
         SELECT pe.id AS pedido_id,
                SUM(CASE WHEN mi.tipo = 'reserva' THEN mi.cantidad ELSE 0 END) AS reservado,
-               SUM(CASE WHEN mi.tipo = 'liberacion' THEN mi.cantidad ELSE 0 END) AS liberado
+               SUM(CASE WHEN mi.tipo = 'liberacion' THEN mi.cantidad ELSE 0 END) AS liberado,
+               SUM(CASE WHEN mi.tipo = 'salida' THEN mi.cantidad ELSE 0 END) AS vendido,
+               SUM(CASE WHEN mi.tipo = 'entrada' THEN mi.cantidad ELSE 0 END) AS repuesto
         FROM pedidos pe JOIN movimientos_inventario mi ON mi.pedido_id = pe.id
-        WHERE pe.estado = 'cancelado' AND pe.clave_idempotencia IS NOT NULL
+        WHERE pe.estado IN ('cancelado', 'reembolsado') AND pe.clave_idempotencia IS NOT NULL
         GROUP BY pe.id
-        HAVING reservado <> liberado
+        HAVING reservado <> liberado + vendido OR vendido <> repuesto
     """)
     return _resultado('I4', 'Cada pedido cancelado liberó su reserva', violaciones,
-                      'Suma de movimientos de reserva = suma de liberaciones.')
+                      'Reserva = liberado + vendido, y todo lo vendido se repuso al cancelar.')
 
 
 def sin_sagas_atascadas(db: Session) -> dict:

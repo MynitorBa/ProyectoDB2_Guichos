@@ -2,6 +2,7 @@
 
 El inventario ya se descuenta en checkout: despachar no lo vuelve a descontar.
 """
+import logging
 from datetime import timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from app.models.pedido_vendedor import PedidoVendedor, PedidoDireccion
 from app.models.pedido_envio import PedidoEnvio, PedidoEnvioLinea
 from app.models.vendedor import Vendedor
 from app.models.notificacion import Notificacion
+
+logger = logging.getLogger(__name__)
 
 TERMINAL = {'cancelado', 'reembolsado'}
 
@@ -30,6 +33,24 @@ def _payment_allows_fulfillment(db, order):
     if payment.estado != 'aprobado' and not cash_on_delivery:
         raise HTTPException(409, 'El pago todavía no está aprobado. Espera la conciliación de la pasarela.')
     return payment
+
+
+def _reembolsar_en_pasarela(payment):
+    """Devuelve el cargo en la pasarela antes de marcar el pago como reembolsado.
+
+    Solo los cobros de la saga tienen cargo en la pasarela (clave de idempotencia).
+    El reembolso es idempotente: repetirlo no devuelve dos veces. Si la pasarela no
+    lo confirma, no se toca MySQL, para que el pago no diga «reembolsado» mientras
+    el cliente sigue cobrado.
+    """
+    if not payment.clave_idempotencia:
+        return
+    from app.services import payment_gateway_client as pg
+    resultado = pg.get_pasarela().reembolsar(payment.clave_idempotencia)
+    if resultado.estado != pg.REEMBOLSADO:
+        logger.warning('Reembolso del pago #%s sin confirmar en la pasarela: %s %s',
+                       payment.id, resultado.estado, resultado.detalle)
+        raise HTTPException(503, 'No se pudo confirmar el reembolso con la pasarela. Intenta de nuevo en unos minutos.')
 
 
 def progress_state(total, sent, delivered, fallback='confirmado'):
@@ -231,6 +252,7 @@ def admin_status(db, order_id, user, target):
             raise HTTPException(409, 'No hay un pago aprobado que se pueda reembolsar.')
         for payment in order.pagos:
             if payment.estado == 'aprobado':
+                _reembolsar_en_pasarela(payment)
                 payment.estado = 'reembolsado'
     else:
         raise HTTPException(409, 'Utiliza los botones de preparación y envío del subpedido. El estado global es calculado.')
