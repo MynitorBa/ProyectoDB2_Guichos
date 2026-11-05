@@ -22,8 +22,7 @@ entornos por turnos.
 ## Alcance
 
 El entorno DEMO está diseñado para observar volumen, tendencias y patrones
-F01–F06 sin mezclar un solo registro con la instancia principal. F07 permanece
-fuera de alcance. Esta preparación no autoriza borrar volúmenes ni reutilizar
+F01–F07 sin mezclar un solo registro con la instancia principal. Esta preparación no autoriza borrar volúmenes ni reutilizar
 puertos productivos.
 
 ## Aislamiento
@@ -62,6 +61,15 @@ correos y textos son sintéticos y están marcados con un `run_id`. La semilla
 predeterminada es reproducible. Una tabla local `demo_seed_runs` registra el
 avance y las métricas de cada corrida.
 
+La corrida realista nueva usa `entrega4-realista-v1`; la histórica
+`entrega3-demo-v1` se conserva y el generador rechaza sobrescribirla. Antes de
+cargar, identificar y respaldar los volúmenes de la DEMO correspondiente. Un
+`--validate-only` comprueba el destino sin crear registros. Los productos de
+la nueva corrida usan familias de 12 categorías, atributos, variantes,
+descripciones y precios coherentes. Los usuarios y comercios son ficticios;
+los correos terminan en `example.invalid`. El stock mostrado en MongoDB se
+reconcilia con inventario MySQL al terminar cada perfil.
+
 ## Perfiles
 
 | Perfil | Usuarios | Vendedores | Productos | Ofertas | Pedidos | Líneas | Reseñas |
@@ -89,6 +97,8 @@ queda disponible para probar carritos y TTL sin crear reservas permanentes.
 - **F05:** propietarios de vendedor realizan compras pagadas de ofertas propias.
 - **F06:** ofertas seleccionadas reciben al menos tres ajustes positivos hechos
   por el propietario, junto con ventas pagadas y movimientos normales.
+- **F07:** pares deterministas de venta pagada y reposición posterior de la
+  misma oferta y cantidad, más casos negativos y ambiguos excluidos.
 
 Las reglas siguen siendo heurísticas explicables; estos datos permiten medir
 verdaderos/falsos positivos conocidos, no afirmar precisión de un modelo de IA.

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import uuid
@@ -25,21 +26,51 @@ from pathlib import Path
 import pymysql
 from bson import ObjectId
 from dotenv import dotenv_values
-from pymongo import MongoClient, ReplaceOne
+from pymongo import MongoClient, UpdateOne
+
+if __package__:
+    from .demo_catalog_data import category_for, demo_person_name, demo_product, demo_store_description, demo_store_name
+else:
+    from demo_catalog_data import category_for, demo_person_name, demo_product, demo_store_description, demo_store_name
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ROOT = BACKEND_DIR.parent
 PASSWORD_HASH = '$2b$12$m4eWOlabkSnzoaioHQMc0Oa/pzArcAD.Mn0O1sq2L5DaoYqF7IZru'
 NAMESPACE = uuid.UUID('ba93f2bd-841e-4dfc-83fc-c7f9330c51fe')
-PRODUCT_KINDS = (
-    'Laptop', 'Teléfono', 'Audífonos', 'Camisa', 'Pantalón', 'Zapatos',
-    'Lámpara', 'Libro', 'Balón', 'Café', 'Juego', 'Taladro',
-)
-
-
 def demo_product_name(index: int) -> str:
-    return f'{PRODUCT_KINDS[index % len(PRODUCT_KINDS)]} DEMO modelo {index:04d}'
+    return demo_product(index).name
+
+
+def run_tags(run_id: str) -> tuple[str, str]:
+    """Identificadores sin colisiones entre corridas; respeta la DEMO histórica."""
+    if run_id == 'entrega3-demo-v1':
+        return run_id[:5].upper(), run_id[:8]
+    tag = hashlib.sha256(run_id.encode()).hexdigest()[:12].upper()
+    return tag, tag[:10]  # NIT es VARCHAR(20): DEMO- + 10 + - + 4
+
+
+RELATED_CATEGORY = (1, 2, 0, 4, 5, 3, 7, 8, 6, 10, 11, 9)
+
+
+def plan_normal_order(order_index: int, buyer_index: int, line_count: int, offers) -> list[tuple[int, int]]:
+    """Afinidad estable por comprador, complementos y demanda desigual."""
+    affinity = buyer_index % 12
+    choices = []
+    for line_index in range(line_count):
+        category = affinity if line_index == 0 else RELATED_CATEGORY[affinity]
+        pool = [row for row in offers if category_for(row[6]) == category]
+        if not pool:
+            raise RuntimeError(f'No existen ofertas DEMO de la categoría {category}')
+        draw = int.from_bytes(hashlib.sha256(
+            f'{order_index}:{buyer_index}:{line_index}:{category}'.encode()
+        ).digest()[:8], 'big')
+        if draw % 5 == 0:
+            position = (draw // 5) % min(2, len(pool))
+        else:
+            position = (draw // 5) % len(pool)
+        choices.append((pool[position][0], 1 + int((order_index + line_index) % 3 == 0)))
+    return choices
 
 
 @dataclass(frozen=True)
@@ -173,6 +204,7 @@ class DemoSeeder:
         self.scale = scale
         self.rng = random.Random(seed)
         self.run_id = run_id
+        self.sku_tag, self.seller_tag = run_tags(run_id)
         self.batch_size = batch_size
         self.now = datetime.now().replace(microsecond=0)
         self.prefix = f'demo-{run_id}'
@@ -244,7 +276,8 @@ class DemoSeeder:
             is_seller = i < seller_count
             rows.append((
                 f'{self.prefix}.u{i:05d}@example.invalid', PASSWORD_HASH,
-                f'Demo{i:05d}', 'Sintético', f'555{i:08d}'[-11:], 'activo', 1,
+                *demo_person_name(i),
+                f'555{i:08d}'[-11:], 'activo', 1,
             ))
         self.many("""
             INSERT IGNORE INTO usuarios
@@ -268,13 +301,13 @@ class DemoSeeder:
               (usuario_id,nombre_comercial,nit,descripcion,estado_verificacion,es_tiendaya)
             VALUES (%s,%s,%s,%s,'verificado',0)
         """, [
-            (uid, f'DEMO Tienda {i:03d}', f'DEMO-{self.run_id[:8]}-{i:04d}',
-             'Vendedor sintético; no representa una persona o empresa real.')
+            (uid, demo_store_name(i), f'DEMO-{self.seller_tag}-{i:04d}',
+             demo_store_description(i))
             for i, uid in enumerate(user_ids[:seller_count])
         ])
         seller_by_user = self.fetch_map(
             "SELECT usuario_id k,id v FROM vendedores WHERE nit LIKE %s",
-            (f'DEMO-{self.run_id[:8]}-%',),
+            (f'DEMO-{self.seller_tag}-%',),
         )
         return user_ids, [seller_by_user[x] for x in user_ids[:seller_count]]
 
@@ -283,7 +316,7 @@ class DemoSeeder:
         products = []
         for i in range(self.scale.products):
             ref = ref_for(self.run_id, 'product', i)
-            products.append((ref, categories[i % len(categories)], self.now - timedelta(days=180 - i % 180)))
+            products.append((ref, categories[category_for(i)], self.now - timedelta(days=180 - i % 180)))
         self.many("""
             INSERT IGNORE INTO producto_referencias(producto_ref,categoria_id,fecha_creacion)
             VALUES (%s,%s,%s)
@@ -314,7 +347,7 @@ class DemoSeeder:
         i = 0
         while len(offers) < self.scale.offers:
             product_index = i % self.scale.products
-            seller_index = (i // self.scale.products + product_index) % len(seller_ids)
+            seller_index = (product_index // 8 + (i // self.scale.products) * 4) % len(seller_ids)
             pair = (product_index, seller_index)
             i += 1
             if pair in used_pairs:
@@ -322,8 +355,8 @@ class DemoSeeder:
             used_pairs.add(pair)
             ref = products[product_index][0]
             variant_ref = variants[product_index][1]
-            price = Decimal(25 + (product_index * 37 + seller_index * 11) % 4900).quantize(Decimal('0.01'))
-            sku = f'DEMO-{self.run_id[:5].upper()}-{len(offers):05d}'
+            price = demo_product(product_index).price + Decimal(seller_index % 3 * 10)
+            sku = f'DEMO-{self.sku_tag}-{len(offers):05d}'
             offers.append((ref, variant_ids[variant_ref], seller_ids[seller_index], sku, price, 'GTQ', 'activa', self.now, self.now))
             offer_meta.append((ref, variant_ref, seller_ids[seller_index], sku, price, product_index))
         self.many("""
@@ -355,12 +388,12 @@ class DemoSeeder:
         )
         self.many("""
             INSERT IGNORE INTO inventario(oferta_id,cantidad_disponible,cantidad_reservada,punto_reorden,bodega)
-            SELECT %s,5000,0,20,'principal'
+            SELECT %s,%s,0,10,'principal'
             WHERE NOT EXISTS (
               SELECT 1 FROM inventario
               WHERE oferta_id=%s AND bodega IN ('principal','demo-principal')
             )
-        """, [(row[0], row[0]) for row in offer_rows])
+        """, [(row[0], demo_product(row[6]).stock, row[0]) for row in offer_rows])
         inventory_ids = self.fetch_map(
             'SELECT oferta_id k,id v FROM inventario WHERE bodega IN '
             "('principal','demo-principal') AND oferta_id IN (" +
@@ -388,11 +421,11 @@ class DemoSeeder:
         self.many("""
             INSERT INTO inventario_saldos_historial
               (inventario_id,cantidad_disponible,cantidad_reservada,vigente_desde,motivo)
-            SELECT %s,5000,0,%s,'Carga DEMO'
+            SELECT %s,%s,0,%s,'Carga DEMO'
             WHERE NOT EXISTS (
               SELECT 1 FROM inventario_saldos_historial WHERE inventario_id=%s AND motivo='Carga DEMO'
             )
-        """, [(inventory_ids[row[0]], self.now, inventory_ids[row[0]]) for row in offer_rows])
+        """, [(inventory_ids[row[0]], demo_product(row[6]).stock, self.now, inventory_ids[row[0]]) for row in offer_rows])
 
         docs = []
         category_names = {9: 'Computadoras', 10: 'Celulares', 11: 'Audio', 12: 'Camisas', 13: 'Pantalones', 14: 'Calzado', 3: 'Hogar', 4: 'Libros', 5: 'Deportes', 6: 'Alimentos', 7: 'Juguetes', 8: 'Herramientas'}
@@ -402,17 +435,19 @@ class DemoSeeder:
             first_offer.setdefault(row[1], row)
         for i, (ref, category_id, created) in enumerate(products):
             row = first_offer[ref]
-            docs.append(ReplaceOne({'_id': ObjectId(ref)}, {
+            product = demo_product(i)
+            document = {
                 '_id': ObjectId(ref), 'sku': row[4], 'nombre': demo_product_name(i),
-                'descripcion': 'Producto sintético generado para pruebas de volumen.',
+                'descripcion': product.description + ' Ficha sintética de demostración.',
                 'precio': float(row[5]), 'categoria': {'slug': category_slugs[category_id], 'nombre': category_names[category_id]},
                 'categorias': [{'slug': category_slugs[category_id], 'nombre': category_names[category_id]}],
-                'atributos': {'color': ['azul', 'negro', 'rojo'][i % 3], 'modelo_demo': i},
-                'variantes': [{'variante_ref': ref_for(self.run_id, 'variant', i), 'atributos': {'modelo': f'V{i:04d}'}}],
-                'estado': 'activo', 'disponible': True, 'stock': 5000,
+                'atributos': product.attributes,
+                'variantes': [{'variante_ref': ref_for(self.run_id, 'variant', i), 'atributos': product.variant_attributes}],
+                'estado': 'activo', 'disponible': True, 'stock': product.stock,
                 'fecha_creacion': created, 'fecha_actualizacion': self.now,
                 'demo_run_id': self.run_id,
-            }, upsert=True))
+            }
+            docs.append(UpdateOne({'_id': ObjectId(ref)}, {'$setOnInsert': document}, upsert=True))
         for batch in chunks(docs, self.batch_size):
             self.mongo.productos.bulk_write(batch, ordered=False)
         self.mongo.productos.create_index('demo_run_id')
@@ -420,18 +455,20 @@ class DemoSeeder:
         for i, (ref, _, _) in enumerate(products):
             variant_ref = ref_for(self.run_id, 'variant', i)
             row = first_offer[ref]
-            variant_docs.append(ReplaceOne({'_id': ObjectId(variant_ref)}, {
+            variant_attributes = demo_product(i).variant_attributes
+            document = {
                 '_id': ObjectId(variant_ref),
                 'producto_ref': ref,
                 'sku_catalogo': row[4],
-                'atributos': {'modelo': f'V{i:04d}'},
-                'clave_variante': f'modelo=V{i:04d}',
+                'atributos': variant_attributes,
+                'clave_variante': '|'.join(f'{key}={value}' for key, value in sorted(variant_attributes.items())),
                 'estado': 'activa',
                 'es_predeterminada': True,
                 'fecha_creacion': self.now,
                 'fecha_actualizacion': self.now,
                 'demo_run_id': self.run_id,
-            }, upsert=True))
+            }
+            variant_docs.append(UpdateOne({'_id': ObjectId(variant_ref)}, {'$setOnInsert': document}, upsert=True))
         for batch in chunks(variant_docs, self.batch_size):
             self.mongo.producto_variantes.bulk_write(batch, ordered=False)
         return products, offer_rows, inventory_ids
@@ -456,7 +493,8 @@ class DemoSeeder:
         planned: list[list[tuple[int, int]]] = []
         extra_lines = max(0, self.scale.lines - self.scale.orders)
         for i in range(self.scale.orders):
-            buyer = ordinary_buyers[(i * 17 + 7) % len(ordinary_buyers)]
+            buyer_index = (i * 17 + 7) % len(ordinary_buyers)
+            buyer = ordinary_buyers[buyer_index]
             line_count = 2 if i < extra_lines else 1
             choices = []
             scenario = planned_fraud_order(
@@ -467,9 +505,7 @@ class DemoSeeder:
                 if special_buyer is not None:
                     buyer = special_buyer
             else:
-                for j in range(line_count):
-                    offer = offers[(i * 13 + j * 29) % len(offers)]
-                    choices.append((offer[0], 1 + ((i + j) % 3 == 0)))
+                choices = plan_normal_order(i, buyer_index, line_count, offers)
             planned.append(choices)
             paid = i < 71 or i % 20 != 0
             state = 'entregado' if paid else 'cancelado'
@@ -539,7 +575,7 @@ class DemoSeeder:
                 meta = offer_by_id[offer_id]
                 seller_id, sku, price, product_index = meta[3], meta[4], meta[5], meta[6]
                 line_rows.append((order_id, grouped[seller_id], offer_id, meta[1], sku,
-                                  demo_product_name(product_index), f'DEMO Tienda {seller_ids.index(seller_id):03d}',
+                                  demo_product_name(product_index), demo_store_name(seller_ids.index(seller_id)),
                                   price, qty, price * qty))
                 line_context.append((buyer, meta[1], seller_id, order_id, offer_id, paid, order_rows[i][9]))
                 if paid:
@@ -594,7 +630,7 @@ class DemoSeeder:
               JOIN pedido_vendedores pv ON pv.id=pl.pedido_vendedor_id
               JOIN pagos pa ON pa.pedido_id=p.id AND pa.estado='aprobado'
               WHERE pl.sku_snapshot LIKE %s ORDER BY pl.id
-            """, (f'DEMO-{self.run_id[:5].upper()}-%',))
+            """, (f'DEMO-{self.sku_tag}-%',))
             paid_lines = cur.fetchall()
         inventory_ids = complete_paid_line_inventory_ids(
             inventory_ids, paid_lines,
@@ -801,6 +837,30 @@ class DemoSeeder:
         result['mongo_productos'] = self.mongo.productos.count_documents({'demo_run_id': self.run_id})
         return result
 
+    def synchronize_catalog_stock(self) -> None:
+        """El stock mostrado refleja el inventario real tras ventas y ajustes DEMO."""
+        refs = [ref_for(self.run_id, 'product', i) for i in range(self.scale.products)]
+        with self.mysql.cursor() as cur:
+            cur.execute(
+                'SELECT o.producto_ref ref, '
+                'SUM(i.cantidad_disponible-i.cantidad_reservada) stock '
+                'FROM ofertas o JOIN inventario i ON i.oferta_id=o.id '
+                'WHERE o.producto_ref IN (' + ','.join(['%s'] * len(refs)) + ') '
+                "AND i.bodega IN ('principal','demo-principal') GROUP BY o.producto_ref",
+                tuple(refs),
+            )
+            stocks = {row['ref']: max(0, int(row['stock'])) for row in cur.fetchall()}
+        missing = set(refs) - stocks.keys()
+        if missing:
+            raise RuntimeError(f'Productos DEMO sin inventario: {len(missing)}')
+        operations = [
+            UpdateOne({'_id': ObjectId(ref), 'demo_run_id': self.run_id},
+                      {'$set': {'stock': stocks[ref], 'disponible': stocks[ref] > 0}})
+            for ref in refs
+        ]
+        for batch in chunks(operations, self.batch_size):
+            self.mongo.productos.bulk_write(batch, ordered=False)
+
     def run(self) -> dict:
         self.prepare_tracking()
         if self.already_complete:
@@ -812,6 +872,7 @@ class DemoSeeder:
         products, offers, inventory = self.seed_catalog(sellers)
         context = self.seed_orders(users, sellers, products, offers, inventory)
         self.seed_reviews_and_inventory_patterns(users, sellers, offers, inventory, context)
+        self.synchronize_catalog_stock()
         metrics = self.metrics()
         with self.mysql.cursor() as cur:
             cur.execute("""
@@ -826,7 +887,7 @@ class DemoSeeder:
         with self.mysql.cursor() as cur:
             cur.execute("SELECT id FROM usuarios WHERE email LIKE %s ORDER BY id", (f'{self.prefix}.u%@example.invalid',))
             users = [row['id'] for row in cur.fetchall()]
-            cur.execute("SELECT id FROM vendedores WHERE nit LIKE %s ORDER BY id", (f'DEMO-{self.run_id[:8]}-%',))
+            cur.execute("SELECT id FROM vendedores WHERE nit LIKE %s ORDER BY id", (f'DEMO-{self.seller_tag}-%',))
             sellers = [row['id'] for row in cur.fetchall()]
             cur.execute("""
               SELECT o.id,o.producto_ref,pvr.variante_ref,o.vendedor_id,o.sku,
@@ -834,7 +895,7 @@ class DemoSeeder:
               FROM ofertas o
               JOIN producto_variante_referencias pvr ON pvr.id=o.producto_variante_id
               WHERE o.sku LIKE %s ORDER BY o.id
-            """, (f'DEMO-{self.run_id[:5].upper()}-%',))
+            """, (f'DEMO-{self.sku_tag}-%',))
             offers = [tuple(row.values()) for row in cur.fetchall()]
         if not users or not sellers or not offers:
             raise RuntimeError('La corrida DEMO no existe o está incompleta; no se aplicaron escenarios.')
@@ -869,7 +930,7 @@ def main() -> int:
     parser.add_argument('--env-file', type=Path, required=True)
     parser.add_argument('--profile', choices=SCALES, default='small')
     parser.add_argument('--seed', type=int, default=20261018)
-    parser.add_argument('--run-id', default='entrega3-demo-v1')
+    parser.add_argument('--run-id', default='entrega4-realista-v1')
     parser.add_argument('--batch-size', type=int, default=500)
     parser.add_argument('--confirm-demo', action='store_true')
     parser.add_argument('--project', action='store_true', help='Reconstruye Cassandra, Neo4j y Elasticsearch.')
@@ -877,6 +938,8 @@ def main() -> int:
                         help='Agrega únicamente escenarios F05-F07 a una DEMO ya cargada.')
     parser.add_argument('--validate-only', action='store_true')
     args = parser.parse_args()
+    if not re.fullmatch(r'[A-Za-z0-9-]{3,64}', args.run_id):
+        raise SystemExit('--run-id solo admite letras, números y guiones (3–64 caracteres).')
     if not args.confirm_demo:
         raise SystemExit('Falta --confirm-demo; no se abrirá ninguna conexión.')
     cfg = load_demo_env(args.env_file.resolve())
@@ -884,6 +947,8 @@ def main() -> int:
     if args.validate_only:
         print('Validación segura completada; no se modificó ningún motor.')
         return 0
+    if args.run_id == 'entrega3-demo-v1' and not args.fraud_scenarios_only:
+        raise SystemExit('La corrida histórica no se sobrescribe con el catálogo nuevo; use un --run-id nuevo.')
     os.environ.update(cfg)
     seeder = DemoSeeder(cfg, SCALES[args.profile], seed=args.seed,
                         run_id=args.run_id, batch_size=args.batch_size)
