@@ -407,16 +407,16 @@ def reservar_pedido(
     for offer_id, quantity in quantities.items():
         candidates = by_offer[offer_id]
         if not candidates:
-            raise CheckoutError(
-                f'Oferta id={offer_id} no tiene inventario registrado.',
-                'NO_INVENTORY',
-            )
+            # El detalle técnico queda en el log (para el administrador); el cliente ve un mensaje claro.
+            logger.warning('Checkout: la oferta %s no tiene inventario registrado.', offer_id)
+            raise CheckoutError('Uno de los productos de tu carrito ya no está disponible.', 'NO_INVENTORY')
         if offer_id in flash_context:
             promotion, _ = flash_context[offer_id]
             try:
                 flash_inventory_id = inventario_id_promocion(db, promotion.id)
             except LookupError as exc:
-                raise CheckoutError(str(exc), 'FLASH_RESERVATION_INVALID') from exc
+                logger.warning('Checkout: %s', exc)
+                raise CheckoutError('La oferta flash ya no está disponible.', 'FLASH_RESERVATION_INVALID') from exc
             inventory = next((row for row in candidates if row.id == flash_inventory_id), None)
             available = min(
                 inventory.cantidad_reservada,
@@ -426,9 +426,12 @@ def reservar_pedido(
             inventory = seleccionar_inventario(candidates, quantity)
             available = stock_comprable(candidates)
         if available < quantity:
+            logger.info('Checkout: stock insuficiente en la oferta %s (disponible %s, solicitado %s).',
+                        offer_id, available, quantity)
             raise CheckoutError(
-                f'Stock insuficiente para oferta id={offer_id}. '
-                f'Disponible: {available}, solicitado: {quantity}',
+                'Uno de los productos de tu carrito se agotó.' if available <= 0 else
+                f'Uno de los productos de tu carrito ya no tiene suficientes unidades (quedan {available}). '
+                'Ajusta la cantidad e intenta de nuevo.',
                 'INSUFFICIENT_STOCK',
             )
         inventory_by_offer[offer_id] = inventory

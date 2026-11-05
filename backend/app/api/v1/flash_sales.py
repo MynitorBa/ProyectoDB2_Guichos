@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -29,6 +30,7 @@ from app.services.offer_service import (
 )
 from app.services.flash_sale_worker import encolar_cambio_flash
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/flash-sales', tags=['Ventas flash'])
 vendor_router = APIRouter(prefix='/vendor/flash-sales', tags=['Vendedor - ventas flash'])
 get_vendor_user = require_role('vendedor', 'administrador')
@@ -86,7 +88,8 @@ def _finish_if_needed(db: Session, r: redis_lib.Redis, promotion: PromocionFlash
         inventory = inventario_promocion(db, promotion, bloquear=True)
     except LookupError as exc:
         db.rollback()
-        raise HTTPException(409, str(exc)) from exc
+        logger.warning('Venta flash: %s', exc)
+        raise HTTPException(409, 'No se pudo ubicar el inventario de la promoción. Contacta al administrador.') from exc
     release = min(remaining, inventory.cantidad_reservada)
     inventory.cantidad_reservada -= release
     promotion.estado = 'finalizada'
@@ -253,7 +256,7 @@ def create_flash_sale(
         db.rollback()
         if promotion.id:
             _delete_redis_safely(r, promotion.id)
-        raise HTTPException(503, 'Redis no está disponible; no se creó la promoción.') from exc
+        raise HTTPException(503, 'No se pudo crear la promoción en este momento. Intenta de nuevo en unos minutos.') from exc
     except SQLAlchemyError:
         db.rollback()
         if redis_initialized and promotion.id:
@@ -422,7 +425,8 @@ def cancel_flash_sale(
         inventory = inventario_promocion(db, promotion, bloquear=True)
     except LookupError as exc:
         db.rollback()
-        raise HTTPException(409, str(exc)) from exc
+        logger.warning('Venta flash: %s', exc)
+        raise HTTPException(409, 'No se pudo ubicar el inventario de la promoción. Contacta al administrador.') from exc
     remaining = max(0, promotion.unidades_totales - promotion.unidades_vendidas)
     release = min(remaining, inventory.cantidad_reservada)
     inventory.cantidad_reservada -= release

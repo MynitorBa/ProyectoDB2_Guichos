@@ -20,6 +20,13 @@ export const uploadReviewImages = (resenaId, formData) =>
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 
+// Crea o edita la reseña con sus fotos en una sola petición: si una foto no es
+// válida, la reseña no se publica.
+export const publishReview = (formData) =>
+  api.post('/reviews/publicar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+
 export const getMiVendedor = () =>
   api.get('/reviews/mi-vendedor')
 

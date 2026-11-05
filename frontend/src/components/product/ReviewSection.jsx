@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Star, MessageSquare, Store, ImagePlus, X, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { getReviews, createReview, updateReview, createReply, uploadReviewImages, puedeOpinar, getMiVendedor } from '../../api/reviews'
+import { getReviews, createReply, publishReview, puedeOpinar, getMiVendedor } from '../../api/reviews'
 import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/button'
 
@@ -93,12 +93,15 @@ function ImageGrid({ imagenes }) {
 
 // ── Picker de imágenes (formulario) ─────────────────────────────────────────
 
+const MAX_BYTES_IMAGEN = 5 * 1024 * 1024
+const TIPOS_IMAGEN = ['image/jpeg', 'image/png', 'image/webp']
+
 function ImagePicker({ files, onChange }) {
   const inputRef = useRef(null)
   const previews = files.map(f => URL.createObjectURL(f))
   return (
     <div className="space-y-2">
-      <p className="text-xs text-[var(--color-text-muted)]">Fotos (máx. 4 · jpg, png, webp)</p>
+      <p className="text-xs text-[var(--color-text-muted)]">Fotos (máx. 4 · jpg, png, webp · hasta 5 MB cada una)</p>
       <div className="flex gap-2 flex-wrap">
         {previews.map((src, i) => (
           <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-[var(--color-border)]">
@@ -128,7 +131,12 @@ function ImagePicker({ files, onChange }) {
         accept=".jpg,.jpeg,.png,.webp"
         onChange={e => {
           const nuevos = Array.from(e.target.files || [])
-          onChange([...files, ...nuevos].slice(0, 4))
+          // Se revisa al elegir: una foto inválida nunca llega a enviarse.
+          const validos = nuevos.filter((f) => TIPOS_IMAGEN.includes(f.type) && f.size <= MAX_BYTES_IMAGEN)
+          if (validos.length < nuevos.length) {
+            toast.error('Algunas fotos no se agregaron: deben ser JPG, PNG o WEBP de hasta 5 MB.')
+          }
+          onChange([...files, ...validos].slice(0, 4))
           e.target.value = ''
         }}
       />
@@ -309,18 +317,17 @@ export default function ReviewSection({ productoRef, vendedorId }) {
   const myVendorId = vendorData?.vendedor_id ?? null
 
   const mutation = useMutation({
-    mutationFn: async () => {
-      const existente = puedeData?.resena
-      const res = existente
-        ? await updateReview(existente.id, { calificacion, texto })
-        : await createReview({ producto_ref: productoRef, vendedor_id: vendedorId, calificacion, texto })
-      const resenaId = res.data.id
-      if (imageFiles.length > 0) {
-        const fd = new FormData()
-        imageFiles.forEach(f => fd.append('archivos', f))
-        await uploadReviewImages(resenaId, fd)
-      }
-      return res
+    // Reseña y fotos viajan juntas: el servidor valida las fotos antes de publicar
+    // y, si alguna falla, no queda nada publicado.
+    mutationFn: () => {
+      const fd = new FormData()
+      fd.append('producto_ref', productoRef)
+      fd.append('vendedor_id', vendedorId)
+      fd.append('calificacion', calificacion)
+      fd.append('texto', texto)
+      if (puedeData?.resena) fd.append('resena_id', puedeData.resena.id)
+      imageFiles.forEach(f => fd.append('archivos', f))
+      return publishReview(fd)
     },
     onSuccess: (res) => {
       const estado = res?.data?.estado ?? 'aprobada'
@@ -338,7 +345,8 @@ export default function ReviewSection({ productoRef, vendedorId }) {
       qc.invalidateQueries({ queryKey: ['puede-opinar', productoRef, vendedorId] })
     },
     onError: (err) => {
-      toast.error(err.response?.data?.detail || 'No se pudo enviar la reseña.')
+      const detalle = err.response?.data?.detail
+      toast.error(typeof detalle === 'string' ? `No se publicó la reseña. ${detalle}` : 'No se publicó la reseña. Intenta de nuevo.')
     },
   })
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os, uuid as _uuid
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -139,6 +139,92 @@ def mi_perfil_vendedor(
     return {"vendedor_id": vendedor.id if vendedor else None}
 
 
+async def _validar_imagenes(archivos: list[UploadFile]) -> list[tuple[str, bytes]]:
+    """Valida todas las imágenes antes de escribir nada: formato, máximo 5 MB y bytes de imagen real."""
+    if len(archivos) > 4:
+        raise HTTPException(400, 'Máximo 4 imágenes por reseña.')
+    validas = []
+    for archivo in archivos:
+        ext = os.path.splitext(archivo.filename or '')[1].lower()
+        if ext not in ALLOWED_EXTS:
+            raise HTTPException(400, 'Formato de imagen no permitido. Usa JPG, PNG o WEBP.')
+        contenido, _ = await read_valid_image(archivo)
+        validas.append((ext, contenido))
+    return validas
+
+
+def _guardar_imagenes(db: Session, review: Resena, usuario_id: int, validas, escritos: list[Path]) -> list[str]:
+    """Escribe los archivos y los registra en la transacción abierta. ``escritos`` permite borrarlos si algo falla."""
+    if db.query(ResenaImagen).filter(ResenaImagen.resena_id == review.id).count() + len(validas) > 4:
+        raise ValueError('Máximo 4 imágenes por reseña.')
+    STATIC_REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
+    urls = []
+    for ext, contenido in validas:
+        filename = f"{review.public_id}_{_uuid.uuid4().hex}{ext}"
+        destino = STATIC_REVIEWS_DIR / filename
+        destino.write_bytes(contenido)
+        escritos.append(destino)
+        urls.append(f"/static/reviews/{filename}")
+    # agregar_imagenes vuelve a comprobar dueño y cupo dentro de la transacción.
+    mysql_svc.agregar_imagenes(db, public_id=review.public_id, usuario_id=usuario_id, urls=urls)
+    return urls
+
+
+def _deshacer(db: Session, escritos: list[Path]) -> None:
+    db.rollback()
+    for ruta in escritos:
+        try:
+            ruta.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+# Publica (crea o edita) una reseña junto con sus imágenes en una sola transacción:
+# si alguna imagen no es válida, la reseña no se publica.
+@router.post('/publicar', status_code=201)
+async def publicar_resena(
+    producto_ref: str = Form(..., min_length=24, max_length=24),
+    vendedor_id: int = Form(..., gt=0),
+    calificacion: int = Form(..., ge=1, le=5),
+    texto: str = Form(..., min_length=5, max_length=1000),
+    resena_id: str | None = Form(None),
+    archivos: list[UploadFile] = File(default=[]),
+    user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    validas = await _validar_imagenes(archivos)
+    escritos: list[Path] = []
+    try:
+        if resena_id:
+            review = mysql_svc.editar(db, public_id=resena_id, usuario_id=user.id,
+                                      calificacion=calificacion, texto=texto)
+            tipo = 'resena.actualizada'
+        else:
+            if not db.get(Vendedor, vendedor_id):
+                raise LookupError('Vendedor no encontrado.')
+            review = mysql_svc.crear(db, usuario_id=user.id, producto_ref=producto_ref, vendedor_id=vendedor_id,
+                                     calificacion=calificacion, texto=texto)
+            tipo = 'resena.creada'
+        if validas:
+            _guardar_imagenes(db, review, user.id, validas, escritos)
+        ref = db.get(ProductoReferencia, review.producto_referencia_id).producto_ref
+        encolar_resena(db, tipo_evento=tipo, resena_id=review.id, producto_ref=ref)
+        db.commit()
+        db.refresh(review)
+        return mysql_svc.serializar(db, review)
+    except BaseException as exc:
+        _deshacer(db, escritos)
+        if isinstance(exc, PermissionError):
+            raise HTTPException(403, str(exc)) from exc
+        if isinstance(exc, (FileExistsError, IntegrityError)):
+            raise HTTPException(409, 'Ya existe una reseña para ese producto y vendedor.') from exc
+        if isinstance(exc, LookupError):
+            raise HTTPException(404, str(exc)) from exc
+        if isinstance(exc, ValueError):
+            raise HTTPException(400, str(exc)) from exc
+        raise
+
+
 @router.post('/{resena_id}/imagenes', status_code=201)
 async def subir_imagenes(
     resena_id: str,
@@ -147,49 +233,22 @@ async def subir_imagenes(
     db: Session = Depends(get_db),
 ):
     # Todo se valida antes de escribir en disco: dueño de la reseña, cupo de 4
-    # imágenes y cada archivo (máximo 5 MB y bytes de imagen real, no solo la
-    # extensión). Así una solicitud rechazada nunca deja archivos huérfanos.
-    if len(archivos) > 4:
-        raise HTTPException(400, 'Máximo 4 imágenes por reseña.')
+    # imágenes y cada archivo. Así una solicitud rechazada nunca deja archivos huérfanos.
     review = db.query(Resena).filter(
         Resena.public_id == resena_id, Resena.usuario_id == user.id,
     ).first()
     if not review:
         raise HTTPException(404, 'Reseña no encontrada.')
-    existentes = db.query(ResenaImagen).filter(ResenaImagen.resena_id == review.id).count()
-    if existentes + len(archivos) > 4:
-        raise HTTPException(400, 'Máximo 4 imágenes por reseña.')
-    validas = []
-    for archivo in archivos:
-        ext = os.path.splitext(archivo.filename or '')[1].lower()
-        if ext not in ALLOWED_EXTS:
-            raise HTTPException(400, f'Formato no permitido: {ext or "desconocido"}')
-        contenido, _ = await read_valid_image(archivo)
-        validas.append((ext, contenido))
-
-    STATIC_REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
+    validas = await _validar_imagenes(archivos)
     escritos: list[Path] = []
-    urls = []
     try:
-        for ext, contenido in validas:
-            filename = f"{resena_id}_{_uuid.uuid4().hex}{ext}"
-            destino = STATIC_REVIEWS_DIR / filename
-            destino.write_bytes(contenido)
-            escritos.append(destino)
-            urls.append(f"/static/reviews/{filename}")
-        # agregar_imagenes vuelve a comprobar dueño y cupo dentro de la transacción.
-        mysql_svc.agregar_imagenes(db, public_id=resena_id, usuario_id=user.id, urls=urls)
+        urls = _guardar_imagenes(db, review, user.id, validas, escritos)
         producto_ref = db.get(ProductoReferencia, review.producto_referencia_id).producto_ref
         encolar_resena(db, tipo_evento='resena.actualizada', resena_id=review.id, producto_ref=producto_ref)
         db.commit()
     except BaseException as exc:
         # Cualquier falla (también una de MySQL) deshace la transacción y borra lo escrito.
-        db.rollback()
-        for ruta in escritos:
-            try:
-                ruta.unlink(missing_ok=True)
-            except OSError:
-                pass
+        _deshacer(db, escritos)
         if isinstance(exc, (LookupError, ValueError)):
             raise HTTPException(404 if isinstance(exc, LookupError) else 400, str(exc)) from exc
         raise
