@@ -10,19 +10,31 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Badge } from '../components/ui/badge'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
+import { formatearPrefijoSku, formatearSlug, limpiarSlug, PREFIJO_SKU_PATRON, SLUG_PATRON } from '../lib/utils'
+
+function Ayuda({ children, error }) {
+  return (
+    <p className={`text-xs ${error ? 'text-[var(--color-error)]' : 'text-[var(--color-text-muted)]'}`}>{children}</p>
+  )
+}
 
 function NewCategory() {
   const navigate = useNavigate()
   const cache = useQueryClient()
   const [form, setForm] = useState({ nombre: '', slug: '', descripcion: '', padre_id: '', sku_prefix: '' })
+  // Mientras el admin no toque el slug, se genera solo a partir del nombre.
+  const [slugEditado, setSlugEditado] = useState(false)
   const [attrs, setAttrs] = useState([])
   const { data: categories = [] } = useQuery({
     queryKey: ['admin-categories'],
     queryFn: () => getAdminCategories().then(r => r.data),
   })
+  const slug = limpiarSlug(form.slug)
+  const prefijoIncompleto = form.sku_prefix.length > 0 && form.sku_prefix.length < 3
   const mutation = useMutation({
     mutationFn: () => createCategory({
       ...form,
+      slug,
       padre_id: form.padre_id ? Number(form.padre_id) : null,
       sku_prefix: form.sku_prefix || undefined,
       atributos: attrs,
@@ -31,11 +43,13 @@ function NewCategory() {
       cache.invalidateQueries({ queryKey: ['admin-categories'] })
       cache.invalidateQueries({ queryKey: ['categories'] })
       toast.success('Categoría creada.')
-      navigate('/admin/categories/' + form.slug)
+      navigate('/admin/categories/' + slug)
     },
     onError: e => {
       const d = e.response?.data?.detail
-      toast.error(typeof d === 'string' ? d : d?.message || 'No se pudo crear la categoría.')
+      // 422 de Pydantic: lista de errores con el mensaje del validador.
+      const validacion = Array.isArray(d) ? d[0]?.msg?.replace(/^Value error, /, '') : null
+      toast.error(typeof d === 'string' ? d : validacion || d?.message || 'No se pudo crear la categoría.')
     },
   })
 
@@ -48,17 +62,64 @@ function NewCategory() {
         onSubmit={e => { e.preventDefault(); mutation.mutate() }}
       >
         <div className="grid sm:grid-cols-2 gap-5">
-          {[['nombre', 'Nombre'], ['slug', 'Slug (identificador de URL)'], ['descripcion', 'Descripción'], ['sku_prefix', 'Prefijo SKU']].map(([key, label]) => (
-            <div key={key} className="space-y-1.5">
-              <Label htmlFor={key}>{label}</Label>
-              <Input
-                id={key}
-                required={['nombre', 'slug'].includes(key)}
-                value={form[key]}
-                onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-              />
-            </div>
-          ))}
+          <div className="space-y-1.5">
+            <Label htmlFor="nombre">Nombre</Label>
+            <Input
+              id="nombre"
+              required
+              placeholder="ej. Ropa deportiva"
+              value={form.nombre}
+              onChange={e => {
+                const nombre = e.target.value
+                setForm(f => ({ ...f, nombre, ...(slugEditado ? {} : { slug: limpiarSlug(nombre) }) }))
+              }}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="slug">Slug (identificador de URL)</Label>
+            <Input
+              id="slug"
+              required
+              placeholder="ej. ropa-deportiva"
+              pattern={SLUG_PATRON}
+              title="Solo minúsculas sin tildes, números y guiones (ej. ropa-deportiva)."
+              maxLength={120}
+              className="font-mono text-sm"
+              value={form.slug}
+              onChange={e => { setSlugEditado(true); setForm(f => ({ ...f, slug: formatearSlug(e.target.value) })) }}
+              onBlur={() => setForm(f => ({ ...f, slug: limpiarSlug(f.slug) }))}
+            />
+            <Ayuda>
+              Minúsculas, números y guiones. URL: <span className="font-mono">/catalog?categoria={slug || '…'}</span>
+            </Ayuda>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="descripcion">Descripción</Label>
+            <Input
+              id="descripcion"
+              placeholder="Breve descripción…"
+              value={form.descripcion}
+              onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sku_prefix">Prefijo SKU <span className="text-[var(--color-text-muted)] font-normal">(3 letras, opcional)</span></Label>
+            <Input
+              id="sku_prefix"
+              placeholder="ej. DEP"
+              pattern={PREFIJO_SKU_PATRON}
+              title="Exactamente 3 letras (ej. DEP)."
+              maxLength={3}
+              className="font-mono text-sm tracking-widest uppercase w-28"
+              value={form.sku_prefix}
+              onChange={e => setForm(f => ({ ...f, sku_prefix: formatearPrefijoSku(e.target.value) }))}
+            />
+            <Ayuda error={prefijoIncompleto}>
+              {prefijoIncompleto
+                ? 'Faltan letras: el prefijo debe tener exactamente 3.'
+                : <>Los productos tendrán SKU como <span className="font-mono">{form.sku_prefix || 'XXX'}-1A2B3C4D</span>. Si lo dejas vacío se usan las 3 primeras letras del slug.</>}
+            </Ayuda>
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label>Categoría padre</Label>
@@ -120,7 +181,15 @@ function CategoryForm({ category }) {
       <h2 className="text-xl font-semibold font-display">Campos de la categoría</h2>
       <div className="space-y-1.5">
         <Label>Prefijo SKU</Label>
-        <Input className="max-w-xs" value={prefix} maxLength={3} onChange={e => setPrefix(e.target.value.toUpperCase())} />
+        <Input
+          className="max-w-xs font-mono tracking-widest uppercase"
+          value={prefix}
+          maxLength={3}
+          pattern={PREFIJO_SKU_PATRON}
+          title="Exactamente 3 letras (ej. DEP)."
+          placeholder="ej. DEP"
+          onChange={e => setPrefix(formatearPrefijoSku(e.target.value))}
+        />
       </div>
       <div className="space-y-3">
         {attrs.map((attr, i) => (

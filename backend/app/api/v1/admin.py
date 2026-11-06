@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo.database import Database
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -105,19 +105,45 @@ class AtributoEsquema(BaseModel):
     placeholder: str | None = None
 
 
+SLUG_CATEGORIA = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
+PREFIJO_SKU = re.compile(r'[A-Z]{3}')
+
+
+def _validar_prefijo_sku(valor: str | None) -> str | None:
+    """Vacío = sin prefijo; si viene, exactamente 3 letras (se acepta en minúsculas)."""
+    if valor is None or not valor.strip():
+        return valor
+    valor = valor.strip().upper()
+    if not PREFIJO_SKU.fullmatch(valor):
+        raise ValueError('El prefijo SKU debe tener exactamente 3 letras (ej. DEP).')
+    return valor
+
+
 class CategoriaCreate(BaseModel):
     nombre: str
-    slug: str
+    slug: str = Field(max_length=120)
     descripcion: str | None = None
     padre_id: int | None = None
     sku_prefix: str | None = None
     atributos: list[AtributoEsquema] = []
+
+    @field_validator('slug')
+    @classmethod
+    def _slug(cls, valor: str) -> str:
+        valor = valor.strip()
+        if not SLUG_CATEGORIA.fullmatch(valor):
+            raise ValueError('El slug solo admite minúsculas sin tildes, números y guiones simples (ej. ropa-deportiva).')
+        return valor
+
+    _prefijo = field_validator('sku_prefix')(_validar_prefijo_sku)
 
 
 class EsquemaUpdate(BaseModel):
     atributos: list[AtributoEsquema]
     categoria_nombre: str | None = None
     sku_prefix: str | None = None
+
+    _prefijo = field_validator('sku_prefix')(_validar_prefijo_sku)
 
 
 # ── Gestión de usuarios ───────────────────────────────────────────────────────

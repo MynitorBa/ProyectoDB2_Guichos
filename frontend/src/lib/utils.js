@@ -35,3 +35,23 @@ export function formatDatetime(dateStr) {
 export function slugify(str) {
   return str.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '')
 }
+
+// Formato de slug de categoría mientras se escribe: minúsculas sin tildes,
+// números y guiones simples ("Ropa Deportiva" → "ropa-deportiva"). Deja un
+// guion final para poder seguir escribiendo; `limpiarSlug` lo quita al terminar.
+export const SLUG_PATRON = '[a-z0-9]+(-[a-z0-9]+)*'
+export function formatearSlug(str = '') {
+  return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '')
+    .replace(/-{2,}/g, '-').replace(/^-/, '').slice(0, 120)
+}
+export function limpiarSlug(str = '') {
+  return formatearSlug(str).replace(/-+$/, '')
+}
+
+// Prefijo SKU: exactamente 3 letras mayúsculas (los SKU quedan como LAP-1A2B3C4D).
+export const PREFIJO_SKU_PATRON = '[A-Z]{3}'
+export function formatearPrefijoSku(str = '') {
+  return str.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3)
+}

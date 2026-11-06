@@ -24,7 +24,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '../components/ui/record-dialog'
 import { Skeleton } from '../components/ui/skeleton'
 import { Separator } from '../components/ui/separator'
-import { formatQ, formatDate, cn } from '../lib/utils'
+import { formatQ, formatDate, cn, formatearSlug, limpiarSlug, SLUG_PATRON } from '../lib/utils'
 import { AdminCatalogRequestsSection } from '../components/admin/CatalogRequestsSection'
 import { AdminVendorsSection } from './AdminVendorPage'
 import { getAdminProductTrend, getAdminTrends } from '../api/analytics'
@@ -1607,7 +1607,7 @@ function CategoriesSection() {
           <DialogDescription>Los datos básicos se guardan en MySQL. Los campos personalizados se guardan en MongoDB.</DialogDescription>
           <form className="space-y-4 mt-2" onSubmit={(e) => {
             e.preventDefault()
-            createMut.mutate({ nombre: newNombre, slug: newSlug || slugify(newNombre), descripcion: newDesc || undefined, padre_id: newPadreId ? Number(newPadreId) : undefined, sku_prefix: newSkuPrefix.trim().toUpperCase() || undefined, atributos: newAttrs.filter((a) => a.nombre && a.etiqueta) })
+            createMut.mutate({ nombre: newNombre, slug: limpiarSlug(newSlug) || slugify(newNombre), descripcion: newDesc || undefined, padre_id: newPadreId ? Number(newPadreId) : undefined, sku_prefix: newSkuPrefix.trim().toUpperCase() || undefined, atributos: newAttrs.filter((a) => a.nombre && a.etiqueta) })
           }}>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -1616,7 +1616,12 @@ function CategoriesSection() {
               </div>
               <div className="space-y-1">
                 <Label>Slug (URL)</Label>
-                <Input required value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ej. laptops" className="font-mono text-sm" />
+                <Input
+                  required value={newSlug} placeholder="ej. laptops" className="font-mono text-sm" maxLength={120}
+                  pattern={SLUG_PATRON} title="Solo minúsculas sin tildes, números y guiones (ej. ropa-deportiva)."
+                  onChange={(e) => setNewSlug(formatearSlug(e.target.value))}
+                  onBlur={() => setNewSlug((s) => limpiarSlug(s))}
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
